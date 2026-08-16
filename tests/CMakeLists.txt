@@ -48,3 +48,18 @@ add_executable(epi_dsp_tests test_epi_dsp.cpp)
 target_include_directories(epi_dsp_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_features(epi_dsp_tests PRIVATE cxx_std_20)
 add_test(NAME epi_dsp COMMAND epi_dsp_tests)
+
+# ---------------------------------------------------------------------------
+# Epi acoustic reference suite. Renders the whole instrument and compares it,
+# property by property, against measurements taken off a real Rhodes Mark I.
+# Each row maps to a numbered entry in docs/acoustic-checklist.md.
+#
+# This one renders minutes of audio, so it is the slow test in the suite.
+# ---------------------------------------------------------------------------
+add_executable(epi_reference_tests
+    test_epi_reference.cpp
+    ${CMAKE_SOURCE_DIR}/src/epi/dsp/EpiEngine.cpp)
+target_include_directories(epi_reference_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_features(epi_reference_tests PRIVATE cxx_std_20)
+add_test(NAME epi_reference COMMAND epi_reference_tests)
+set_tests_properties(epi_reference PROPERTIES TIMEOUT 900)
