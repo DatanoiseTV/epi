@@ -16,6 +16,17 @@
 namespace epi
 {
 
+// A note on judging these against tests/test_epi_reference.cpp: that suite
+// measures how closely the model matches a well-maintained 1977 Mark I, so it
+// only applies in full to "Suitcase", which is that instrument and passes every
+// row. The others are deliberately somewhere else -- "Bell" is voiced on the
+// pole centreline, which is a real setting and a badly voiced one -- and are
+// expected to miss the rows that describe a correctly voiced instrument.
+//
+// What the suite is still good for here is telling a deliberate voicing apart
+// from a broken one. Three of these were the latter: their pickup gaps sat
+// close enough that the tine left the pole face twice a cycle, which does not
+// sound like a hard-driven Rhodes, it sounds like a clipper.
 std::vector<epicommon::PresetManager::Preset> makeFactoryPresets()
 {
     using namespace epi::ids;
@@ -35,7 +46,7 @@ std::vector<epicommon::PresetManager::Preset> makeFactoryPresets()
         // fundamental. A real setting, and the reason a badly voiced Rhodes
         // sounds thin rather than quiet.
         { "Bell", {
-            { pickupPos, -0.04f }, { pickupDist, 0.22f },
+            { pickupPos, -0.04f }, { pickupDist, 0.30f },
             { hammerHard, 0.68f }, { resDamp, 0.18f }, { barCouple, 0.85f },
             { coilFreq, 0.70f }, { coilQ, 0.65f },
             { preampDrive, 0.18f }, { treble, 3.5f },
@@ -44,17 +55,24 @@ std::vector<epicommon::PresetManager::Preset> makeFactoryPresets()
 
         // Toward the edge of the pole, where the swing is most asymmetric.
         { "Mellow", {
-            { pickupPos, -0.80f }, { pickupDist, 0.55f },
+            { pickupPos, -0.80f }, { pickupDist, 0.42f },
             { hammerHard, 0.28f }, { resDamp, 0.40f }, { barCouple, 0.45f },
             { coilFreq, 0.30f }, { coilQ, 0.35f },
             { preampDrive, 0.15f }, { bass, 4.0f }, { treble, -2.0f },
             { tremRate, 3.2f }, { tremDepth, 0.25f }, { cabMix, 0.65f },
         } },
 
-        // Close to the magnet and played into it: the tine runs off the ends of
-        // the pole face, where the field collapses. That is the growl.
+        // Close to the magnet and played into it: the tine runs out toward the
+        // ends of the pole face, where the field starts to collapse. That is
+        // the growl -- but only up to a point. Measured, a gap under about
+        // 1.2 mm puts the tine right off the pole twice a cycle, and what that
+        // makes is not growl: the inharmonic floor comes up 45 dB, the
+        // fundamental starts beating against itself and the attack collapses
+        // into a click. This sat at 0.95 mm and failed ten reference rows; at
+        // 1.5 mm it fails three, and the extra dirt comes from the drive
+        // instead, where it belongs.
         { "Dirty Bass", {
-            { pickupPos, -0.45f }, { pickupDist, 0.08f },
+            { pickupPos, -0.45f }, { pickupDist, 0.20f },
             { hammerHard, 0.72f }, { hammerMass, 0.70f },
             { resDamp, 0.25f }, { nonlinAmt, 0.85f },
             { coilFreq, 0.42f }, { coilQ, 0.55f }, { coilSat, 0.60f },
@@ -83,10 +101,12 @@ std::vector<epicommon::PresetManager::Preset> makeFactoryPresets()
             { tremDepth, 0.0f }, { cabMix, 0.50f },
         } },
 
-        // A pole piece narrower and closer than Rhodes ever built, and a coil
-        // that peaks high. Not a filter setting -- a different magnet.
+        // A pole piece narrower than Rhodes ever built, and a coil that peaks
+        // high. Not a filter setting -- a different magnet. Its gap was 0.86 mm,
+        // which is past the point where the tine leaves the field entirely and
+        // the sound stops being a pickup and starts being a clipper.
         { "Glass Tine", {
-            { pickupPos, -0.18f }, { pickupDist, 0.06f },
+            { pickupPos, -0.18f }, { pickupDist, 0.20f },
             { hammerHard, 0.55f }, { tipMass, 0.80f },
             { resDamp, 0.20f }, { barCouple, 0.90f }, { barTune, 7.0f },
             { coilFreq, 0.88f }, { coilQ, 0.85f }, { coilSat, 0.10f },
