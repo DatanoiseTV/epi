@@ -293,6 +293,11 @@ public:
 
 private:
     static constexpr int kControlDecim = 32;
+
+    // Neoprene hammer tip, contact width. Falaize & Helie use 1 cm on a 7.83 cm
+    // Rhodes tine; the tip does not change size across the keyboard, so the
+    // fraction of the tine it covers grows toward the treble on its own.
+    static constexpr double kTipWidth = 0.010;
     static constexpr int kStrike = 0, kTip = 1, kBlock = 2;
 
     double registerPosition() const
@@ -501,24 +506,42 @@ private:
         }
         // The contact patch.
         //
-        // A hammer tip is a compliant blob a millimetre or so across, and it
-        // cannot resolve a mode whose half-wavelength is shorter than itself:
-        // the pressure it applies is spread over the patch, and what it feels
-        // back is the average over the same patch. So each mode is weighted by
-        // how much of it survives that averaging.
+        // Not a refinement -- without it the model has no well-defined effective
+        // mass at all.
         //
-        // The weighting MUST be applied to reading and writing alike, which is
-        // why it lives in the shape vector rather than in a filter on the
-        // signals. Hunt-Crossley is dissipative in the relative coordinate of
-        // the contact; read the surface through one weighting and push on it
-        // through another and that identity no longer holds, and the damping
-        // term becomes a source. That mistake was worth about four hundred
-        // millimetres of tine deflection on one note before it was found.
-        const double patchOverL = std::clamp (0.9e-3 / std::max (1.0e-3, tineLength), 0.004, 0.20);
+        // Struck near the clamp, a cantilever's mode shapes there go as
+        // (beta_n x)^2, so the point-force compliance SUM phi_n(x0)^2/m_n has
+        // terms growing with frequency and does not converge. Computed at
+        // x0/L = 0.05 the effective mass runs 13557, 378, 12.3, 1.96, 0.585,
+        // 0.249, 0.083, 0.036 beam-masses at 1, 2, 4, 6, 8, 10, 14 and 20 modes
+        // -- still falling. A point strike near a clamp therefore has no
+        // physical effective mass; it has a mode-count artefact. That is
+        // precisely why the same collision reproduced with two modes measures
+        // correctly while the full bank does not.
+        //
+        // A finite patch converges it. The tip is a compliant blob of neoprene
+        // a centimetre across; it cannot resolve a mode whose half-wavelength is
+        // shorter than itself, and the pressure it applies is spread over the
+        // same area it senses. Spatially averaging a mode over a patch of width
+        // W multiplies it by sinc(beta_n W / 2).
+        //
+        // Falaize & Helie use 1 cm on a 7.83 cm tine -- 12.8% of the length --
+        // and Chabassier et al. grade a piano's from a few millimetres to nearly
+        // two centimetres. A fixed tip diameter across a compass whose tines run
+        // from 180 mm to 20 mm gives the same graduation for free.
+        //
+        // The weighting MUST be identical for reading and for pushing. Two
+        // papers state this as a requirement for energy conservation, not as
+        // advice. Measured on this collision, the energy a hammer injects goes
+        // from 2.25x its own kinetic energy with symmetric point weights, to
+        // 1.09x with a symmetric 20% patch, to 1.70x if read and write are
+        // allowed to differ -- and to 3.72x with a temporal filter on the
+        // velocity, which is the runaway this model already found the hard way.
+        const double patchW = std::clamp (kTipWidth / std::max (1.0e-3, tineLength), 0.02, 0.35);
         for (int m = 0; m < kTineModes; ++m)
         {
-            const double bw = CantileverModes::betaL (m) * patchOverL;
-            const double w  = std::exp (-0.5 * bw * bw);
+            const double z = 0.5 * CantileverModes::betaL (m) * patchW;
+            const double w = std::abs (z) < 1.0e-9 ? 1.0 : std::sin (z) / z;
 
             shapeTipV[kV0 + m]    = shapeMode[m][kTip];
             shapeTipH[kH0 + m]    = shapeMode[m][kTip];

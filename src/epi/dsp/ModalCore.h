@@ -114,6 +114,10 @@ public:
     static constexpr int kMaxModes = MaxN;
     static constexpr int kMaxTerms = MaxP;
 
+    // Highest mode frequency as a fraction of the sample rate. 1/pi is the
+    // omega*k < 2 bound that an explicit contact imposes; see setMode.
+    static constexpr double kModeBudget = 1.0 / kPiD;
+
     void prepare (double sampleRate)
     {
         fs = sampleRate;
@@ -147,7 +151,16 @@ public:
     {
         if (i < 0 || i >= MaxN) return;
 
-        if (! (freqHz > 0.0) || freqHz >= 0.5 * fs || ! (modalMass > 0.0))
+        // Mode budget: fs/pi, not Nyquist.
+        //
+        // The pre-warped scheme itself is stable to Nyquist, but a mode is only
+        // as safe as everything coupled to it, and an EXPLICIT contact force
+        // has no energy balance of its own. The binding condition is then
+        // omega*k < 2, i.e. f < fs/pi ~ 0.318*fs (Ducceschi, Bilbao & Webb,
+        // DAFx-23 eq. 37, stated three times across that group's papers).
+        // Retaining modes between fs/pi and Nyquist is what lets a hammer
+        // deposit energy into modes the scheme cannot carry.
+        if (! (freqHz > 0.0) || freqHz >= kModeBudget * fs || ! (modalMass > 0.0))
         {
             stiff[i] = 0.0; invM[i] = 0.0; damp[i] = 0.0;
             q[i] = qPrev[i] = 0.0;
@@ -183,7 +196,7 @@ public:
     void setFrequency (int i, double freqHz)
     {
         if (i < 0 || i >= MaxN || ! live[i]) return;
-        if (! (freqHz > 0.0) || freqHz >= 0.5 * fs) return;
+        if (! (freqHz > 0.0) || freqHz >= kModeBudget * fs) return;
         setModeKeepingState (i, freqHz, t60[i]);
     }
 
