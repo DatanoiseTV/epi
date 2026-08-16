@@ -101,7 +101,13 @@ public:
 
     // Table span. The tine's swing is allowed to run well past the pole face,
     // because on a hard bass note it does.
-    static constexpr float kVSpan = 4.0f;   // in units of halfWidth
+    // Wide enough that the tine never reaches the edge. The lookup clamps
+    // there, and a clamp is a corner in the first derivative sitting in the
+    // middle of the signal path -- the same defect that has been measured
+    // costing tens of decibels of alias floor in other implementations. Out at
+    // eight half-widths the field is already three orders of magnitude down,
+    // so the clamp is on a value indistinguishable from zero.
+    static constexpr float kVSpan = 8.0f;   // in units of halfWidth
     static constexpr float kGMin  = 0.35f;  // in units of nominalGap
     static constexpr float kGMax  = 3.5f;
 
@@ -265,7 +271,14 @@ public:
     // entirely, and velocity stops doing anything at all -- which is exactly
     // what the first render measured: a 49 dB spread at the coil arriving as
     // 0 dB of difference at the output.
-    static constexpr float kNominalSensitivity = 1.1e-3f;
+    // Set so a single fortissimo note arrives about twelve decibels below the
+    // preamp's knee. That headroom is not slack: the instrument sums every
+    // note onto one bus before the preamp, so a six-note chord with the pedal
+    // down reaches two and a half times a single note, and with the level set
+    // for one note that chord arrives as a square wave. Leaving the room means
+    // the drive control decides how hard it is pushed, rather than the number
+    // of keys held decide it.
+    static constexpr float kNominalSensitivity = 3.0e-4f;
 
     void setSensitivity (float s) { sensitivity = std::max (0.0f, s); }
 

@@ -159,6 +159,8 @@ public:
         hammer.reset();
         sounding = held = pedal = false;
         controlCounter = 0;
+        fadeLeft = 0;
+        pendingNote = -1;
         configured = false;
     }
 
@@ -182,16 +184,50 @@ public:
     int  contactSamples() const { return hammer.contactDurationSamples(); }
 
     // ---- note lifecycle ---------------------------------------------------
+    // Struck while this voice is still ringing.
+    //
+    // If it is the SAME note, the state is kept. A hammer meeting a tine that
+    // is already moving is what actually happens when a player repeats a note,
+    // and it is why a repeated note on a real instrument reinforces or fights
+    // the one before it depending on where in the cycle it lands. Zeroing the
+    // state instead puts a step discontinuity straight into the output -- an
+    // audible click on every repeated note, which is exactly what this did.
+    //
+    // If it is a DIFFERENT note the state cannot be kept: the modes are about
+    // to be retuned, and energy sitting in them would slide to the new pitch.
+    // So the voice is faded first, over a couple of milliseconds, and the
+    // strike happens at the end of that. Two milliseconds is below anything a
+    // player can feel and well above what it takes to avoid a step.
     void noteOn (int midiNote, double velocity, const Config& cfg, std::uint32_t seed)
+    {
+        if (sounding && midiNote != note && sys.energy() > 1.0e-16)
+        {
+            pendingNote = midiNote;
+            pendingVel  = velocity;
+            pendingSeed = seed;
+            fadeLeft    = static_cast<int> (0.002 * fs);
+            fadeFactor  = std::exp (-9.0 / std::max (1.0, 0.002 * fs));
+            held = true;
+            return;
+        }
+
+        strikeNow (midiNote, velocity, cfg, seed, ! sounding || midiNote != note);
+    }
+
+    void strikeNow (int midiNote, double velocity, const Config& cfg,
+                    std::uint32_t seed, bool freshState)
     {
         note = midiNote;
         held = true;
         sounding = true;
         rng = Rng (seed | 1u);
 
-        sys.clear();
-        sys.setNumModes (kNumModes);
-        for (int i = 0; i < 3; ++i) { vHist[i] = 0.0; hHist[i] = 0.0; }
+        if (freshState)
+        {
+            sys.clear();
+            sys.setNumModes (kNumModes);
+            for (int i = 0; i < 3; ++i) { vHist[i] = 0.0; hHist[i] = 0.0; }
+        }
         configure (cfg);
 
         // A Rhodes hammer arrives somewhere between a fraction of a metre per
@@ -245,6 +281,17 @@ public:
 
     void process (const Config& cfg, double* fluxOut)
     {
+        // A steal in progress: wind this voice down, then strike the new note.
+        if (fadeLeft > 0)
+        {
+            for (int i = 0; i < kNumModes; ++i) sys.scaleMode (i, fadeFactor);
+            if (--fadeLeft == 0)
+            {
+                strikeNow (pendingNote, pendingVel, cfg, pendingSeed, true);
+                pendingNote = -1;
+            }
+        }
+
         if (! sounding)
         {
             for (int k = 0; k < kOver; ++k) fluxOut[k] = restFlux;
@@ -304,7 +351,24 @@ public:
             // a straight line. Small, but it is why the waveform is not quite
             // symmetric even with the tine perfectly centred.
             const double arc = (vv * vv) / (2.0 * std::max (1.0e-4, tineLength));
-            const double gap = std::max (0.25e-3, staticGap + hh - arc);
+            // The gap is modulated by the ARC alone, not by a second
+            // polarisation.
+            //
+            // Every published model of this instrument reduces the tine to one
+            // plane; Pfeifle & Bader tracked a real one with a high-speed
+            // camera and say so directly -- approximately sinusoidal motion in
+            // one plane, with the tip travelling on the arc of a circle about
+            // its fixation. Letting a second oscillator a few cents away
+            // modulate the gap instead puts a slow beat on the FUNDAMENTAL,
+            // where the reference recordings show four tenths of a decibel and
+            // this model had several. That is the instrument phasing against
+            // itself, and it is what a listener flagged.
+            //
+            // The arc gives the geometric gap variation for free, at twice the
+            // fundamental, from the one oscillator that is really there. The
+            // horizontal set is kept because the tip does trace an ellipse and
+            // the interface draws it, but it no longer reaches the magnet.
+            const double gap = std::max (0.25e-3, staticGap - arc);
 
             fluxOut[k] = field != nullptr ? field->flux (staticOffset + vv, gap) : 0.0;
         }
@@ -502,8 +566,26 @@ private:
         double tineFreq[kTineModes], tineT60[kTineModes];
         for (int m = 0; m < kTineModes; ++m)
         {
-            tineFreq[m] = f0 * CantileverModes::ratio (m, mu, springPos, shearNumber);
-            tineT60[m]  = t60Base / (1.0 + 2.6 * m + 0.55 * m * m);
+            const double r = CantileverModes::ratio (m, mu, springPos, shearNumber);
+            tineFreq[m] = f0 * r;
+
+            // Damping keyed on the mode's FREQUENCY RATIO, not its index.
+            //
+            // Indexing by m looks equivalent and is not. A clamped-free beam's
+            // frequencies grow roughly as (2m-1)^2, so a polynomial in m that
+            // also grows quadratically cancels against them and leaves the top
+            // modes barely damped -- by mode 7 the old rule under-damped by two
+            // orders of magnitude against anything defensible. Every published
+            // implementation keys off frequency.
+            //
+            // The exponent is bracketed by the sources: bar theory with the
+            // standard loss term gives constant Q, so 1.0; the only measured
+            // Rhodes study works out at 1.2 to 1.3, its strongest inharmonic
+            // mode decaying forty to fifty times faster than the fundamental;
+            // the one shipping Wurlitzer model uses 2.0 and reports rejecting
+            // 1.5 as audibly metallic. 1.5 sits inside that range, and the
+            // amplitude taper below makes the choice far less critical.
+            tineT60[m] = t60Base / std::pow (r, 1.5);
         }
 
         double trim = 1.0;
@@ -594,10 +676,37 @@ private:
         // allowed to differ -- and to 3.72x with a temporal filter on the
         // velocity, which is the runaway this model already found the hard way.
         const double patchW = std::clamp (kTipWidth / std::max (1.0e-3, tineLength), 0.02, 0.35);
+
+        // How long the tip rests on the tine, in cycles of the note. This is
+        // the temporal half of the same argument the patch makes spatially: a
+        // hammer in contact for a good fraction of a period cannot put energy
+        // into a mode oscillating many times faster, because the force reverses
+        // underneath it before the mode has finished a swing.
+        const double dwellCycles = 0.9;
+
         for (int m = 0; m < kTineModes; ++m)
         {
             const double z = 0.5 * CantileverModes::betaL (m) * patchW;
-            const double w = std::abs (z) < 1.0e-9 ? 1.0 : std::sin (z) / z;
+            double w = std::abs (z) < 1.0e-9 ? 1.0 : std::sin (z) / z;
+
+            // Together, the patch and the dwell are what actually keep the
+            // inharmonic modes quiet.
+            //
+            // A point impulse on a uniform beam predicts the second mode
+            // starting about sixteen decibels below the first. Measured on real
+            // instruments it is twenty to forty decibels below THAT -- the tine
+            // is not uniform, it carries a tuning spring part way along, and
+            // the hammer is a soft blob rather than a point. In the one
+            // published Rhodes simulation, no inharmonic partial anywhere
+            // exceeds -46 dB.
+            //
+            // This is what makes a struck tine settle to a sinusoid within ten
+            // to fourteen milliseconds, and it is NOT the damping. No decay
+            // rate anyone deploys is fast enough to take a partial that starts
+            // loud down to inaudible in that time. It has to have been quiet
+            // from the start.
+            const double dwell = CantileverModes::ratio (m, mu, springPos, shearNumber) * dwellCycles;
+            w *= std::exp (-0.5 * dwell * dwell * 0.55);
 
             shapeTipV[kV0 + m]    = shapeMode[m][kTip];
             shapeTipH[kH0 + m]    = shapeMode[m][kTip];
@@ -868,6 +977,9 @@ private:
     double noteHz = 440.0;
     bool   strikeFlag = false;
     int  controlCounter = 0;
+    int  fadeLeft = 0, pendingNote = -1;
+    double fadeFactor = 1.0, pendingVel = 0.0;
+    std::uint32_t pendingSeed = 0;
     Rng  rng { 0x12345u };
 };
 
