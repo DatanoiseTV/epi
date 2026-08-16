@@ -164,6 +164,15 @@ private:
         return sum;
     }
 
+    // Catmull-Rom across the field, linear across the gap.
+    //
+    // Cubic is not a refinement here, it is required. The field is strongly
+    // curved and a tine crosses only a few dozen table points per swing, so
+    // linear interpolation leaves a discontinuity in the second derivative at
+    // every cell boundary -- and a discontinuity is broadband. Fed into a
+    // signal that is then differentiated, it comes out as a spray of high
+    // harmonics that have nothing to do with the magnet's shape. The gap axis
+    // is left linear because the tine moves along it by a fraction of a cell.
     float sample (float v, float gap) const
     {
         const float fv = (std::clamp (v, -vMax, vMax) + vMax) / (2.0f * vMax)
@@ -171,21 +180,32 @@ private:
         const float fg = (std::clamp (gap, gLo, gHi) - gLo) / std::max (1.0e-12f, gHi - gLo)
                        * static_cast<float> (kNg - 1);
 
-        const int i0 = std::min (kNv - 2, static_cast<int> (fv));
+        const int i1 = std::clamp (static_cast<int> (fv), 0, kNv - 1);
         const int j0 = std::min (kNg - 2, static_cast<int> (fg));
-        const float ti = fv - static_cast<float> (i0);
+        const float t  = fv - static_cast<float> (i1);
         const float tj = fg - static_cast<float> (j0);
 
-        const size_t r0 = static_cast<size_t> (j0) * kNv;
-        const size_t r1 = r0 + kNv;
-        const float a = field[r0 + static_cast<size_t> (i0)];
-        const float b = field[r0 + static_cast<size_t> (i0) + 1];
-        const float c = field[r1 + static_cast<size_t> (i0)];
-        const float d = field[r1 + static_cast<size_t> (i0) + 1];
+        const int i0 = std::max (0, i1 - 1);
+        const int i2 = std::min (kNv - 1, i1 + 1);
+        const int i3 = std::min (kNv - 1, i1 + 2);
 
-        const float top = a + ti * (b - a);
-        const float bot = c + ti * (d - c);
-        return top + tj * (bot - top);
+        auto row = [this, i0, i1, i2, i3, t] (int j)
+        {
+            const size_t r = static_cast<size_t> (j) * kNv;
+            const float a = field[r + static_cast<size_t> (i0)];
+            const float b = field[r + static_cast<size_t> (i1)];
+            const float c = field[r + static_cast<size_t> (i2)];
+            const float d = field[r + static_cast<size_t> (i3)];
+            const float c0 = b;
+            const float c1 = 0.5f * (c - a);
+            const float c2 = a - 2.5f * b + 2.0f * c - 0.5f * d;
+            const float c3 = 0.5f * (d - a) + 1.5f * (b - c);
+            return ((c3 * t + c2) * t + c1) * t + c0;
+        };
+
+        const float lo = row (j0);
+        const float hi = row (j0 + 1);
+        return lo + tj * (hi - lo);
     }
 
     Geometry g;
@@ -221,6 +241,25 @@ public:
 
     void reset() { s1 = s2 = 0.0f; fluxPrev = 0.0f; }
 
+    // How much voltage the coil makes for a given rate of flux change.
+    //
+    // The model carries flux as a normalised field shape, so this is the number
+    // that turns it into a signal, and it is a real property of a pickup: turns,
+    // wire gauge, and how much of the tine sits in the field. A Rhodes coil is
+    // about 180 ohms of AWG 37 around an Alnico 5 slug; the turns count is not
+    // published anywhere, so this is calibrated by measurement instead --
+    // set so a fortissimo note arrives at the preamp just into its curve, and a
+    // mezzo-forte one sits about seventeen decibels below that.
+    //
+    // Getting it wrong is not a level problem. Too hot and every note lands in
+    // the same place on the preamp's tanh, the instrument loses its dynamics
+    // entirely, and velocity stops doing anything at all -- which is exactly
+    // what the first render measured: a 49 dB spread at the coil arriving as
+    // 0 dB of difference at the output.
+    static constexpr float kNominalSensitivity = 1.1e-3f;
+
+    void setSensitivity (float s) { sensitivity = std::max (0.0f, s); }
+
     // `freqHz` is the resonant peak, `q` its sharpness, `saturation` how hard
     // the core clips (0 = linear iron, 1 = a pole piece run into saturation).
     void setResponse (float freqHz, float q, float saturation)
@@ -248,7 +287,7 @@ public:
         // A plain difference is the right differentiator here because the
         // resonant lowpass immediately after it removes the noise gain that
         // would otherwise make that a bad idea.
-        const float emf = (phi - fluxPrev) * fs;
+        const float emf = (phi - fluxPrev) * fs * sensitivity;
         fluxPrev = phi;
 
         // Topology-preserving-transform state variable filter, lowpass output:
@@ -267,6 +306,7 @@ public:
 
 private:
     float fs = 48000.0f;
+    float sensitivity = kNominalSensitivity;
     float gTan = 0.1f, qInv = 1.0f, sat = 0.0f;
     float s1 = 0.0f, s2 = 0.0f, fluxPrev = 0.0f;
 };

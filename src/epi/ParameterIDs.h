@@ -132,7 +132,7 @@ namespace epi::ids
 
         // ---- Transducer -----------------------------------------------------
         add (std::make_unique<P> (juce::ParameterID { pickupPos, 1 }, "Pickup Height",
-                                  Rng { -1.0f, 1.0f, 0.0f }, 0.0f,
+                                  Rng { -1.0f, 1.0f, 0.0f }, -0.35f,
                                   attrs ([] (float v, int)
                                   {
                                       // Shown as the real offset in millimetres:

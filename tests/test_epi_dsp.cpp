@@ -364,9 +364,13 @@ static Rendered render (int note, double velocity, const RhodesVoice::Config& cf
     const int n = static_cast<int> (kFs * seconds);
     r.flux.resize (static_cast<size_t> (n));
     r.tip.resize (static_cast<size_t> (n));
+    double os[RhodesVoice::kOver];
     for (int i = 0; i < n; ++i)
     {
-        r.flux[static_cast<size_t> (i)] = v.process (cfg) - v.restingFlux();
+        v.process (cfg, os);
+        // The tests measure the transducer's own output, so they take the last
+        // oversampled point rather than running the engine's decimator.
+        r.flux[static_cast<size_t> (i)] = os[RhodesVoice::kOver - 1] - v.restingFlux();
         r.tip[static_cast<size_t> (i)]  = v.tipDisplacement();
         r.tipPeakMm = std::max (r.tipPeakMm, std::abs (r.tip[static_cast<size_t> (i)]) * 1.0e3);
         r.fluxPeak  = std::max (r.fluxPeak, std::abs (r.flux[static_cast<size_t> (i)]));
@@ -592,9 +596,11 @@ static void testNothingGrows()
                     double early = 0.0, late = 0.0, peak = 0.0;
                     bool finite = true;
                     const int total = static_cast<int> (kFs * 20.0);
+                    double os2[RhodesVoice::kOver];
                     for (int i = 0; i < total; ++i)
                     {
-                        const double x = v.process (cfg) - v.restingFlux();
+                        v.process (cfg, os2);
+                        const double x = os2[RhodesVoice::kOver - 1] - v.restingFlux();
                         if (! std::isfinite (x)) { finite = false; break; }
                         peak = std::max (peak, std::abs (x));
                         if (i > static_cast<int> (kFs * 0.5) && i < static_cast<int> (kFs * 1.5))

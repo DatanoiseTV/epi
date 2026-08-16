@@ -30,3 +30,6 @@ skills-lock.json
 
 # Legacy doobie promo material kept on disk, not part of this repo
 videos/
+
+# Rendered demo audio (regenerate with tools/epi_render.cpp)
+demos/

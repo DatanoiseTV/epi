@@ -179,6 +179,7 @@ public:
 
         sys.clear();
         sys.setNumModes (kNumModes);
+        for (int i = 0; i < 3; ++i) { vHist[i] = 0.0; hHist[i] = 0.0; }
         configure (cfg);
 
         // A Rhodes hammer arrives somewhere between about a tenth of a metre
@@ -199,33 +200,38 @@ public:
     void setPedal (bool down) { pedal = down; }
 
     // ---- audio ------------------------------------------------------------
-    // Returns the flux the coil sees. Differentiation and filtering happen
-    // downstream, where the real instrument has one pickup rail and one
-    // preamp shared by every note.
-    double process (const Config& cfg)
+    // Advances the mechanics one sample and writes kOver oversampled flux
+    // values for the caller to sum and decimate.
+    //
+    // Why the transducer runs faster than the mechanics: the tine's motion is
+    // band-limited -- its highest live mode is well below Nyquist by
+    // construction -- but the FIELD it moves through is strongly curved, and a
+    // curved function of a sine makes harmonics without limit. At an 82 Hz
+    // note the field is still producing meaningful content at its three
+    // hundredth harmonic, and every one of those above Nyquist folds back to a
+    // frequency that has nothing to do with the note. That folded content is
+    // not distortion in any musical sense; it is the buzz and the "weird
+    // harmonics" of an aliased nonlinearity, and no amount of work on the
+    // magnet's shape removes it.
+    //
+    // So the mechanics are stepped once and the tip's path between this sample
+    // and the last is reconstructed -- legitimately, because it is band-limited
+    // -- at kOver points, the field is evaluated at each, and the caller
+    // decimates. The modal system, which is the expensive part, still runs at
+    // the host rate.
+    static constexpr int kOver = 4;
+
+    void process (const Config& cfg, double* fluxOut)
     {
-        if (! sounding) return restFlux;
+        if (! sounding)
+        {
+            for (int k = 0; k < kOver; ++k) fluxOut[k] = restFlux;
+            return;
+        }
 
         // -- hammer ---------------------------------------------------------
         if (hammer.isActive())
         {
-            // What the tip can actually feel.
-            //
-            // A hammer tip is a compliant blob a millimetre or two across. It
-            // cannot follow a ripple whose wavelength is shorter than itself,
-            // and it has mass of its own, so the surface it meets is a
-            // spatially and temporally averaged one -- not the sum of every
-            // mode the beam can support up to Nyquist.
-            //
-            // Feeding it the raw sum is not merely imprecise, it is unstable.
-            // A mode near Nyquist contributes a velocity proportional to its
-            // frequency, so the Hunt-Crossley damping term swings violently,
-            // the contact force is driven to zero early, and the contact
-            // collapses to a few tenths of a millisecond -- which is a
-            // broadband impulse that excites those same high modes harder
-            // still. The symptom is a cliff partway up the keyboard whose
-            // position MOVES WITH THE SAMPLE RATE, which is how it was
-            // identified: at 96 kHz it sat at note 72, at 48 kHz at note 60.
             const double u = sys.displacementAt (shapeStrikeV);
             const double v = sys.velocityAt (shapeStrikeV);
             const double f = hammer.tick (u, v, hammerCfg);
@@ -244,19 +250,11 @@ public:
             }
         }
 
-        // -- quadratised terms ----------------------------------------------
         updateStretchTerm();
-
-        // -- advance ---------------------------------------------------------
         sys.tick();
 
-        // -- damper ----------------------------------------------------------
-        // Felt landing on steel is a contact loss applied every sample, not an
-        // amplitude envelope: a damped tine keeps its partial structure while
-        // it dies, an enveloped one does not.
         if (! held && ! pedal) applyDamper();
 
-        // -- housekeeping, at control rate ------------------------------------
         if (++controlCounter >= kControlDecim)
         {
             controlCounter = 0;
@@ -268,20 +266,32 @@ public:
             }
         }
 
-        // -- transduction -----------------------------------------------------
-        const double vv = sys.displacementAt (shapeTipV);
-        const double hh = sys.displacementAt (shapeTipH);
-        lastTipV = vv;
-        lastTipH = hh;
+        // -- transduction, oversampled ----------------------------------------
+        const double vNow = sys.displacementAt (shapeTipV);
+        const double hNow = sys.displacementAt (shapeTipH);
 
-        // The tip is on the end of a beam, so a vertical swing also brings it
-        // very slightly closer to the magnet: it travels on an arc, not a
-        // straight line (DAFx-17, Eq. 8). Small, but it is why the waveform is
-        // not quite symmetric even with the tine perfectly centred.
-        const double arc = (vv * vv) / (2.0 * std::max (1.0e-4, tineLength));
-        const double gap = std::max (0.25e-3, staticGap + hh - arc);
+        for (int k = 0; k < kOver; ++k)
+        {
+            // Catmull-Rom through the last four samples of the tip's path.
+            const double t = static_cast<double> (k + 1) / kOver;
+            const double vv = hermite (vHist[0], vHist[1], vHist[2], vNow, t);
+            const double hh = hermite (hHist[0], hHist[1], hHist[2], hNow, t);
 
-        return field != nullptr ? field->flux (staticOffset + vv, gap) : 0.0;
+            // The tip is on the end of a beam, so a vertical swing also brings
+            // it very slightly closer to the magnet: it travels on an arc, not
+            // a straight line. Small, but it is why the waveform is not quite
+            // symmetric even with the tine perfectly centred.
+            const double arc = (vv * vv) / (2.0 * std::max (1.0e-4, tineLength));
+            const double gap = std::max (0.25e-3, staticGap + hh - arc);
+
+            fluxOut[k] = field != nullptr ? field->flux (staticOffset + vv, gap) : 0.0;
+        }
+
+        vHist[0] = vHist[1]; vHist[1] = vHist[2]; vHist[2] = vNow;
+        hHist[0] = hHist[1]; hHist[1] = hHist[2]; hHist[2] = hNow;
+
+        lastTipV = vNow;
+        lastTipH = hNow;
     }
 
     // The flux with the tine at rest. Subtracted downstream so the
@@ -293,6 +303,15 @@ public:
 
 private:
     static constexpr int kControlDecim = 32;
+
+    static double hermite (double y0, double y1, double y2, double y3, double t)
+    {
+        const double c0 = y1;
+        const double c1 = 0.5 * (y2 - y0);
+        const double c2 = y0 - 2.5 * y1 + 2.0 * y2 - 0.5 * y3;
+        const double c3 = 0.5 * (y3 - y0) + 1.5 * (y1 - y2);
+        return ((c3 * t + c2) * t + c1) * t + c0;
+    }
 
     // Neoprene hammer tip, contact width. Falaize & Helie use 1 cm on a 7.83 cm
     // Rhodes tine; the tip does not change size across the keyboard, so the
@@ -473,9 +492,14 @@ private:
             // The tine is round but not perfectly so, and it is clamped in a
             // block that is stiffer one way than the other. A few cents of
             // split between the polarisations is what makes the tip orbit
-            // precess instead of closing on itself. The horizontal set is not
-            // bolted through the joint, so it takes no trim.
-            sys.setMode (kH0 + m, tineFreq[m] * 1.004, tineT60[m] * 0.85, modalMass);
+            // precess instead of closing on itself.
+            //
+            // It takes the same trim as the vertical set: it is the same piece
+            // of steel, and the joint stiffens it too. Trimming only one of
+            // them left the two polarisations nearly a semitone apart, which a
+            // listener hears as the note beating against itself rather than as
+            // the slow ellipse it should be.
+            sys.setMode (kH0 + m, tineFreq[m] * trim * 1.004, tineT60[m] * 0.85, modalMass);
         }
 
         // ---- tonebar --------------------------------------------------------
@@ -643,8 +667,36 @@ private:
         staticGap    = 0.6e-3 + 4.4e-3 * std::clamp (cfg.pickupGapNorm, 0.0, 1.0);
         restFlux     = field != nullptr ? field->flux (staticOffset, staticGap) : 0.0;
 
-        // EA/L for the stretching term, and the taste control on top of it.
-        stretchEA   = kSpringSteel.youngs * area / std::max (1.0e-4, tineLength);
+        // The stretching term, and why it is a small fraction of EA/L rather
+        // than EA/L itself.
+        //
+        // The Kirchhoff term Pfeifle carries assumes bending the beam also
+        // STRETCHES it, which is true of a string, or of a beam held at both
+        // ends. A tine is held at one end and free at the other, and a free end
+        // simply draws inward as the beam bends. It cannot sustain the axial
+        // tension the full term assumes.
+        //
+        // Left at full strength the error is not subtle: it put a fortissimo
+        // low E forty-six cents sharp at the strike, gliding back to pitch over
+        // a second and a half as the note decayed. In a chord, where every note
+        // glides by a different amount, that is heard as the whole instrument
+        // phasing and detuning against itself -- which is exactly what it
+        // sounded like.
+        //
+        // What is left is the residual constraint that is really there: the
+        // tine is shrunk into an aluminium block rather than pinned, and it
+        // carries a tuning spring part way along. That is a few percent of full
+        // axial restraint, and it produces the few cents of downward glide a
+        // real tine shows as it decays, rather than a quarter tone.
+        //
+        // (The larger nonlinearity of a truly inextensional cantilever is in
+        // the curvature and the axial inertia, not the membrane, and for the
+        // first mode it SOFTENS rather than stiffens. It is not modelled here;
+        // this term is deliberately small enough that the distinction stays
+        // below the level anybody could hear.)
+        constexpr double kAxialRestraint = 0.05;
+        stretchEA   = kAxialRestraint * kSpringSteel.youngs * area
+                    / std::max (1.0e-4, tineLength);
         stretchGain = std::clamp (cfg.nonlinearity, 0.0, 1.0);
 
         configured = true;
@@ -778,6 +830,7 @@ private:
     int  note = 60;
     bool sounding = false, held = false, pedal = false, configured = false;
     double lastTipV = 0.0, lastTipH = 0.0;
+    double vHist[3] {}, hHist[3] {};
     int  controlCounter = 0;
     Rng  rng { 0x12345u };
 };
