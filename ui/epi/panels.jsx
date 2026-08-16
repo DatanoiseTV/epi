@@ -95,6 +95,12 @@ function AmpPanel() {
       <div className="krow">
         <PKnob id="tremRate" alt />
         <PKnob id="tremDepth" alt />
+        <PKnob id="tremStereo" alt />
+      </div>
+      {/* Whether the two photocells are wired in opposition or together is the
+          whole difference between the panner a Rhodes calls vibrato and the
+          amplitude tremolo everyone else means by the word. */}
+      <div className="krow">
         <PKnob id="cabMix" alt />
       </div>
       <div className="bars">
@@ -111,6 +117,15 @@ function OutputPanel() {
   return (
     <div className="panel">
       <PHead title="Output" meta={(lv.voices || 0) + ' voices'} />
+      {/* Neither of these is in the instrument. A Rhodes through a phaser is
+          one of the sounds it is known for, so it is here -- after the speaker,
+          as an effect, not pretending to be part of the physics. */}
+      <div className="krow">
+        <PKnob id="phaserMix" alt />
+        <PKnob id="phaserRate" alt />
+        <PKnob id="phaserDepth" alt />
+        <PKnob id="phaserFb" alt />
+      </div>
       <div className="krow">
         <PKnob id="spaceMix" />
         <PKnob id="spaceSize" />

@@ -47,6 +47,11 @@ void EpiEngine::prepare (double sampleRate, int)
     decimL.prepare (sampleRate);
     decimR.prepare (sampleRate);
     vibrato.prepare (sampleRate);
+    phaserL.prepare (sampleRate);
+    phaserR.prepare (sampleRate);
+    // A quarter cycle apart, which is what makes the notches move across the
+    // pair rather than in step.
+    phaserR.setPhaseOffset (0.25);
 
     publishField();
     reset();
@@ -72,6 +77,8 @@ void EpiEngine::reset()
     vibrato.reset();
     cabinetL.reset();
     cabinetR.reset();
+    phaserL.reset();
+    phaserR.reset();
     numActive.store (0, std::memory_order_relaxed);
 }
 
@@ -215,6 +222,9 @@ void EpiEngine::process (float* outL, float* outR, int numSamples,
     preamp.setTone (p.bassDb, p.trebleDb, p.preampDrive);
     vibrato.setRate (p.tremRate);
     vibrato.setDepth (p.tremDepth);
+    vibrato.setStereo (p.tremStereo);
+    phaserL.setParams (p.phaserRate, p.phaserDepth, p.phaserFb, p.phaserMix);
+    phaserR.setParams (p.phaserRate, p.phaserDepth, p.phaserFb, p.phaserMix);
     cabinetL.setMix (p.cabMix);
     cabinetR.setMix (p.cabMix);
 
@@ -327,6 +337,14 @@ void EpiEngine::process (float* outL, float* outR, int numSamples,
 
         double l = decimL.process (osL);
         double r = decimR.process (osR);
+
+        // The phaser sits between the speaker and the room, which is where a
+        // pedal in front of an amp effectively lands once the amp is modelled.
+        if (p.phaserMix > 0.0f)
+        {
+            l = phaserL.process (l);
+            r = phaserR.process (r);
+        }
 
         // The room goes after the speaker, because that is where it is.
         if (p.spaceMix > 0.0f)

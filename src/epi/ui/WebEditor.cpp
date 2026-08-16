@@ -30,7 +30,8 @@ namespace
         "velCurve", "hammerHard", "hammerMass", "escapement", "strikeNoise", "damperGrip",
         "tipMass", "resDamp", "barCouple", "barTune", "bodyMix", "nonlinAmt",
         "pickupPos", "pickupDist", "coilFreq", "coilQ", "coilSat",
-        "preampDrive", "bass", "treble", "tremRate", "tremDepth", "cabMix",
+        "preampDrive", "bass", "treble", "tremRate", "tremDepth", "tremStereo", "cabMix",
+        "phaserMix", "phaserRate", "phaserDepth", "phaserFb",
         "spaceMix", "spaceSize", "outGain",
     };
     constexpr const char* kBoolIds[]   = { };

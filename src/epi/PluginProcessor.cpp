@@ -93,7 +93,12 @@ epi::EngineParams EpiAudioProcessor::buildEngineParams() const
     p.trebleDb    = raw (treble);
     p.tremRate    = raw (tremRate);
     p.tremDepth   = raw (tremDepth);
+    p.tremStereo  = raw (tremStereo);
     p.cabMix      = raw (cabMix);
+    p.phaserMix   = raw (phaserMix);
+    p.phaserRate  = raw (phaserRate);
+    p.phaserDepth = raw (phaserDepth);
+    p.phaserFb    = raw (phaserFb);
 
     p.spaceMix   = raw (spaceMix);
     p.spaceSize  = raw (spaceSize);

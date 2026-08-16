@@ -216,6 +216,23 @@ int main (int argc, char** argv)
         // that falls out of the model rather than being dialled in.
         p.tremRate = 11.0f;
         render (s, p, dir + "/06-vibrato-fast.wav", fs);
+
+        // The same modulation with the two photocells wired together instead
+        // of in opposition: not a pan any more, a true amplitude tremolo.
+        p.tremRate   = 5.5f;
+        p.tremStereo = 0.0f;
+        render (s, p, dir + "/06b-tremolo-amplitude.wav", fs);
+        p.tremStereo = 1.0f;
+        p.tremDepth  = 0.0f;
+
+        // And the phaser, which is not in the instrument and is most of what
+        // people picture when they picture this instrument.
+        p.phaserMix   = 0.55f;
+        p.phaserRate  = 0.35f;
+        p.phaserDepth = 0.80f;
+        p.phaserFb    = 0.62f;
+        render (s, p, dir + "/06c-phaser.wav", fs);
+        p.phaserMix = 0.0f;
     }
 
     // ---- 6. A short piece, so it can be judged as an instrument -------------

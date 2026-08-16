@@ -239,6 +239,19 @@ public:
     void setRate (double hz)   { rate = std::clamp (hz, 0.1, 30.0); }
     void setDepth (double d)   { depth = std::clamp (d, 0.0, 1.0); }
 
+    // How the two photocells are wired, which is the only difference between
+    // the two effects people mean by these words.
+    //
+    // In opposition, one cell darkens as the other lightens and the note is
+    // panned across the pair of speaker cabinets: that is what a Rhodes calls
+    // vibrato, and nothing about it modulates pitch. Wired together they dim
+    // and brighten as one, and the result is a true amplitude tremolo -- which
+    // is what a Wurlitzer does, and what everyone else means by the word.
+    //
+    // Continuous between the two, because there is nothing discrete about it:
+    // it is a wiring ratio, and part way is a real setting.
+    void setStereo (double s) { stereo = std::clamp (s, 0.0, 1.0); }
+
     void process (double x, double& l, double& r)
     {
         phase += rate / fs;
@@ -257,7 +270,8 @@ public:
         // Two photocells, driven in opposition, each with its own asymmetric
         // lag. This is where the rate dependence comes from: at a fast rate the
         // slow side never finishes decaying, so the channels never separate.
-        const double tgtA = tri, tgtB = 1.0 - tri;
+        const double tgtA = tri;
+        const double tgtB = stereo * (1.0 - tri) + (1.0 - stereo) * tri;
         envA += (tgtA > envA ? aAtk : aDec) * (tgtA - envA);
         envB += (tgtB > envB ? aAtk : aDec) * (tgtB - envB);
 
@@ -268,7 +282,7 @@ public:
     }
 
 private:
-    double fs = 48000.0, rate = 5.0, depth = 0.0;
+    double fs = 48000.0, rate = 5.0, depth = 0.0, stereo = 1.0;
     double phase = 0.0, envA = 1.0, envB = 0.0;
     double aAtk = 0.1, aDec = 0.01;
 };

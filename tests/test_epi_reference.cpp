@@ -691,7 +691,12 @@ static void sectionStructural()
             { "treble",      &EngineParams::trebleDb,  -12.0f, 12.0f },
             { "tremRate",    &EngineParams::tremRate,    0.5f, 9.0f },
             { "tremDepth",   &EngineParams::tremDepth,   0.0f, 1.0f },
+            { "tremStereo",  &EngineParams::tremStereo,  0.0f, 1.0f },
             { "cabMix",      &EngineParams::cabMix,      0.0f, 1.0f },
+            { "phaserMix",   &EngineParams::phaserMix,   0.0f, 1.0f },
+            { "phaserRate",  &EngineParams::phaserRate,  0.05f, 6.0f },
+            { "phaserDepth", &EngineParams::phaserDepth, 0.0f, 1.0f },
+            { "phaserFb",    &EngineParams::phaserFb,    0.0f, 0.9f },
             { "spaceMix",    &EngineParams::spaceMix,    0.0f, 1.0f },
             { "spaceSize",   &EngineParams::spaceSize,   0.0f, 1.0f },
         };
@@ -716,9 +721,11 @@ static void sectionStructural()
             e.prepare (kFs, block);
 
             EngineParams p = referenceParams();
-            p.tremDepth = 0.5f;
-            p.spaceMix  = 0.3f;
-            p.cabMix    = 0.5f;
+            p.tremDepth  = 0.5f;
+            p.spaceMix   = 0.3f;
+            p.cabMix     = 0.5f;
+            p.phaserMix  = 0.5f;   // or the phaser's own controls read as dead
+            p.tremStereo = 0.7f;
             p.*(k.f) = from;
 
             std::vector<float> L (static_cast<std::size_t> (N), 0.0f);

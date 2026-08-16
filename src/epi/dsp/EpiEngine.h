@@ -13,6 +13,7 @@
 #pragma once
 
 #include "ActionNoise.h"
+#include "Effects.h"
 #include "Harp.h"
 #include "OutputChain.h"
 #include "PickupMagnetic.h"
@@ -72,7 +73,14 @@ struct EngineParams
     float trebleDb    = 0.0f;
     float tremRate    = 5.5f;
     float tremDepth   = 0.0f;
+    float tremStereo  = 1.0f;   // 1 = the Rhodes panner, 0 = amplitude tremolo
     float cabMix      = 0.5f;
+
+    // Phaser. Not part of the instrument; see Effects.h.
+    float phaserMix   = 0.0f;
+    float phaserRate  = 0.4f;
+    float phaserDepth = 0.7f;
+    float phaserFb    = 0.5f;
 
     // Output
     float spaceMix   = 0.15f;
@@ -189,6 +197,7 @@ private:
     SuitcasePreamp preamp;
     SuitcaseVibrato vibrato;
     Cabinet cabinetL, cabinetR;
+    Phaser phaserL, phaserR;
     Decimator decimL, decimR;
     Room room;
     float lastSpaceSize = -1.0f;

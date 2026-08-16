@@ -75,7 +75,12 @@ namespace epi::ids
     inline constexpr const char* treble      = "treble";      // dB
     inline constexpr const char* tremRate    = "tremRate";    // Hz
     inline constexpr const char* tremDepth   = "tremDepth";   // 0..1
+    inline constexpr const char* tremStereo  = "tremStereo";  // 0..1
     inline constexpr const char* cabMix      = "cabMix";      // 0..1
+    inline constexpr const char* phaserMix   = "phaserMix";   // 0..1
+    inline constexpr const char* phaserRate  = "phaserRate";  // Hz
+    inline constexpr const char* phaserDepth = "phaserDepth"; // 0..1
+    inline constexpr const char* phaserFb    = "phaserFb";    // 0..1
 
     // ---- Output -------------------------------------------------------------
     inline constexpr const char* spaceMix  = "spaceMix";  // 0..1
@@ -171,7 +176,26 @@ namespace epi::ids
                                       attrs ([] (float v, int) { return juce::String (v, 2) + " Hz"; })));
         }
         unit (tremDepth, "Tremolo", 0.0f);
+        // At 1 the two photocells run in opposition and the note is panned
+        // across the speaker pair, which is what a Rhodes calls vibrato. At 0
+        // they run together and it is a true amplitude tremolo.
+        add (std::make_unique<P> (juce::ParameterID { tremStereo, 1 }, "Trem Width",
+                                  Rng { 0.0f, 1.0f, 0.0f }, 1.0f,
+                                  attrs ([] (float v, int)
+                                  {
+                                      return v > 0.99f ? juce::String ("Pan")
+                                           : v < 0.01f ? juce::String ("Amplitude")
+                                           : juce::String (juce::roundToInt (v * 100.0f)) + "% pan";
+                                  })));
         unit (cabMix,    "Cabinet", 0.5f);
+
+        // ---- Phaser ---------------------------------------------------------
+        unit (phaserMix,   "Phaser",       0.0f);
+        add (std::make_unique<P> (juce::ParameterID { phaserRate, 1 }, "Phaser Rate",
+                                  Rng { 0.02f, 8.0f, 0.0f, 0.35f }, 0.40f,
+                                  attrs ([] (float v, int) { return juce::String (v, 2) + " Hz"; })));
+        unit (phaserDepth, "Phaser Depth", 0.70f);
+        unit (phaserFb,    "Phaser Res",   0.50f);
 
         // ---- Output ---------------------------------------------------------
         unit (spaceMix,  "Space",      0.15f);
