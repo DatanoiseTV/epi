@@ -12,7 +12,12 @@
 
 #include "PluginProcessor.h"
 #include "ParameterIDs.h"
+#include "presets/FactoryPresets.h"
 #include "ui/WebEditor.h"
+
+#ifndef DIDGE_VERSION
+ #define DIDGE_VERSION "dev"   // set by CMake on the plugin target
+#endif
 
 namespace
 {
@@ -24,7 +29,9 @@ DidgeAudioProcessor::DidgeAudioProcessor()
     : AudioProcessor (BusesProperties()
                           .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
       apvts (*this, nullptr, "PARAMS", didge::ids::createParameterLayout()),
-      presetManager (apvts)
+      presetManager (apvts,
+                     { "Didge", "DidgePreset", DIDGE_VERSION },
+                     didge::makeFactoryPresets())
 {
     events.reserve (256);
     presetManager.setPostLoadHook ([this] { snapshotCurrentParams(); });

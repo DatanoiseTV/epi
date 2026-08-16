@@ -14,7 +14,7 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "dsp/DidgeEngine.h"
-#include "presets/PresetManager.h"
+#include "common/PresetManager.h"
 #include <unordered_map>
 #include <vector>
 
@@ -50,7 +50,7 @@ public:
     void setStateInformation (const void* data, int sizeInBytes) override;
 
     juce::AudioProcessorValueTreeState& getValueTreeState() { return apvts; }
-    PresetManager& getPresetManager() { return presetManager; }
+    epicommon::PresetManager& getPresetManager() { return presetManager; }
 
     didge::DidgeEngine&       getEngine()       { return engine; }
     const didge::DidgeEngine& getEngine() const { return engine; }
@@ -73,7 +73,7 @@ private:
 
     juce::AudioProcessorValueTreeState apvts;
     didge::DidgeEngine engine;
-    PresetManager presetManager;
+    epicommon::PresetManager presetManager;
 
     std::vector<didge::NoteEvent> events;
     std::vector<float> monoScratch;   // mono-host fold-down buffer

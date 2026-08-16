@@ -12,6 +12,8 @@
 
 #pragma once
 
+#include "../common/WebViewSupport.h"
+
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_gui_extra/juce_gui_extra.h>
 #include <memory>
@@ -23,11 +25,14 @@ namespace didge
 
 // JUCE 8 WebView-based editor. Hosts a WebBrowserComponent that loads the
 // vendored HTML/CSS/JSX bundle from BinaryData; every APVTS parameter is
-// two-way bound to its matching DOM control via a WebSliderRelay plus the
-// matching parameter attachment (every Didge parameter is continuous, so no
-// toggle or combo relays are needed). Live metering, the model's own state —
-// breath, lip opening, bore profile, vocal tract — and preset state are
-// pushed to the JS side via emitEventIfBrowserIsVisible on a 60 Hz UI timer.
+// two-way bound to its matching DOM control through the relay/attachment pair
+// for its type. Live metering, the model's own state — breath, lip opening,
+// bore profile, vocal tract — and preset state are pushed to the JS side via
+// emitEventIfBrowserIsVisible on the UI timer.
+//
+// The parts that are not specific to a didgeridoo — serving the bundle,
+// owning the relays, and noticing a dead WebView — live in
+// common/WebViewSupport.h and are shared with the other plugins here.
 class WebEditor : public juce::AudioProcessorEditor,
                   private juce::Timer
 {
@@ -39,41 +44,29 @@ public:
     void resized() override;
     bool keyPressed (const juce::KeyPress& k) override;
 
+    // The parameter ids this editor claims. Exposed so a test can assert the
+    // list and the parameter layout agree — a typo here is otherwise a dead
+    // control at runtime, not a compile error.
+    static juce::StringArray boundParameterIds();
+
 private:
     void timerCallback() override;
     void emitLevels();
     void emitPresetInfo();
+    void reloadWebView();
+    void showFallback (const juce::String& jsErrorIfAny);
 
     ::DidgeAudioProcessor& didgeProcessor;
 
-    // Relay storage. CRITICAL: the relays are WebViewLifetimeListeners on the
-    // browser; the browser's destructor walks its listener list, so the
-    // relays MUST outlive the browser. Members destruct in reverse
-    // declaration order — bindings are declared BEFORE `webView` so they are
-    // destroyed after it.
-    struct SliderBinding { std::unique_ptr<juce::WebSliderRelay>       relay; std::unique_ptr<juce::WebSliderParameterAttachment>       attach; };
-    struct ToggleBinding { std::unique_ptr<juce::WebToggleButtonRelay> relay; std::unique_ptr<juce::WebToggleButtonParameterAttachment> attach; };
-    struct ComboBinding  { std::unique_ptr<juce::WebComboBoxRelay>     relay; std::unique_ptr<juce::WebComboBoxParameterAttachment>     attach; };
-
-    std::vector<SliderBinding> sliderBindings;
-    std::vector<ToggleBinding> toggleBindings;
-    std::vector<ComboBinding>  comboBindings;
-
+    // CRITICAL: the relays are WebViewLifetimeListeners on the browser, and
+    // the browser's destructor walks its listener list — so they must outlive
+    // it. Members destruct in reverse declaration order, so `relays` is
+    // declared BEFORE `webView`.
+    epicommon::WebParamRelays relays;
     std::unique_ptr<juce::WebBrowserComponent> webView;
 
-    // WebView health watchdog: if the page doesn't set window.__didgeReady
-    // within the deadline, show a JUCE-side fallback panel with a Reload
-    // button (a wedged WKWebView is otherwise a silent grey window).
-    class WebViewFallback;
-    std::unique_ptr<WebViewFallback> fallback;
-    bool webViewHealthy       = false;
-    int  healthTicksRemaining = 0;
-    int  healthPollEveryTicks = 0;
-
-    void startHealthWatchdog();
-    void pollHealthOnce();
-    void onWebViewWedged (const juce::String& jsErrorIfAny);
-    void reloadWebView();
+    epicommon::WebViewWatchdog watchdog;
+    std::unique_ptr<epicommon::WebViewFallback> fallback;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (WebEditor)
 };

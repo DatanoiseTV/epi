@@ -16,86 +16,17 @@
 
 #include <DidgeUIData.h>
 
-#include <optional>
-#include <vector>
-#include <cstddef>
-#include <iostream>
+#include <cmath>
 
 namespace didge
 {
 namespace
 {
-    // ----- BinaryData lookup ------------------------------------------------
-    // juce_add_binary_data flattens each source file into NAME + NAMESize.
-    // originalFilenames maps a URL path back to a resource.
-    struct ResourceTable
-    {
-        struct Entry { juce::String filename; const char* data; int size; };
-        std::vector<Entry> entries;
-
-        ResourceTable()
-        {
-            for (int i = 0; i < DidgeUIData::namedResourceListSize; ++i)
-            {
-                const char* name = DidgeUIData::namedResourceList[i];
-                int size = 0;
-                const char* data = DidgeUIData::getNamedResource (name, size);
-                if (data == nullptr) continue;
-                const juce::String original (DidgeUIData::getNamedResourceOriginalFilename (name));
-                entries.push_back ({ original, data, size });
-            }
-        }
-
-        std::optional<juce::WebBrowserComponent::Resource> lookup (const juce::String& url) const
-        {
-            juce::String name = url.startsWithChar ('/') ? url.substring (1) : url;
-            if (name.isEmpty()) name = "index.html";
-            const auto slash = name.lastIndexOfChar ('/');
-            if (slash >= 0) name = name.substring (slash + 1);
-            const auto q = name.indexOfChar ('?');
-            if (q >= 0) name = name.substring (0, q);
-
-            for (const auto& e : entries)
-            {
-                if (e.filename == name)
-                {
-                    juce::WebBrowserComponent::Resource r;
-                    r.data.assign (reinterpret_cast<const std::byte*> (e.data),
-                                   reinterpret_cast<const std::byte*> (e.data) + (size_t) e.size);
-                    r.mimeType = mimeForName (name);
-                    return r;
-                }
-            }
-            // 404: surfaced on stderr so a terminal-launched standalone shows
-            // missing-resource bugs (the blank-window failure class) directly.
-            std::cerr << "Didge WebEditor: resource not found — \"" << url
-                      << "\" (looked up as \"" << name << "\")" << std::endl;
-            return std::nullopt;
-        }
-
-        static juce::String mimeForName (const juce::String& name)
-        {
-            if (name.endsWith (".html"))  return "text/html";
-            if (name.endsWith (".css"))   return "text/css";
-            if (name.endsWith (".js") ||
-                name.endsWith (".jsx") ||
-                name.endsWith (".mjs"))   return "application/javascript";
-            if (name.endsWith (".svg"))   return "image/svg+xml";
-            if (name.endsWith (".png"))   return "image/png";
-            if (name.endsWith (".json"))  return "application/json";
-            return "application/octet-stream";
-        }
-    };
-
-    static ResourceTable& resourceTable()
-    {
-        static ResourceTable t;
-        return t;
-    }
-
     // ----- Param wiring -----------------------------------------------------
     // Must match the IDs in src/ParameterIDs.h and the PARAM ids used by the
-    // JS side (ui/src). A typo here becomes a dead control at runtime.
+    // JS side (ui/src). A typo here would become a dead control at runtime, so
+    // testEditorBindsEveryParameter in tests/test_state.cpp checks this list
+    // against the parameter layout.
     constexpr const char* kFloatIds[] = {
         "pressure", "attack", "release", "vibRate", "vibDepth", "breathNoise",
         "decay", "sustain", "velAmount", "humanize",
@@ -112,11 +43,39 @@ namespace
     // the editor constrains resize to the same aspect so there are no borders.
     constexpr int kDesignW = 1280;
     constexpr int kDesignH = 830;
+
+    // The browser side already animates from requestAnimationFrame at the
+    // display's own rate, so this is what actually decides how current the
+    // drawing is: at 30 Hz the meters and the spectrum visibly step.
+    constexpr int kTelemetryHz = 60;
+
+    epicommon::WebResources& resources()
+    {
+        static epicommon::WebResources t {
+            { DidgeUIData::namedResourceListSize,
+              DidgeUIData::namedResourceList,
+              DidgeUIData::getNamedResource,
+              DidgeUIData::getNamedResourceOriginalFilename },
+            "Didge" };
+        return t;
+    }
+}
+
+juce::StringArray WebEditor::boundParameterIds()
+{
+    juce::StringArray ids;
+    for (auto id : kFloatIds)  ids.add (id);
+    for (auto id : kBoolIds)   ids.add (id);
+    for (auto id : kChoiceIds) ids.add (id);
+    return ids;
 }
 
 // ============================================================================
 WebEditor::WebEditor (::DidgeAudioProcessor& proc)
-    : juce::AudioProcessorEditor (&proc), didgeProcessor (proc)
+    : juce::AudioProcessorEditor (&proc),
+      didgeProcessor (proc),
+      watchdog ({ "__didgeReady", "__didgeMountError" },
+                [this] (juce::String diag) { showFallback (diag); })
 {
     setResizable (true, true);
     setWantsKeyboardFocus (true);
@@ -124,35 +83,10 @@ WebEditor::WebEditor (::DidgeAudioProcessor& proc)
     if (auto* c = getConstrainer())
         c->setFixedAspectRatio ((double) kDesignW / (double) kDesignH);
 
-   #if JUCE_LINUX
-    // JUCE 8 WebKit is an X11 client; force GTK onto X11 so the XEmbed
-    // reparent into the host window works under Wayland sessions.
-    ::setenv ("GDK_BACKEND", "x11", 0);
-    // Point JUCE's WebKit helper extraction at an exec-allowed, user-owned
-    // dir ($XDG_RUNTIME_DIR, fallback ~/.cache/didge) — /tmp can be noexec.
-    if (::getenv ("TMPDIR") == nullptr)
-    {
-        juce::File chosen;
-        if (const auto* xdg = ::getenv ("XDG_RUNTIME_DIR"))
-        {
-            juce::File xdgDir { juce::String (xdg) };
-            if (xdgDir.isDirectory())
-            {
-                chosen = xdgDir.getChildFile ("didge");
-                chosen.createDirectory();
-            }
-        }
-        if (chosen == juce::File())
-        {
-            chosen = juce::File::getSpecialLocation (juce::File::userHomeDirectory)
-                        .getChildFile (".cache/didge");
-            chosen.createDirectory();
-        }
-        ::setenv ("TMPDIR", chosen.getFullPathName().toRawUTF8(), 0);
-    }
-   #endif
+    epicommon::prepareWebViewEnvironment ("Didge");
 
     auto& apvts = didgeProcessor.getValueTreeState();
+    auto& presets = didgeProcessor.getPresetManager();
 
     juce::WebBrowserComponent::Options options;
     options = options
@@ -169,7 +103,7 @@ WebEditor::WebEditor (::DidgeAudioProcessor& proc)
         .withKeepPageLoadedWhenBrowserIsHidden()
         .withNativeIntegrationEnabled (true)
         .withResourceProvider (
-            [] (const juce::String& url) { return resourceTable().lookup (url); },
+            [] (const juce::String& url) { return resources().lookup (url); },
             juce::URL (juce::WebBrowserComponent::getResourceProviderRoot()).getOrigin())
         .withUserScript ("window.DIDGE_VERSION_STR = 'v" DIDGE_VERSION " · " DIDGE_GIT_BRANCH "';")
         .withNativeFunction (juce::Identifier { "reloadUI" },
@@ -179,110 +113,58 @@ WebEditor::WebEditor (::DidgeAudioProcessor& proc)
                 complete (juce::var());
             })
         .withNativeFunction (juce::Identifier { "listFactoryPresets" },
-            [this] (const juce::Array<juce::var>&, juce::WebBrowserComponent::NativeFunctionCompletion complete)
+            [&presets] (const juce::Array<juce::var>&, juce::WebBrowserComponent::NativeFunctionCompletion complete)
             {
                 juce::Array<juce::var> arr;
-                for (const auto& n : didgeProcessor.getPresetManager().getFactoryNames())
-                    arr.add (juce::var (n));
+                for (const auto& n : presets.getFactoryNames()) arr.add (juce::var (n));
                 complete (juce::var (arr));
             })
         .withNativeFunction (juce::Identifier { "listUserPresets" },
-            [this] (const juce::Array<juce::var>&, juce::WebBrowserComponent::NativeFunctionCompletion complete)
+            [&presets] (const juce::Array<juce::var>&, juce::WebBrowserComponent::NativeFunctionCompletion complete)
             {
                 juce::Array<juce::var> arr;
-                for (const auto& n : didgeProcessor.getPresetManager().getUserNames())
-                    arr.add (juce::var (n));
+                for (const auto& n : presets.getUserNames()) arr.add (juce::var (n));
                 complete (juce::var (arr));
             })
         .withEventListener (juce::Identifier { "preset_prev" },
-            [this] (juce::var) { didgeProcessor.getPresetManager().previous(); })
+            [&presets] (juce::var) { presets.previous(); })
         .withEventListener (juce::Identifier { "preset_next" },
-            [this] (juce::var) { didgeProcessor.getPresetManager().next(); })
+            [&presets] (juce::var) { presets.next(); })
         .withEventListener (juce::Identifier { "preset_load" },
-            [this] (juce::var payload)
+            [&presets] (juce::var payload)
             {
                 const auto name = payload.getProperty ("name", juce::String()).toString();
-                if (name.isNotEmpty())
-                    didgeProcessor.getPresetManager().loadByName (name);
+                if (name.isNotEmpty()) presets.loadByName (name);
             })
         .withEventListener (juce::Identifier { "preset_save" },
-            [this] (juce::var payload)
+            [&presets] (juce::var payload)
             {
                 const auto name = payload.getProperty ("name", juce::String()).toString().trim();
-                if (name.isNotEmpty())
-                    didgeProcessor.getPresetManager().saveUser (name);
+                if (name.isNotEmpty()) presets.saveUser (name);
             })
         .withEventListener (juce::Identifier { "preset_delete" },
-            [this] (juce::var payload)
+            [&presets] (juce::var payload)
             {
                 const auto name = payload.getProperty ("name", juce::String()).toString();
-                if (name.isNotEmpty())
-                    didgeProcessor.getPresetManager().deleteUser (name);
+                if (name.isNotEmpty()) presets.deleteUser (name);
             });
 
-    sliderBindings.reserve (juce::numElementsInArray (kFloatIds));
-    toggleBindings.reserve (juce::numElementsInArray (kBoolIds));
-    comboBindings .reserve (juce::numElementsInArray (kChoiceIds));
-
-    for (auto id : kFloatIds)
-    {
-        SliderBinding b;
-        b.relay = std::make_unique<juce::WebSliderRelay> (juce::String (id));
-        options = options.withOptionsFrom (*b.relay);
-        sliderBindings.push_back (std::move (b));
-    }
-    for (auto id : kBoolIds)
-    {
-        ToggleBinding b;
-        b.relay = std::make_unique<juce::WebToggleButtonRelay> (juce::String (id));
-        options = options.withOptionsFrom (*b.relay);
-        toggleBindings.push_back (std::move (b));
-    }
-    for (auto id : kChoiceIds)
-    {
-        ComboBinding b;
-        b.relay = std::make_unique<juce::WebComboBoxRelay> (juce::String (id));
-        options = options.withOptionsFrom (*b.relay);
-        comboBindings.push_back (std::move (b));
-    }
+    relays.addToOptions (options,
+                         kFloatIds,  (int) std::size (kFloatIds),
+                         kBoolIds,   (int) std::size (kBoolIds),
+                         kChoiceIds, (int) std::size (kChoiceIds));
 
     webView = std::make_unique<juce::WebBrowserComponent> (options);
     addAndMakeVisible (*webView);
 
-    for (size_t i = 0; i < std::size (kFloatIds); ++i)
-        if (auto* p = dynamic_cast<juce::RangedAudioParameter*> (apvts.getParameter (kFloatIds[i])))
-            sliderBindings[i].attach = std::make_unique<juce::WebSliderParameterAttachment> (*p, *sliderBindings[i].relay, apvts.undoManager);
-    for (size_t i = 0; i < std::size (kBoolIds); ++i)
-        if (auto* p = dynamic_cast<juce::RangedAudioParameter*> (apvts.getParameter (kBoolIds[i])))
-            toggleBindings[i].attach = std::make_unique<juce::WebToggleButtonParameterAttachment> (*p, *toggleBindings[i].relay, apvts.undoManager);
-    for (size_t i = 0; i < std::size (kChoiceIds); ++i)
-        if (auto* p = dynamic_cast<juce::RangedAudioParameter*> (apvts.getParameter (kChoiceIds[i])))
-            comboBindings[i].attach = std::make_unique<juce::WebComboBoxParameterAttachment> (*p, *comboBindings[i].relay, apvts.undoManager);
+    relays.attachAll (apvts);
 
-    // Open at design size when the display can hold it, else the largest
-    // same-aspect box that fits ~92% of the primary display.
-    {
-        int w = kDesignW, h = kDesignH;
-        if (auto* disp = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay())
-        {
-            const auto area = disp->userBounds;
-            const int maxW = juce::roundToInt ((double) area.getWidth()  * 0.92);
-            const int maxH = juce::roundToInt ((double) area.getHeight() * 0.92);
-            w = juce::jmin (kDesignW, maxW);
-            h = juce::roundToInt ((double) w * kDesignH / kDesignW);
-            if (h > maxH) { h = maxH; w = juce::roundToInt ((double) h * kDesignW / kDesignH); }
-        }
-        setSize (w, h);
-    }
+    setBounds (epicommon::initialEditorSize (kDesignW, kDesignH));
 
     webView->goToURL (juce::WebBrowserComponent::getResourceProviderRoot() + "index.html");
     didgeProcessor.getEngine().setSpectrumEnabled (true);
-    startHealthWatchdog();
-    // 60 Hz telemetry. The browser side already animates from
-    // requestAnimationFrame at the display's own rate, so this is what
-    // actually decides how current the drawing is: at 30 Hz the meters and
-    // the spectrum visibly step.
-    startTimerHz (60);
+    watchdog.restart();
+    startTimerHz (kTelemetryHz);
 }
 
 WebEditor::~WebEditor()
@@ -291,125 +173,22 @@ WebEditor::~WebEditor()
     didgeProcessor.getEngine().setSpectrumEnabled (false);
 }
 
-// ============================================================================
-class WebEditor::WebViewFallback : public juce::Component
-{
-public:
-    explicit WebViewFallback (std::function<void()> onReload)
-        : reloadCallback (std::move (onReload))
-    {
-        reloadButton.setButtonText ("Reload UI");
-        reloadButton.onClick = [this] { if (reloadCallback) reloadCallback(); };
-        addAndMakeVisible (reloadButton);
-    }
-
-    void setDiagnostic (const juce::String& s) { diagText = s; repaint(); }
-
-    void paint (juce::Graphics& g) override
-    {
-        g.fillAll (juce::Colour (0xff07090f));
-        auto bounds = getLocalBounds().reduced (40);
-        auto card = bounds.withSizeKeepingCentre (520, 280);
-        g.setColour (juce::Colour (0xff11151f));
-        g.fillRoundedRectangle (card.toFloat(), 12.0f);
-        g.setColour (juce::Colour (0xff2a3350));
-        g.drawRoundedRectangle (card.toFloat(), 12.0f, 1.0f);
-
-        auto inner = card.reduced (24);
-        g.setColour (juce::Colour (0xff62e6ff));
-        g.setFont (juce::Font (juce::FontOptions (16.0f).withStyle ("Bold")));
-        g.drawText ("UI failed to load", inner.removeFromTop (24), juce::Justification::topLeft);
-
-        inner.removeFromTop (10);
-        g.setColour (juce::Colour (0xffb9c2d8));
-        g.setFont (juce::Font (juce::FontOptions (12.0f)));
-        g.drawFittedText (
-            "The WebView didn't reach its ready signal within 4 seconds. "
-            "Common causes: the OS killed the WebView content process, a "
-            "stale browser cache, or a JS error in a script tag. Reload "
-            "retries the navigation; if that doesn't help, fully quit the "
-            "host and reopen.",
-            inner.removeFromTop (90), juce::Justification::topLeft, 5);
-
-        inner.removeFromTop (8);
-        if (! diagText.isEmpty())
-        {
-            g.setColour (juce::Colour (0xffff8888));
-            g.setFont (juce::Font (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(),
-                                                     11.0f, juce::Font::plain)));
-            g.drawFittedText (diagText, inner.removeFromTop (80),
-                              juce::Justification::topLeft, 6);
-        }
-    }
-
-    void resized() override
-    {
-        auto bounds = getLocalBounds().reduced (40)
-                          .withSizeKeepingCentre (520, 280)
-                          .reduced (24);
-        reloadButton.setBounds (bounds.removeFromBottom (32).withWidth (120));
-    }
-
-private:
-    juce::TextButton reloadButton;
-    juce::String     diagText;
-    std::function<void()> reloadCallback;
-};
-
-void WebEditor::startHealthWatchdog()
-{
-    webViewHealthy = false;
-    healthTicksRemaining = 240;   // 4 s at 60 Hz
-    healthPollEveryTicks = 8;
-    if (fallback != nullptr && fallback->isVisible())
-        fallback->setVisible (false);
-}
-
-void WebEditor::pollHealthOnce()
-{
-    if (webView == nullptr) return;
-    webView->evaluateJavascript (
-        "(function(){"
-        "  if (window.__didgeReady === true) return 'ready';"
-        "  if (window.__didgeMountError) return 'mount-error:' + window.__didgeMountError;"
-        "  return 'pending';"
-        "})()",
-        [this] (juce::WebBrowserComponent::EvaluationResult result)
-        {
-            const juce::var* v = result.getResult();
-            if (v == nullptr || ! v->isString())
-                return;
-            const auto s = v->toString();
-            if (s == "ready")
-            {
-                webViewHealthy = true;
-                healthTicksRemaining = 0;
-                if (fallback != nullptr && fallback->isVisible())
-                    fallback->setVisible (false);
-            }
-            else if (s.startsWith ("mount-error:"))
-            {
-                onWebViewWedged ("React mount threw:\n" + s.substring (12));
-            }
-        });
-}
-
-void WebEditor::onWebViewWedged (const juce::String& jsErrorIfAny)
+void WebEditor::showFallback (const juce::String& jsErrorIfAny)
 {
     if (fallback == nullptr)
-        fallback = std::make_unique<WebViewFallback> ([this] { reloadWebView(); });
+        fallback = std::make_unique<epicommon::WebViewFallback> ([this] { reloadWebView(); });
     addAndMakeVisible (*fallback);
     fallback->setBounds (getLocalBounds());
     fallback->toFront (false);
     fallback->setDiagnostic (jsErrorIfAny);
-    healthTicksRemaining = 0;
 }
 
 void WebEditor::reloadWebView()
 {
     if (webView == nullptr) return;
+    if (fallback != nullptr) fallback->setVisible (false);
     webView->goToURL (juce::WebBrowserComponent::getResourceProviderRoot() + "index.html");
-    startHealthWatchdog();
+    watchdog.restart();
 }
 
 void WebEditor::paint (juce::Graphics& g)
@@ -438,14 +217,11 @@ bool WebEditor::keyPressed (const juce::KeyPress& k)
 
 void WebEditor::timerCallback()
 {
-    if (healthTicksRemaining > 0)
+    if (webView != nullptr)
     {
-        --healthTicksRemaining;
-        if ((healthTicksRemaining % healthPollEveryTicks) == 0)
-            pollHealthOnce();
-
-        if (healthTicksRemaining == 0 && ! webViewHealthy)
-            onWebViewWedged ({});
+        watchdog.tick (*webView, kTelemetryHz);
+        if (watchdog.isHealthy() && fallback != nullptr && fallback->isVisible())
+            fallback->setVisible (false);
     }
 
     emitLevels();

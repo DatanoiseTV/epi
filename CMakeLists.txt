@@ -42,6 +42,16 @@ if(GIT_FOUND)
 endif()
 
 # -----------------------------------------------------------------------------
+# Code shared by every plugin in this repository: the preset system and the
+# product-agnostic half of the WebView editor. Compiled into each plugin target
+# rather than built as its own library, so each one keeps its own JUCE module
+# configuration.
+# -----------------------------------------------------------------------------
+set(EPI_COMMON_SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/common/PresetManager.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/common/WebViewSupport.cpp)
+
+# -----------------------------------------------------------------------------
 # JUCE (vendored as a git submodule under external/JUCE)
 # -----------------------------------------------------------------------------
 add_subdirectory(external/JUCE)
@@ -108,8 +118,9 @@ set_target_properties(DidgeUI PROPERTIES POSITION_INDEPENDENT_CODE TRUE)
 target_sources(Didge PRIVATE
     src/PluginProcessor.cpp
     src/dsp/DidgeEngine.cpp
-    src/presets/PresetManager.cpp
-    src/ui/WebEditor.cpp)
+    src/presets/FactoryPresets.cpp
+    src/ui/WebEditor.cpp
+    ${EPI_COMMON_SOURCES})
 
 target_include_directories(Didge PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src)

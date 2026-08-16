@@ -1,5 +1,4 @@
 /*
-  Didge — physically modeled didgeridoo
   Copyright (C) 2026 DatanoiseTV
 
   This program is free software: you can redistribute it and/or modify it under
@@ -13,11 +12,20 @@
 #pragma once
 
 #include <juce_audio_processors/juce_audio_processors.h>
-#include <functional>
 
-// Manages factory and user presets on top of the APVTS. Factory presets are
-// defined in code (see PresetManager.cpp); user presets are stored as XML in
-// the platform's application-data folder so they survive plugin updates.
+#include <functional>
+#include <utility>
+#include <vector>
+
+namespace epicommon
+{
+
+// Factory and user presets on top of an APVTS, shared by every plugin in this
+// repository. Nothing here knows which instrument it is managing: the product
+// identity and the factory bank are handed in by the plugin that owns it.
+//
+// Factory presets are defined in code; user presets are XML in the platform's
+// application-data folder, so they survive plugin updates.
 class PresetManager
 {
 public:
@@ -29,7 +37,19 @@ public:
         std::vector<std::pair<juce::String, float>> values;
     };
 
-    explicit PresetManager (juce::AudioProcessorValueTreeState& state);
+    // Everything that differs between products. `folder` names the
+    // application-data subdirectory, so two plugins never share a preset
+    // directory; `treeTag` is the root element of a saved user preset.
+    struct Product
+    {
+        juce::String folder;    // e.g. "Didge"
+        juce::String treeTag;   // e.g. "DidgePreset"
+        juce::String version;   // stamped into saved presets
+    };
+
+    PresetManager (juce::AudioProcessorValueTreeState& state,
+                   Product product,
+                   std::vector<Preset> factoryBank);
 
     // Called right AFTER a preset's values have been written into APVTS.
     // Lets the processor clear its "dirty since last load" tracking.
@@ -52,14 +72,24 @@ public:
     // not a parameter and would otherwise be lost on reload.
     void setCurrentName (const juce::String& name) { currentName = name; }
 
-    static juce::File userPresetDirectory();
+    juce::File userPresetDirectory() const;
+
+    // A preset name is typed by the user and then used as a filename. Path
+    // separators, colons and the like either fail to write or escape the
+    // preset directory entirely, so they are folded to underscores before the
+    // name ever reaches the filesystem. The displayed name is unaffected --
+    // only the file it lands in.
+    static juce::String toFileName (const juce::String& presetName);
 
 private:
     void applyPreset (const Preset& preset);
     juce::StringArray allNames() const;
 
     juce::AudioProcessorValueTreeState& apvts;
+    Product product;
     std::vector<Preset> factory;
     juce::String currentName;
     std::function<void()> postLoadHook;
 };
+
+} // namespace epicommon

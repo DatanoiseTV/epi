@@ -7,6 +7,8 @@
 
 #include "PluginProcessor.h"
 #include "ParameterIDs.h"
+#include "ui/WebEditor.h"
+#include "common/PresetManager.h"
 
 #include <iostream>
 
@@ -178,6 +180,64 @@ static void testParameterOrderIsStable()
                << "\". Append new parameters at the end of the layout instead.");
 }
 
+// The editor's id lists and the parameter layout are two hand-written copies
+// of the same contract. Nothing links them at compile time: a parameter the
+// editor forgets is a control that silently does nothing, and an id the editor
+// invents is a relay with no parameter behind it. Both are indistinguishable
+// from a working plugin until someone turns that particular knob.
+static void testEditorBindsEveryParameter()
+{
+    DidgeAudioProcessor p;
+
+    juce::StringArray layout;
+    for (auto* param : p.getParameters())
+        if (auto* rp = dynamic_cast<juce::RangedAudioParameter*> (param))
+            layout.add (rp->getParameterID());
+
+    const auto bound = didge::WebEditor::boundParameterIds();
+
+    for (const auto& id : layout)
+        CHECK (bound.contains (id),
+               "parameter \"" << id << "\" exists but the editor never binds it, "
+               "so its control does nothing. Add it to kFloatIds/kBoolIds/"
+               "kChoiceIds in src/ui/WebEditor.cpp.");
+
+    for (const auto& id : bound)
+        CHECK (layout.contains (id),
+               "the editor binds \"" << id << "\", which is not a parameter. "
+               "Check for a typo against src/ParameterIDs.h.");
+
+    juce::StringArray seen;
+    for (const auto& id : bound)
+    {
+        CHECK (! seen.contains (id),
+               "the editor binds \"" << id << "\" more than once");
+        seen.add (id);
+    }
+}
+
+// Preset names reach the filesystem as filenames. A name carrying a path
+// separator either fails to write or escapes the preset directory entirely,
+// so it is folded before it gets there.
+static void testPresetNamesAreSafeAsFilenames()
+{
+    using epicommon::PresetManager;
+
+    // Separators fold to underscores, then the leading dots go, so the result
+    // cannot climb out of the preset directory or hide itself.
+    CHECK (PresetManager::toFileName ("../../etc/passwd") == "_.._etc_passwd",
+           "a relative path in a preset name was not neutralised: got \""
+           << PresetManager::toFileName ("../../etc/passwd") << "\"");
+    CHECK (! PresetManager::toFileName ("a/b\\c:d*e?f\"g<h>i|j").containsAnyOf ("/\\:*?\"<>|"),
+           "reserved filename characters survived sanitising");
+    CHECK (PresetManager::toFileName ("Mellow Tine") == "Mellow Tine",
+           "an ordinary name was altered");
+    CHECK (PresetManager::toFileName ("   ") == "Untitled",
+           "a name that sanitises away did not fall back to a usable filename");
+    CHECK (PresetManager::toFileName (".hidden") == "hidden",
+           "a leading dot was kept, which hides the preset file on Unix");
+}
+
 static void testFactoryPresets()
 {
     DidgeAudioProcessor p;
@@ -268,6 +328,8 @@ int main()
     testAllParametersRoundTrip();
     testPresetNamePersists();
     testParameterOrderIsStable();
+    testEditorBindsEveryParameter();
+    testPresetNamesAreSafeAsFilenames();
     testFactoryPresets();
     testDirtyTracking();
     testBusLayouts();
