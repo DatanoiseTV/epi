@@ -121,11 +121,6 @@ what is understood and unfixed.
 - **F2, tuning drifts to −4.3 cents** at the bottom of the compass, against a
   3-cent budget. The tine geometry is solved per note, so this is the solve and
   the assembled-fork trim disagreeing slightly, not a table with a typo.
-- **Two controls do nothing**: `strikeNoise` and `spaceMix` are declared, shown
-  on the panel, saved in factory presets and read into the engine's parameter
-  block, and the DSP never touches either. One factory preset sets `spaceMix`
-  to 0.30, so it promises a reverb that does not exist. Awaiting a decision to
-  implement or remove; row S4 catches any third one.
 - **B6, a hard bass strike's fundamental does not rise**: +0.15 dB/s against a
   measured +2.2 to +3.9. Same root cause as G2 below.
 - **G2, the bass is not rich enough relative to its own pitch**: the steady
@@ -172,6 +167,9 @@ Kept briefly because each was believed to be a defect in the model and was not:
 - "Harmonics decay at the same rate as the fundamental" — also measurement.
   The comb was cut to the analysis frequency rather than to the fundamental,
   so measuring H2 mostly measured H1 leaking through at −11.8 dB.
+- "Two controls do nothing" — `strikeNoise` and `spaceMix` were declared,
+  shown, saved in presets and read into the engine while the DSP never touched
+  either. Both are implemented now, and row S4 catches any third one.
 - "The partials are 10 cents off an exact series" and "the attack is three
   times brighter than the sustain when played softly" — both real, both one
   bug: the quiet-tine fast path held one value across all four oversampled

@@ -738,14 +738,10 @@ static void sectionStructural()
             }
             quietest = std::min (quietest, db);
         }
-        // Two are known dead and are awaiting a decision to implement or
-        // remove; a third would be a regression and fails.
-        const bool onlyKnown = (dead == "strikeNoise, spaceMix");
         row ("S4", "every control changes the sound", "all above -80 dB",
              dead.empty() ? fmt ("quietest %.0f dB", quietest)
                           : std::string ("dead: ") + dead,
-             dead.empty() ? Verdict::pass
-                          : (onlyKnown ? Verdict::knownGap : Verdict::fail));
+             dead.empty() ? Verdict::pass : Verdict::fail);
     }
 
     // The room has to decay at the rate its own control asks for. A feedback
