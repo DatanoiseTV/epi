@@ -381,10 +381,35 @@ public:
         // geometry, so it moves with it.
         if (std::abs (vNow) < linearSwing)
         {
+            // What is skipped here is the field lookup, NOT the geometry. The
+            // tip's path still has to be interpolated across the oversampled
+            // frame exactly as it is below.
+            //
+            // Holding one value across all four subsamples instead -- the
+            // obvious shortcut, and what this did -- makes the upsampled
+            // waveform a staircase, and the difference between that staircase
+            // and the real path is a sawtooth at the note's own frequency. It
+            // comes out as a flat comb of odd harmonics still at -29 dB past
+            // the thirteenth, and it is loudest on the quietest notes, because
+            // those are the ones that spend their lives near this threshold.
+            // A soft note is most of what the instrument plays.
             const double arc = (vNow * vNow) / (2.0 * std::max (1.0e-4, tineLength));
             const double gap = std::max (0.25e-3, staticGap - arc);
-            const double f = field != nullptr ? field->flux (staticOffset + vNow, gap) : 0.0;
-            for (int k = 0; k < kOver; ++k) fluxOut[k] = f;
+            const double x0  = staticOffset + vNow;
+            const double d   = 0.25 * linearSwing;
+            const double f   = field != nullptr ? field->flux (x0, gap) : 0.0;
+            // One extra lookup for the local slope. Over a span this small the
+            // field is straight, so a line through it is not an approximation
+            // that has to be justified -- it is the same claim that licenses
+            // skipping the oversampling in the first place.
+            const double s   = field != nullptr ? (field->flux (x0 + d, gap) - f) / d : 0.0;
+
+            for (int k = 0; k < kOver; ++k)
+            {
+                const double t  = static_cast<double> (k + 1) / kOver;
+                const double vv = hermite (vHist[0], vHist[1], vHist[2], vNow, t);
+                fluxOut[k] = f + s * (vv - vNow);
+            }
 
             vHist[0] = vHist[1]; vHist[1] = vHist[2]; vHist[2] = vNow;
             hHist[0] = hHist[1]; hHist[1] = hHist[2]; hHist[2] = hNow;
