@@ -187,6 +187,15 @@
     };
   }
 
+  /* UI -> C++, fire and forget. Guarded because the same page runs in a plain
+     browser with no backend behind it. */
+  function emitNative(name, payload) {
+    try {
+      if (global.__JUCE__ && global.__JUCE__.backend)
+        global.__JUCE__.backend.emitEvent(name, payload || {});
+    } catch (_) {}
+  }
+
   function useJuceSlider(id) {
     const relay = global.Juce.getSliderState(id);
     const [v, setV] = useState(relay.getNormalisedValue());

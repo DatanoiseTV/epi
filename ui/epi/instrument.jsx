@@ -63,8 +63,10 @@ function InstrumentView({ pickupPos, setPickupPos, pickupDist }) {
         const N = 26;
         for (let i = 1; i <= N; i++) {
           const u = i / N;
-          const shape = (1 - Math.cos(1.8751 * u * Math.PI / 1.8751)) * 0.5;
-          const w = Math.pow(u, 2) * (3 - 2 * u);
+          /* A clamped-free beam's first mode is flat at the clamp and steepest
+             at the tip. Smoothstep is close enough to that shape at this size
+             and costs nothing. */
+          const w = u * u * (3 - 2 * u);
           const x = TINE_X0 + (TINE_X1 - TINE_X0) * u;
           d += ` L ${x.toFixed(1)} ${(TINE_Y + swing * TINE_SWING * w).toFixed(1)}`;
         }
@@ -188,13 +190,13 @@ function InstrumentView({ pickupPos, setPickupPos, pickupDist }) {
           <rect className="iv-hammer" x={HAMMER_X} y={TINE_Y + 30} width="46" height="15" rx="7" />
           <rect className="iv-hammertip" x={HAMMER_X + 40} y={TINE_Y + 26} width="13" height="23" rx="6" />
         </g>
-        <text className="iv-cap" x={HAMMER_X} y={TINE_Y + 68}>HAMMER</text>
+        <text className="iv-cap" x={HAMMER_X - 6} y={TINE_Y + 78}>HAMMER</text>
 
         {/* ---- tine ---- */}
         <ellipse ref={orbitRef} className="iv-orbit" cx={TINE_X1} cy={TINE_Y} rx="6" ry="1" />
         <path ref={tineRef} className="iv-tine" d="" />
         <circle ref={tipRef} className="iv-tip" cx={TINE_X1} cy={TINE_Y} r="6" />
-        <text className="iv-cap" x={TINE_X0} y={TINE_Y + 40}>TINE</text>
+        <text className="iv-cap" x={TINE_X0 - 2} y={TINE_Y + 34}>TINE</text>
 
         {/* ---- magnet ---- */}
         <circle className="iv-poleglow" cx={POLE_X + 8} cy={TINE_Y} r="54" fill="url(#poleglow)" />
