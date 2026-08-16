@@ -23,6 +23,8 @@ void EpiEngine::prepare (double sampleRate, int)
 
     field.prepare ({});
     harp.prepare (sampleRate);
+    action.prepare (sampleRate);
+    room.prepare (sampleRate);
 
     // Cut every tine for its own note, once. Nothing is reconfigured per
     // strike after this unless a parameter that changes the geometry moves.
@@ -53,6 +55,8 @@ void EpiEngine::reset()
     for (auto& v : tines) v.reset();
     keyDown.fill (false);
     harp.reset();
+    action.reset();
+    room.reset();
     pedalDown = false;
     coil.reset();
     decimator.reset();
@@ -111,6 +115,9 @@ void EpiEngine::handleEvent (const NoteEvent& e, const EngineParams& p)
             keyDown[i] = true;
             tines[i].setPedal (pedalDown);
             tines[i].noteOn (e.note, vel, rhodesConfig (p), seed);
+            // The mechanism knocks whether or not the tine is heard. It goes
+            // into the frame, not into the output -- see ActionNoise.
+            action.strike (vel, noiseRng);
             seed = seed * 1664525u + 1013904223u;
             break;
         }
@@ -121,6 +128,7 @@ void EpiEngine::handleEvent (const NoteEvent& e, const EngineParams& p)
             if (i < 0 || i >= kNumTines) break;
             keyDown[i] = false;
             tines[i].noteOff();
+            action.release();
             break;
         }
 
@@ -161,6 +169,15 @@ void EpiEngine::process (float* outL, float* outR, int numSamples,
         lastTipMass   = p.tipMass;     lastResDamp    = p.resDamp;
         lastBarCouple = p.barCouple;
         retuneAll (cfg);
+    }
+
+    // Recomputing eight decay coefficients and a damping cutoff is cheap, but
+    // not per sample, and the size control has no reason to be smoothed: it
+    // changes the room, and rooms do not change during a note.
+    if (std::abs (p.spaceSize - lastSpaceSize) > 1.0e-4f)
+    {
+        lastSpaceSize = p.spaceSize;
+        room.setSize (p.spaceSize);
     }
 
     // Coil resonance: a pickup wound to a few thousand turns, loaded by its own
@@ -240,7 +257,7 @@ void EpiEngine::process (float* outL, float* outR, int numSamples,
             if (t.justStruck()) { t.clearStrikeFlag(); ++strikeCount; }
         }
 
-        harp.addForce (harpReaction);
+        harp.addForce (harpReaction + action.tick (p.strikeNoise, noiseRng));
         harp.tick();
 
         const double flux = decimator.process (os);
@@ -256,6 +273,16 @@ void EpiEngine::process (float* outL, float* outR, int numSamples,
 
         l = cabinet.process (l);
         r = cabinet.process (r);
+
+        // The room goes after the speaker, because that is where it is.
+        if (p.spaceMix > 0.0f)
+        {
+            double wl = 0.0, wr = 0.0;
+            room.process (l, r, wl, wr);
+            const double mix = std::clamp (static_cast<double> (p.spaceMix), 0.0, 1.0);
+            l += mix * wl;
+            r += mix * wr;
+        }
 
         const float fl = static_cast<float> (l) * p.outGainLin;
         const float fr = static_cast<float> (r) * p.outGainLin;

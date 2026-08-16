@@ -16,6 +16,7 @@
 #include "EpiAnalysis.h"
 #include "epi/dsp/EpiEngine.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -745,6 +746,114 @@ static void sectionStructural()
                           : std::string ("dead: ") + dead,
              dead.empty() ? Verdict::pass
                           : (onlyKnown ? Verdict::knownGap : Verdict::fail));
+    }
+
+    // The room has to decay at the rate its own control asks for. A feedback
+    // delay network is only controllable because its mixing matrix is
+    // orthogonal -- lose that and the loop gain is no longer the per-delay
+    // attenuation, the solved-for coefficients stop meaning anything, and the
+    // tail either dies early or never stops. Neither is visible by inspection.
+    {
+        auto t60Of = [] (float size)
+        {
+            const int N = static_cast<int> (kFs * 8.0);
+            const int block = 512;
+            EpiEngine e;
+            e.prepare (kFs, block);
+            EngineParams p = referenceParams();
+            p.spaceMix = 1.0f;
+            p.spaceSize = size;
+
+            std::vector<float> L (static_cast<std::size_t> (N), 0.0f);
+            std::vector<float> R (static_cast<std::size_t> (N), 0.0f);
+            NoteEvent ev { 0, NoteEvent::noteOn, 60, 0.9f };
+            NoteEvent off { 1, NoteEvent::noteOff, 60, 0.0f };
+            const NoteEvent evs[2] = { ev, off };
+            for (int i = 0; i < N; i += block)
+            {
+                const int n = std::min (block, N - i);
+                e.process (L.data() + i, R.data() + i, n, p,
+                           i == 0 ? evs : nullptr, i == 0 ? 2 : 0);
+            }
+
+            // The tail, once the note itself has been damped away. The hop has
+            // to be short: a 0.6 s room is 40 dB down within half a second, so
+            // a 50 ms hop leaves almost nothing to fit.
+            std::vector<double> env;
+            const int hop = static_cast<int> (kFs * 0.02);
+            for (int i = 0; i + hop < N; i += hop)
+            {
+                double s = 0.0;
+                for (int j = 0; j < hop; ++j) s += static_cast<double> (L[static_cast<std::size_t> (i + j)])
+                                                 * static_cast<double> (L[static_cast<std::size_t> (i + j)]);
+                env.push_back (10.0 * std::log10 (std::max (1.0e-300, s / hop)));
+            }
+            const std::size_t from = static_cast<std::size_t> (0.30 / 0.02);
+            if (env.size() < from + 8) return -1.0;
+            const double start = env[from];
+            double sx = 0, sy = 0, sxx = 0, sxy = 0; int n = 0;
+            for (std::size_t i = from; i < env.size(); ++i)
+            {
+                if (env[i] < start - 35.0) break;
+                const double t = static_cast<double> (i) * 0.02;
+                sx += t; sy += env[i]; sxx += t * t; sxy += t * env[i]; ++n;
+            }
+            if (n < 6) return -1.0;
+            const double slope = (n * sxy - sx * sy) / (n * sxx - sx * sx);
+            return slope < -0.01 ? -60.0 / slope : -1.0;
+        };
+
+        // 0.6 s to 4.0 s across the control, per Room::setSize.
+        const double small = t60Of (0.0f);
+        const double big   = t60Of (1.0f);
+        row ("S5", "room decays as its size asks", "0.6 s and 4.0 s (+/-60%)",
+             fmt2 ("%.2f s and %.2f s", small, big),
+             (small > 0.0 && big > 0.0
+              && within (small, 0.24, 1.6) == Verdict::pass
+              && within (big, 1.6, 6.4) == Verdict::pass) ? Verdict::pass : Verdict::fail);
+    }
+
+    // Action noise must be present and must never be the loudest thing. It is
+    // routed through the frame rather than into the output, so this also
+    // checks that path is connected: if it were mixed straight in, it would be
+    // just as loud with every tine damped, and it is not.
+    {
+        auto peakWith = [] (float amount, int note, float vel)
+        {
+            const int N = static_cast<int> (kFs * 1.0);
+            const int block = 512;
+            EpiEngine e;
+            e.prepare (kFs, block);
+            EngineParams p = referenceParams();
+            p.strikeNoise = amount;
+            std::vector<float> L (static_cast<std::size_t> (N), 0.0f);
+            std::vector<float> R (static_cast<std::size_t> (N), 0.0f);
+            NoteEvent ev { 0, NoteEvent::noteOn, note, vel };
+            for (int i = 0; i < N; i += block)
+            {
+                const int n = std::min (block, N - i);
+                e.process (L.data() + i, R.data() + i, n, p,
+                           i == 0 ? &ev : nullptr, i == 0 ? 1 : 0);
+            }
+            std::vector<double> out (static_cast<std::size_t> (N));
+            for (int i = 0; i < N; ++i) out[static_cast<std::size_t> (i)] = L[static_cast<std::size_t> (i)];
+            return out;
+        };
+
+        // Measured as the difference between the two renders, not as a change
+        // in the peak: the note's own attack is far louder than the mechanism,
+        // so the peak does not move at all and reports the noise as absent.
+        const std::vector<double> dry = peakWith (0.0f, 60, 0.7f);
+        const std::vector<double> wet = peakWith (1.0f, 60, 0.7f);
+        double diff = 0.0, ref = 0.0;
+        for (std::size_t i = 0; i < dry.size(); ++i)
+        {
+            diff = std::max (diff, std::abs (wet[i] - dry[i]));
+            ref  = std::max (ref, std::abs (dry[i]));
+        }
+        const double addedDb = 20.0 * std::log10 (std::max (1.0e-12, diff / std::max (1.0e-12, ref)));
+        row ("S6", "action noise audible, not dominant", "-45 .. -6 dB rel note",
+             fmt ("%+.1f dB", addedDb), within (addedDb, -45.0, -6.0));
     }
 
     // The sympathetic path must actually do something. A held note with the

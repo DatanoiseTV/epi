@@ -12,9 +12,11 @@
 
 #pragma once
 
+#include "ActionNoise.h"
 #include "Harp.h"
 #include "OutputChain.h"
 #include "PickupMagnetic.h"
+#include "Room.h"
 #include "RhodesVoice.h"
 
 #include <array>
@@ -180,12 +182,16 @@ private:
     std::array<RhodesVoice, kNumTines> tines;
     std::array<bool, kNumTines> keyDown {};
     Harp harp;
+    ActionNoise action;
+    Rng noiseRng { 0x51ed270bu };
 
     Decimator decimator;
     PickupCoil coil;
     SuitcasePreamp preamp;
     SuitcaseVibrato vibrato;
     Cabinet cabinet;
+    Room room;
+    float lastSpaceSize = -1.0f;
 
     bool pedalDown = false;
     float bendSemis = 0.0f;
