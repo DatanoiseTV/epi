@@ -11,8 +11,8 @@
 */
 
 #include "WebEditor.h"
-#include "../PluginProcessor.h"
-#include "../ParameterIDs.h"
+#include "epi/PluginProcessor.h"
+#include "epi/ParameterIDs.h"
 
 #include <EpiUIData.h>
 

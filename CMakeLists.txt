@@ -151,14 +151,75 @@ target_link_libraries(Didge PRIVATE
     juce::juce_recommended_warning_flags)
 
 # =============================================================================
-# Epi — physically modeled electric pianos (Rhodes / Wurlitzer / Clavinet /
-# CP-70). A second product sharing this repository's plugin shell.
-#
-# The plugin target is not wired up yet: the DSP cores under src/epi/dsp are
-# built and measured by epi_dsp_tests, and the JUCE wrapper follows once the
-# Rhodes voice passes across the whole compass. See CHANGELOG.md for what is
-# verified and what is not.
+# Epi — physically modeled electric pianos (Rhodes now; Wurlitzer, Clavinet and
+# CP-70 to follow on the same skeleton). A second product sharing this
+# repository's plugin shell.
 # =============================================================================
+juce_add_plugin(Epi
+    COMPANY_NAME            "DatanoiseTV"
+    BUNDLE_ID               "com.datanoisetv.epi"
+    PLUGIN_MANUFACTURER_CODE Dnse
+    PLUGIN_CODE             Epi1
+    FORMATS                 AU VST3 Standalone
+    PRODUCT_NAME            "Epi"
+    DESCRIPTION             "Physically modeled electric pianos"
+    IS_SYNTH                TRUE
+    NEEDS_MIDI_INPUT        TRUE
+    NEEDS_MIDI_OUTPUT       FALSE
+    IS_MIDI_EFFECT          FALSE
+    EDITOR_WANTS_KEYBOARD_FOCUS FALSE
+    NEEDS_WEB_BROWSER       TRUE
+    NEEDS_WEBVIEW2          TRUE
+    COPY_PLUGIN_AFTER_BUILD ${PLUGIN_INSTALL_LOCAL}
+    VST3_CATEGORIES         Instrument Synth Piano
+    AU_MAIN_TYPE            kAudioUnitType_MusicDevice)
+
+juce_generate_juce_header(Epi)
+
+clap_juce_extensions_plugin(TARGET Epi
+    CLAP_ID              "com.datanoisetv.epi"
+    CLAP_FEATURES        instrument synthesizer piano "physical-modeling"
+    CLAP_MANUAL_URL      "https://github.com/DatanoiseTV/didge"
+    CLAP_SUPPORT_URL     "https://github.com/DatanoiseTV/didge/issues")
+
+file(GLOB EPI_UI_SRC CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/ui/epi/*")
+juce_add_binary_data(EpiUI
+    SOURCES     ${EPI_UI_SRC} ${DIDGE_UI_VENDOR}
+    NAMESPACE   EpiUIData
+    HEADER_NAME EpiUIData.h)
+set_target_properties(EpiUI PROPERTIES POSITION_INDEPENDENT_CODE TRUE)
+
+target_sources(Epi PRIVATE
+    src/epi/PluginProcessor.cpp
+    src/epi/dsp/EpiEngine.cpp
+    src/epi/presets/FactoryPresets.cpp
+    src/epi/ui/WebEditor.cpp
+    ${EPI_COMMON_SOURCES})
+
+target_include_directories(Epi PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src)
+
+target_compile_definitions(Epi
+    PUBLIC
+        JUCE_WEB_BROWSER=1
+        JUCE_USE_CURL=0
+        JUCE_VST3_CAN_REPLACE_VST2=0
+        JUCE_REPORT_APP_USAGE=0
+        $<$<PLATFORM_ID:Windows>:JUCE_USE_WIN_WEBVIEW2_WITH_STATIC_LINKING=1>
+    PRIVATE
+        EPI_VERSION="${PROJECT_VERSION}"
+        EPI_GIT_HASH="${DIDGE_GIT_HASH}"
+        EPI_GIT_BRANCH="${DIDGE_GIT_BRANCH}")
+
+target_link_libraries(Epi PRIVATE
+    EpiUI
+    juce::juce_audio_utils
+    juce::juce_dsp
+    juce::juce_gui_extra
+    PUBLIC
+    juce::juce_recommended_config_flags
+    juce::juce_recommended_lto_flags
+    juce::juce_recommended_warning_flags)
 
 # -----------------------------------------------------------------------------
 # Unit tests (DSP cores + state round-trip). Built only when top-level.

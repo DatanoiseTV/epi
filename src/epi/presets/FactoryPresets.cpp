@@ -11,7 +11,7 @@
 */
 
 #include "FactoryPresets.h"
-#include "../ParameterIDs.h"
+#include "epi/ParameterIDs.h"
 
 namespace epi
 {

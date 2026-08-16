@@ -1,0 +1,234 @@
+/* ============================================================
+   Epi · stylesheet
+   Fixed 1280x860 design canvas, uniformly scaled to the window
+   by the fit script in index.html.
+   ============================================================ */
+
+:root {
+  /* Cool enamel and steel: a Rhodes is a black tolex box full of grey metal,
+     lit by a small amount of amber from the pilot lamp. The accent is the
+     cyan of the magnetic field in the drawing, because the field IS the
+     instrument here; the secondary is the warm one, used for modulation. */
+  --bg-0: #05070a;
+  --bg-1: #0a0e14;
+  --panel: rgba(18, 24, 32, 0.88);
+  --panel-solid: #121820;
+  --stroke: rgba(120, 160, 190, 0.18);
+  --stroke-strong: rgba(150, 200, 235, 0.40);
+  --txt: #e6eef6;
+  --txt-dim: #93a6b8;
+  --txt-faint: #647587;
+  --accent: #5ad2ff;
+  --accent-soft: rgba(90, 210, 255, 0.14);
+  --accent2: #ffb454;
+  --accent2-soft: rgba(255, 180, 84, 0.14);
+  --meter-lo: #6fd39a;
+  --meter-hi: #ffc04a;
+  --meter-clip: #ff5a45;
+  --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Code", monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  width: 100%; height: 100%;
+  background: var(--bg-0);
+  overflow: hidden;
+  font-family: var(--font);
+  color: var(--txt);
+  -webkit-user-select: none; user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+#root { width: 100%; height: 100%; }
+
+#stage {
+  position: fixed; inset: 0;
+  background:
+    radial-gradient(110% 80% at 22% -12%, rgba(255, 157, 60, 0.07), transparent 58%),
+    radial-gradient(120% 100% at 88% 115%, rgba(111, 191, 164, 0.05), transparent 55%),
+    var(--bg-0);
+}
+
+#plugin {
+  position: absolute; left: 50%; top: 50%;
+  width: 1280px; height: 830px;
+  transform: translate(-50%, -50%);
+  transform-origin: center center;
+  display: grid;
+  grid-template-rows: 60px 330px 1fr;
+  gap: 12px;
+  padding: 16px 18px 18px;
+}
+
+/* ============================ header ============================ */
+.hdr { display: flex; align-items: center; gap: 16px; padding: 0 4px; }
+
+.hdr .mark { width: 34px; height: 34px; position: relative; flex: 0 0 auto; }
+.hdr .mark .r1, .hdr .mark .r2, .hdr .mark .core {
+  position: absolute; left: 50%; top: 50%; border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
+/* Concentric rings: the bore seen end-on. */
+.hdr .mark .r1 {
+  width: 32px; height: 32px;
+  border: 1.5px solid rgba(255, 157, 60, 0.45);
+}
+.hdr .mark .r2 {
+  width: 21px; height: 21px;
+  border: 1.5px solid var(--accent);
+  box-shadow: 0 0 12px rgba(255, 157, 60, 0.45);
+}
+.hdr .mark .core {
+  width: 8px; height: 8px; background: var(--accent);
+  box-shadow: 0 0 10px var(--accent);
+}
+
+.hdr .wordmark { display: flex; flex-direction: column; gap: 2px; }
+.hdr .wordmark .name {
+  font-size: 22px; font-weight: 800; letter-spacing: 0.34em;
+  background: linear-gradient(100deg, #f2fbff 18%, var(--accent) 78%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.hdr .wordmark .tag {
+  font-size: 8.5px; letter-spacing: 0.38em; color: var(--txt-faint);
+  text-transform: uppercase;
+}
+
+.hdr .spacer { flex: 1; }
+
+.presetbar {
+  display: flex; align-items: center; gap: 2px;
+  background: var(--panel);
+  border: 1px solid var(--stroke);
+  border-radius: 10px;
+  padding: 4px;
+}
+.presetbar .pbtn {
+  width: 30px; height: 30px; border: none; border-radius: 7px;
+  background: transparent; color: var(--txt-dim);
+  font-size: 15px; cursor: pointer; line-height: 1;
+}
+.presetbar .pbtn:hover { background: rgba(255, 220, 180, 0.07); color: var(--txt); }
+.presetbar .pname {
+  min-width: 210px; text-align: center; cursor: pointer;
+  padding: 5px 14px; border-radius: 7px;
+  font-size: 13px; font-weight: 600; letter-spacing: 0.02em;
+}
+.presetbar .pname:hover { background: rgba(255, 220, 180, 0.06); }
+.presetbar .pname .dirty { color: var(--accent); margin-left: 3px; }
+.presetbar .psave {
+  border: 1px solid var(--stroke); background: transparent;
+  color: var(--txt-dim); border-radius: 7px; height: 30px; padding: 0 12px;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.08em; cursor: pointer;
+}
+.presetbar .psave:hover { color: var(--accent); border-color: var(--accent); }
+
+.hdr .version {
+  font-family: var(--mono); font-size: 10px; color: var(--txt-faint);
+  padding: 4px 8px; border: 1px solid var(--stroke); border-radius: 6px;
+}
+
+/* ============================ hero / instrument ============================ */
+.hero {
+  position: relative;
+  background: var(--panel);
+  border: 1px solid var(--stroke);
+  border-radius: 16px;
+  padding: 14px;
+  overflow: hidden;
+  background-image:
+    radial-gradient(80% 120% at 50% 120%, rgba(255, 157, 60, 0.06), transparent 60%);
+}
+.ivwrap { width: 100%; height: 100%; display: flex; flex-direction: column; }
+.ivsvg { width: 100%; flex: 1; display: block; }
+.ivhint {
+  text-align: center; font-size: 9.5px; letter-spacing: 0.16em;
+  color: var(--txt-faint); text-transform: uppercase; padding-top: 2px;
+}
+
+/* readout chips */
+.ivchip {
+  position: absolute; top: 14px; z-index: 3;
+  display: flex; align-items: baseline; gap: 8px;
+  background: rgba(12, 8, 5, 0.66);
+  border: 1px solid var(--stroke);
+  border-radius: 20px; padding: 6px 14px;
+  pointer-events: none;
+}
+.ivchip .lab {
+  font-size: 8.5px; font-weight: 800; letter-spacing: 0.2em;
+  color: var(--txt-faint); text-transform: uppercase;
+}
+.ivchip .val {
+  font-size: 15px; font-weight: 700; letter-spacing: 0.04em; color: var(--txt);
+}
+.ivchip .hz { font-family: var(--mono); font-size: 11px; color: var(--txt-dim); }
+.ivchip.drone { left: 16px; }
+.ivchip.drone .dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: #4a382a; align-self: center; transition: box-shadow 0.2s, background 0.2s;
+}
+.ivchip.drone.live .dot { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+.ivchip.drone.live .val { color: var(--accent); }
+.ivchip.toot { right: 16px; }
+.ivchip.toot .val { font-size: 12px; font-family: var(--mono); color: var(--txt-dim); }
+.ivchip.toot.live {
+  border-color: rgba(111, 191, 164, 0.55);
+  background: rgba(111, 191, 164, 0.12);
+}
+.ivchip.toot.live .val { color: var(--accent2); }
+.ivchip.toot.live .lab { color: var(--accent2); }
+
+/* instrument svg parts */
+
+
+/* ============================================================
+   The tone generator drawing
+   ============================================================ */
+.ivwrap { display: flex; flex-direction: column; height: 100%; position: relative; }
+.ivsvg  { flex: 1; width: 100%; }
+
+.ivchip { position: absolute; top: 2px; font: 700 9px/1 var(--font);
+          letter-spacing: .22em; color: var(--txt-faint); }
+.ivchip.left  { left: 4px; }
+.ivchip.right { right: 4px; color: var(--accent); }
+
+.ivhint { text-align: center; font: 500 9.5px/1 var(--font);
+          letter-spacing: .10em; color: var(--txt-faint); padding-bottom: 2px; }
+
+.iv-bar       { fill: url(#steel); stroke: rgba(180,215,240,.30); stroke-width: 1; }
+.iv-block     { fill: #2c3644; stroke: rgba(150,190,220,.22); stroke-width: 1; }
+.iv-hammer    { fill: #3a2b22; stroke: rgba(200,160,120,.30); stroke-width: 1; }
+.iv-hammertip { fill: #6a4b3c; }
+.iv-tine      { fill: none; stroke: url(#steel); stroke-width: 5; stroke-linecap: round; }
+.iv-tip       { fill: #dceaf6; }
+.iv-orbit     { fill: none; stroke: var(--accent); stroke-width: 1.2; }
+.iv-pole      { fill: #263140; stroke: rgba(150,190,220,.35); stroke-width: 1; }
+.iv-poleglow  { pointer-events: none; }
+.iv-gap       { fill: var(--accent); opacity: .30; }
+
+.iv-field  { fill: none; stroke: var(--accent); stroke-width: 2;
+             filter: drop-shadow(0 0 5px rgba(90,210,255,.45)); }
+.iv-marker { fill: var(--accent2); filter: drop-shadow(0 0 6px rgba(255,180,84,.7)); }
+.iv-trace  { fill: none; stroke: var(--accent2); stroke-width: 1.6; }
+
+.iv-cap     { font: 700 8.5px var(--font); letter-spacing: .22em; fill: var(--txt-faint); }
+.iv-cap.dim { fill: rgba(120,150,175,.55); }
+.iv-dragcap { font: 700 8px var(--font); letter-spacing: .18em; fill: var(--accent);
+              opacity: 0; transition: opacity .15s; }
+
+.iv-zone rect { fill: transparent; cursor: ns-resize; touch-action: none; }
+.iv-zone:hover .iv-dragcap { opacity: .9; }
+
+.panel .note { margin-top: auto; font: 500 8.5px/1.5 var(--font);
+               letter-spacing: .10em; color: var(--txt-faint); }
+
+/* The logo: a tine in front of a pole piece, seen from the side. */
+.hdr .mark { position: relative; width: 34px; height: 34px; flex: 0 0 34px; }
+.hdr .mark .tine { position: absolute; left: 2px; top: 15px; width: 22px; height: 3px;
+                   border-radius: 2px; background: linear-gradient(90deg,#8b98a9,#dceaf6); }
+.hdr .mark .pole { position: absolute; right: 2px; top: 8px; width: 0; height: 0;
+                   border-top: 9px solid transparent; border-bottom: 9px solid transparent;
+                   border-right: 11px solid var(--accent); opacity: .8; }
