@@ -57,11 +57,6 @@ void EpiEngine::prepare (double sampleRate, int)
     reset();
 }
 
-void EpiEngine::retuneAll (const RhodesVoice::Config& cfg)
-{
-    for (int i = 0; i < kNumTines; ++i) tines[i].setNote (kLoNote + i, cfg);
-}
-
 void EpiEngine::reset()
 {
     for (auto& v : tines) v.reset();
@@ -133,11 +128,18 @@ void EpiEngine::handleEvent (const NoteEvent& e, const EngineParams& p)
                             * std::clamp (expression, 0.0f, 2.0f);
 
             keyDown[i] = true;
+            // A tine that has been waiting its turn is built before it is hit.
+            if (tineCfgVersion[i] != cfgVersion)
+            {
+                tines[i].setNote (kLoNote + i, rhodesConfig (p));
+                tineCfgVersion[i] = cfgVersion;
+            }
             tines[i].setPedal (pedalDown);
             tines[i].noteOn (e.note, vel, rhodesConfig (p), seed);
             // The mechanism knocks whether or not the tine is heard. It goes
             // into the frame, not into the output -- see ActionNoise.
             action.strike (vel, noiseRng);
+            vLastNote.store (e.note, std::memory_order_relaxed);
             seed = seed * 1664525u + 1013904223u;
             break;
         }
@@ -193,7 +195,41 @@ void EpiEngine::process (float* outL, float* outR, int numSamples,
     if (std::memcmp (&cfg, &lastCfg, sizeof cfg) != 0)
     {
         lastCfg = cfg;
-        retuneAll (cfg);
+        ++cfgVersion;
+    }
+
+    // Rebuilt in priority order, and bounded.
+    //
+    // Rebuilding a tine re-solves its beam geometry and its tuning trim, and
+    // doing all eighty-eight the moment anything moves costs 0.41 ms. That is
+    // affordable once; it is not affordable every block, which is what a knob
+    // being turned asks for. Measured while sweeping one control with eight
+    // notes held under the pedal, blocks reached 3.59 ms against a 2.67 ms
+    // budget and 1.7 percent of them missed the deadline -- audible as
+    // crackling, and reported as exactly that.
+    //
+    // A tine that is sounding has to be right now, because it is being heard.
+    // A silent one only has to be right before it is next struck, and noteOn
+    // brings it up to date on the way past. So the sounding ones go first and
+    // the rest fill in behind them, a slice at a time, with a ceiling on the
+    // whole job so no single block can be made late by it.
+    {
+        int budget = 24;
+        for (int i = 0; i < kNumTines && budget > 0; ++i)
+        {
+            if (tineCfgVersion[i] == cfgVersion) continue;
+            if (! (tines[i].isRinging() || pedalDown || keyDown[i])) continue;
+            tines[i].setNote (kLoNote + i, cfg);
+            tineCfgVersion[i] = cfgVersion;
+            --budget;
+        }
+        for (int i = 0; i < kNumTines && budget > 0; ++i)
+        {
+            if (tineCfgVersion[i] == cfgVersion) continue;
+            tines[i].setNote (kLoNote + i, cfg);
+            tineCfgVersion[i] = cfgVersion;
+            --budget;
+        }
     }
 
     // Recomputing eight decay coefficients and a damping cutoff is cheap, but
@@ -289,6 +325,7 @@ void EpiEngine::process (float* outL, float* outR, int numSamples,
             ++active;
 
             const float amp = static_cast<float> (std::abs (t.tipDisplacement()));
+            if (amp > tineBlockPeak[i]) tineBlockPeak[i] = amp;
             if (amp >= loudest) { loudest = amp; loudestVoice = &t; }
             lastTip = static_cast<float> (t.tipDisplacement());
             if (t.justStruck()) { t.clearStrikeFlag(); ++strikeCount; }
@@ -365,6 +402,14 @@ void EpiEngine::process (float* outL, float* outR, int numSamples,
         pR = std::max (pR, std::abs (fr));
 
         if (n == numSamples - 1) numActive.store (active, std::memory_order_relaxed);
+    }
+
+    // Hand the whole harp to the interface, and reset the accumulator. A tine
+    // that was not live this block gets zero, which is what it is doing.
+    for (int i = 0; i < kNumTines; ++i)
+    {
+        vTineTip[i].store (tineBlockPeak[i], std::memory_order_relaxed);
+        tineBlockPeak[i] = 0.0f;
     }
 
     while (nextEvent < numEvents) handleEvent (events[nextEvent++], p);

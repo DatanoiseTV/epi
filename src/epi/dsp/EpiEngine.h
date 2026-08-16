@@ -173,6 +173,13 @@ public:
     // The loudest sounding voice's actual tine motion, and the note it is
     // playing. The interface animates from this, so what moves on screen is
     // what the model is doing.
+    // Every tine's own motion, so the interface can draw the instrument rather
+    // than one part of it. Published once per block as the peak within that
+    // block: a snapshot of something oscillating samples a random phase and
+    // flickers, and at sixty frames a second the peak is what reads as motion.
+    float vizTineTip (int i) const { return vTineTip[i].load (std::memory_order_relaxed); }
+    int   vizLastNote() const      { return vLastNote.load (std::memory_order_relaxed); }
+
     static constexpr int kTraceLen = RhodesVoice::kTraceLen;
     float vizTrace (int i) const { return vTrace[i].load (std::memory_order_relaxed); }
     float vizNoteHz() const      { return vNoteHz.load (std::memory_order_relaxed); }
@@ -182,7 +189,6 @@ private:
     void handleEvent (const NoteEvent& e, const EngineParams& p);
     RhodesVoice::Config rhodesConfig (const EngineParams& p) const;
     void publishField();
-    void retuneAll (const RhodesVoice::Config& cfg);
 
     double fs = 48000.0;
 
@@ -211,6 +217,11 @@ private:
     // newly added field cannot be forgotten. Deliberately initialised to
     // something no real configuration equals, so the first block always builds.
     RhodesVoice::Config lastCfg { -1.0e30 };
+    // Which configuration each tine has been built to. A knob being turned
+    // changes the configuration every block, and rebuilding all eighty-eight
+    // every time is what pushed blocks past their deadline.
+    std::uint32_t cfgVersion = 0;
+    std::array<std::uint32_t, kNumTines> tineCfgVersion {};
     float lastCoilSat = -1.0f;
 
     std::atomic<int>   numActive { 0 };
@@ -221,6 +232,9 @@ private:
     std::atomic<float> vTrace[RhodesVoice::kTraceLen];
     std::atomic<float> vNoteHz { 440.0f };
     std::atomic<int>   vStrikes { 0 };
+    std::atomic<int>   vLastNote { 60 };
+    std::atomic<float> vTineTip[kNumTines];
+    float tineBlockPeak[kNumTines] {};
     int strikeCount = 0;
 };
 

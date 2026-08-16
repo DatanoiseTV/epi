@@ -363,6 +363,7 @@ public:
             }
         }
 
+        glidePickup();
         updateStretchTerm();
         sys.tick();
 
@@ -1001,8 +1002,16 @@ private:
         damperFactor = std::exp (-3.0 * std::log (10.0) / (damperT60 * fs));
 
         // ---- pickup placement -----------------------------------------------------
+        // Moved to, not jumped to.
+        //
+        // The coil differentiates: emf is the RATE of flux change, which is
+        // Faraday's law and not negotiable. So a step in where the pole sits
+        // arrives at the output multiplied by the sample rate, however small
+        // the step is. Measured, moving the voicing screw the width of a preset
+        // change put an 18 dB spike on top of a sounding note -- which is the
+        // click heard when changing presets.
         const double halfWidth = field != nullptr ? field->halfWidth() : 3.0e-3;
-        staticOffset = std::clamp (cfg.pickupOffset, -1.0, 1.0) * halfWidth;
+        staticOffsetT = std::clamp (cfg.pickupOffset, -1.0, 1.0) * halfWidth;
         // The gap. Its scale was questioned and then measured, because the
         // reasoning against it was good: what decides whether the instrument
         // growls is the gap against the pole's own features -- a flat 0.28 mm
@@ -1024,11 +1033,10 @@ private:
         // as it was. What the sweep is really saying is that the bass tine
         // swings too far for the pole it is crossing, which is upstream of the
         // pickup entirely.
-        staticGap    = 0.6e-3 + 4.4e-3 * std::clamp (cfg.pickupGapNorm, 0.0, 1.0);
-        restFlux     = field != nullptr ? field->flux (staticOffset, staticGap) : 0.0;
-        // The most flux this pole can present, used as the floor for the knee.
-        peakFlux     = field != nullptr ? std::abs (field->flux (0.0, staticGap)) : 1.0;
-        updateRestSaturation();
+        staticGapT   = 0.6e-3 + 4.4e-3 * std::clamp (cfg.pickupGapNorm, 0.0, 1.0);
+        // The first time round there is nothing to glide from, so it snaps.
+        if (! configured) { staticOffset = staticOffsetT; staticGap = staticGapT; }
+        refreshPickup();
 
         // Where the field stops being usefully curved, and where the energy is
         // too small for the quadratised terms to matter.
@@ -1222,6 +1230,30 @@ private:
     double damperFactor = 1.0;
     double tineLength = 0.1;
     double staticOffset = 0.0, staticGap = 1.5e-3, restFlux = 0.0;
+    double staticOffsetT = 0.0, staticGapT = 1.5e-3;
+
+    // Recompute everything that depends on where the pole is sitting.
+    void refreshPickup()
+    {
+        restFlux = field != nullptr ? field->flux (staticOffset, staticGap) : 0.0;
+        // The most flux this pole can present, used as the floor for the knee.
+        peakFlux = field != nullptr ? std::abs (field->flux (0.0, staticGap)) : 1.0;
+        updateRestSaturation();
+    }
+
+    // One step of the glide, about twenty milliseconds to settle. Short enough
+    // that a voicing move still feels immediate, long enough that the
+    // derivative the coil takes of it stays inside the note.
+    void glidePickup()
+    {
+        const double a = 1.0 - std::exp (-1.0 / (0.020 * fs));
+        const double dO = staticOffsetT - staticOffset;
+        const double dG = staticGapT - staticGap;
+        if (std::abs (dO) < 1.0e-12 && std::abs (dG) < 1.0e-12) return;
+        staticOffset += a * dO;
+        staticGap    += a * dG;
+        refreshPickup();
+    }
     double satK = 0.0, satAmt = 0.0, satNorm = 1.0, peakFlux = 1.0;
     bool   satOn = false;
 

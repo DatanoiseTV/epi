@@ -28,22 +28,22 @@ struct Knob { const char* name; float EngineParams::*f; float from, to; };
 
 const Knob kKnobs[] = {
     { "tune",        &EngineParams::tuneCents,   0.0f, 1.0f },
-    { "hammerHard",  &EngineParams::hammerHard,  0.50f, 0.52f },
-    { "hammerMass",  &EngineParams::hammerMass,  0.50f, 0.52f },
+    { "hammerHard",  &EngineParams::hammerHard,  0.20f, 0.85f },
+    { "hammerMass",  &EngineParams::hammerMass,  0.20f, 0.85f },
     { "escapement",  &EngineParams::escapement,  0.40f, 0.42f },
-    { "damperGrip",  &EngineParams::damperGrip,  0.60f, 0.62f },
-    { "tipMass",     &EngineParams::tipMass,     0.50f, 0.52f },
-    { "resDamp",     &EngineParams::resDamp,     0.35f, 0.37f },
-    { "barCouple",   &EngineParams::barCouple,   0.60f, 0.62f },
-    { "barTune",     &EngineParams::barTune,     0.00f, 0.02f },
+    { "damperGrip",  &EngineParams::damperGrip,  0.42f, 0.85f },
+    { "tipMass",     &EngineParams::tipMass,     0.10f, 0.90f },
+    { "resDamp",     &EngineParams::resDamp,     0.12f, 0.55f },
+    { "barCouple",   &EngineParams::barCouple,   0.35f, 0.95f },
+    { "barTune",     &EngineParams::barTune,    -9.00f, 7.00f },
     { "bodyMix",     &EngineParams::bodyMix,     0.25f, 0.27f },
-    { "nonlinAmt",   &EngineParams::nonlinAmt,   0.50f, 0.52f },
-    { "pickupPos",   &EngineParams::pickupPos,  -0.35f, -0.34f },
-    { "pickupDist",  &EngineParams::pickupDist,  0.35f, 0.36f },
-    { "coilFreq",    &EngineParams::coilFreq,    0.50f, 0.52f },
-    { "coilQ",       &EngineParams::coilQ,       0.50f, 0.52f },
-    { "coilSat",     &EngineParams::coilSat,     0.25f, 0.27f },
-    { "preampDrive", &EngineParams::preampDrive, 0.30f, 0.32f },
+    { "nonlinAmt",   &EngineParams::nonlinAmt,   0.50f, 0.85f },
+    { "pickupPos",   &EngineParams::pickupPos,  -0.80f, -0.04f },
+    { "pickupDist",  &EngineParams::pickupDist,  0.06f, 0.55f },
+    { "coilFreq",    &EngineParams::coilFreq,    0.30f, 0.88f },
+    { "coilQ",       &EngineParams::coilQ,       0.35f, 0.85f },
+    { "coilSat",     &EngineParams::coilSat,     0.10f, 0.60f },
+    { "preampDrive", &EngineParams::preampDrive, 0.12f, 0.72f },
     { "bass",        &EngineParams::bassDb,      0.0f, 0.5f },
     { "treble",      &EngineParams::trebleDb,    0.0f, 0.5f },
     { "tremDepth",   &EngineParams::tremDepth,   0.30f, 0.32f },
@@ -55,7 +55,7 @@ const Knob kKnobs[] = {
 
 int main()
 {
-    std::printf ("a note is held; the parameter moves by 2%% at 1.0 s\n");
+    std::printf ("a note is held; the parameter jumps, preset-sized, at 1.0 s\n");
     std::printf ("a well-behaved control leaves no mark above the note itself\n\n");
     std::printf ("  %-13s %-12s %-12s %s\n", "control", "before dB", "at change", "jump");
 

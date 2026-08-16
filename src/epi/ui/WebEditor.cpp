@@ -240,6 +240,12 @@ void WebEditor::emitLevels()
     for (int i = 0; i < epi::EpiEngine::kTraceLen; ++i)
         trace.add (juce::var (engine.vizTrace (i)));
 
+    // The whole harp: every tine's peak motion this frame, in microns, so the
+    // interface can draw the instrument instead of one part of it.
+    juce::Array<juce::var> harp;
+    for (int i = 0; i < epi::EpiEngine::kNumTines; ++i)
+        harp.add (juce::var (engine.vizTineTip (i) * 1.0e6f));
+
     juce::DynamicObject::Ptr root = new juce::DynamicObject();
     root->setProperty ("out",     juce::var (outArr));
     root->setProperty ("trace",   juce::var (trace));
@@ -252,6 +258,9 @@ void WebEditor::emitLevels()
     root->setProperty ("vibL",    engine.vizVibratoL());
     root->setProperty ("vibR",    engine.vizVibratoR());
     root->setProperty ("voices",  engine.activeVoices());
+    root->setProperty ("harp",    juce::var (harp));
+    root->setProperty ("lastNote", engine.vizLastNote());
+    root->setProperty ("loNote",  epi::EpiEngine::kLoNote);
 
     webView->emitEventIfBrowserIsVisible (juce::Identifier { "levels" }, juce::var (root.get()));
 }
