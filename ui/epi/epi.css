@@ -153,13 +153,14 @@ html, body {
 /* The tone generator itself. */
 /* ---- the harp: eighty-eight of everything ---- */
 .hp-tine      { stroke: #93a3b5; stroke-linecap: round; fill: none; }
-.hp-tine.live { stroke: #7fe3ff; }
+.hp-tine.struck { stroke: #7fe3ff; }
+.hp-tine.symp   { stroke: #e0a45c; }
 .hp-bar       { stroke: rgba(185, 198, 212, 0.45); stroke-linecap: round; fill: none; }
 .hp-block     { stroke: rgba(74, 85, 99, 0.75); stroke-linecap: butt; fill: none; }
 .hp-hammer    { fill: #3a2b22; stroke: rgba(200, 160, 120, 0.30); stroke-width: 0.8; }
 .hp-tip       { fill: #6a4b3c; }
-.hp-key       { fill: #c9d4e0; stroke: rgba(20, 28, 38, 0.55); stroke-width: 0.4; }
-.hp-key.black { fill: #2a333f; stroke: rgba(150, 190, 220, 0.18); }
+.hp-key       { fill: #dde5ee; stroke: rgba(12, 18, 26, 0.85); stroke-width: 0.35; }
+.hp-key.black { fill: #1c242e; stroke: rgba(150, 190, 220, 0.22); }
 .hp-key.down  { fill: #7fe3ff; }
 .hp-key.black.down { fill: #3f9fc4; }
 .hp-count     { fill: rgba(160, 200, 230, 0.55); }
