@@ -22,7 +22,16 @@ void EpiEngine::prepare (double sampleRate, int)
     fs = sampleRate;
 
     field.prepare ({});
-    for (auto& v : voices) v.prepare (sampleRate, &field);
+    harp.prepare (sampleRate);
+
+    // Cut every tine for its own note, once. Nothing is reconfigured per
+    // strike after this unless a parameter that changes the geometry moves.
+    const auto cfg = RhodesVoice::Config{};
+    for (int i = 0; i < kNumTines; ++i)
+    {
+        tines[i].prepare (sampleRate, &field);
+        tines[i].setNote (kLoNote + i, cfg);
+    }
 
     coil.prepare (static_cast<float> (sampleRate));
     decimator.prepare (sampleRate);
@@ -34,11 +43,16 @@ void EpiEngine::prepare (double sampleRate, int)
     reset();
 }
 
+void EpiEngine::retuneAll (const RhodesVoice::Config& cfg)
+{
+    for (int i = 0; i < kNumTines; ++i) tines[i].setNote (kLoNote + i, cfg);
+}
+
 void EpiEngine::reset()
 {
-    for (auto& v : voices) v.reset();
-    voiceAge.fill (0);
-    ageCounter = 0;
+    for (auto& v : tines) v.reset();
+    keyDown.fill (false);
+    harp.reset();
     pedalDown = false;
     coil.reset();
     decimator.reset();
@@ -78,38 +92,14 @@ RhodesVoice::Config EpiEngine::rhodesConfig (const EngineParams& p) const
     return c;
 }
 
-// Steal the oldest voice that is no longer held, and only then the oldest
-// held one. A piano player leans on the sustain pedal, so the common case is
-// a great many voices ringing and none of them held.
-int EpiEngine::allocateVoice (int note)
-{
-    // An already-sounding copy of the same note is retaken, as a real key does.
-    for (int i = 0; i < kMaxVoices; ++i)
-        if (voices[i].isSounding() && voices[i].noteNumber() == note)
-            return i;
-
-    for (int i = 0; i < kMaxVoices; ++i)
-        if (! voices[i].isSounding())
-            return i;
-
-    int best = 0, bestAge = voiceAge[0];
-    bool foundReleased = false;
-    for (int i = 0; i < kMaxVoices; ++i)
-    {
-        const bool released = ! voices[i].isHeld();
-        if (released && ! foundReleased) { foundReleased = true; best = i; bestAge = voiceAge[i]; continue; }
-        if (released == foundReleased && voiceAge[i] < bestAge) { best = i; bestAge = voiceAge[i]; }
-    }
-    return best;
-}
-
 void EpiEngine::handleEvent (const NoteEvent& e, const EngineParams& p)
 {
     switch (e.type)
     {
         case NoteEvent::noteOn:
         {
-            const int v = allocateVoice (e.note);
+            const int i = e.note - kLoNote;
+            if (i < 0 || i >= kNumTines) break;   // outside the instrument
 
             // Velocity curve. At 0.5 the response is linear; below it the
             // instrument gives more for a light touch, above it the player has
@@ -118,32 +108,35 @@ void EpiEngine::handleEvent (const NoteEvent& e, const EngineParams& p)
             const float vel = std::pow (std::clamp (e.velocity, 0.0f, 1.0f), shape)
                             * std::clamp (expression, 0.0f, 2.0f);
 
-            voices[v].noteOn (e.note, vel, rhodesConfig (p), seed);
-            voices[v].setPedal (pedalDown);
+            keyDown[i] = true;
+            tines[i].setPedal (pedalDown);
+            tines[i].noteOn (e.note, vel, rhodesConfig (p), seed);
             seed = seed * 1664525u + 1013904223u;
-            voiceAge[v] = ++ageCounter;
             break;
         }
 
         case NoteEvent::noteOff:
-            for (int i = 0; i < kMaxVoices; ++i)
-                if (voices[i].isSounding() && voices[i].isHeld()
-                    && voices[i].noteNumber() == e.note)
-                    voices[i].noteOff();
+        {
+            const int i = e.note - kLoNote;
+            if (i < 0 || i >= kNumTines) break;
+            keyDown[i] = false;
+            tines[i].noteOff();
             break;
+        }
 
         case NoteEvent::allNotesOff:
-            for (auto& v : voices) v.noteOff();
+            keyDown.fill (false);
+            for (auto& v : tines) v.noteOff();
             break;
 
         case NoteEvent::sustainOn:
             pedalDown = true;
-            for (auto& v : voices) v.setPedal (true);
+            for (auto& v : tines) v.setPedal (true);
             break;
 
         case NoteEvent::sustainOff:
             pedalDown = false;
-            for (auto& v : voices) v.setPedal (false);
+            for (auto& v : tines) v.setPedal (false);
             break;
     }
 }
@@ -167,7 +160,7 @@ void EpiEngine::process (float* outL, float* outR, int numSamples,
         lastPickupPos = p.pickupPos;   lastPickupDist = p.pickupDist;
         lastTipMass   = p.tipMass;     lastResDamp    = p.resDamp;
         lastBarCouple = p.barCouple;
-        for (auto& v : voices) v.refresh (cfg);
+        retuneAll (cfg);
     }
 
     // Coil resonance: a pickup wound to a few thousand turns, loaded by its own
@@ -185,6 +178,11 @@ void EpiEngine::process (float* outL, float* outR, int numSamples,
     float pL = 0.0f, pR = 0.0f;
     RhodesVoice* loudestVoice = nullptr;
     float loudest = -1.0f;
+
+    // How hard the tines are tied to the frame. Too little and the instrument
+    // is eighty-eight separate notes; too much and a struck tine detunes its
+    // neighbours instead of exciting them.
+    const double harpCoupling = 900.0 * std::clamp (p.bodyMix, 0.0f, 1.0f);
     float lastTip = 0.0f, lastFlux = 0.0f, lastVibL = 1.0f, lastVibR = 1.0f;
 
     for (int n = 0; n < numSamples; ++n)
@@ -197,23 +195,53 @@ void EpiEngine::process (float* outL, float* outR, int numSamples,
         // which is why a chord is not the sum of its notes.
         //
         // The sum happens at the oversampled rate, so the decimator runs once
-        // for the whole instrument rather than once per voice.
+        // for the whole instrument rather than once per tine.
         double os[Decimator::kOver] { 0.0, 0.0, 0.0, 0.0 };
         double voiceFlux[RhodesVoice::kOver];
         int active = 0;
-        for (auto& v : voices)
+
+        // ---- the harp -------------------------------------------------------
+        // One spring per tine, between its clamp and the frame, applied equal
+        // and opposite. A struck tine pushes the frame; the frame pushes every
+        // other tine back. That is the whole sympathetic path, and because it
+        // is a spring it is passive however the energy goes round the loop.
+        const double harpU = harp.displacement();
+        double harpReaction = 0.0;
+
+        for (int i = 0; i < kNumTines; ++i)
         {
-            if (! v.isSounding()) continue;
-            v.process (cfg, voiceFlux);
-            const double rest = v.restingFlux();
+            auto& t = tines[i];
+
+            // A tine with no energy, no hammer on it and a damper resting on it
+            // cannot do anything. With the pedal down the dampers are off and
+            // the whole instrument is in play, which is the expensive case and
+            // also the real one.
+            const bool free = pedalDown || keyDown[i];
+            const bool live = t.isRinging() || (free && harpCoupling > 0.0
+                                                     && std::abs (harpU) > 1.0e-12);
+            if (! live) continue;
+
+            if (harpCoupling > 0.0 && free)
+            {
+                const double f = harpCoupling * (harpU - t.clampDisplacement());
+                t.addClampForce (f);
+                harpReaction -= f;
+                t.setSounding (true);   // the harp has woken it
+            }
+
+            t.process (cfg, voiceFlux);
+            const double rest = t.restingFlux();
             for (int k = 0; k < Decimator::kOver; ++k) os[k] += voiceFlux[k] - rest;
             ++active;
-            // Follow the loudest voice, which is the one a player is looking at.
-            const float amp = static_cast<float> (std::abs (v.tipDisplacement()));
-            if (amp >= loudest) { loudest = amp; loudestVoice = &v; }
-            lastTip = static_cast<float> (v.tipDisplacement());
-            if (v.justStruck()) { v.clearStrikeFlag(); ++strikeCount; }
+
+            const float amp = static_cast<float> (std::abs (t.tipDisplacement()));
+            if (amp >= loudest) { loudest = amp; loudestVoice = &t; }
+            lastTip = static_cast<float> (t.tipDisplacement());
+            if (t.justStruck()) { t.clearStrikeFlag(); ++strikeCount; }
         }
+
+        harp.addForce (harpReaction);
+        harp.tick();
 
         const double flux = decimator.process (os);
         lastFlux = static_cast<float> (flux);

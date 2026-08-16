@@ -12,6 +12,7 @@
 
 #pragma once
 
+#include "Harp.h"
 #include "OutputChain.h"
 #include "PickupMagnetic.h"
 #include "RhodesVoice.h"
@@ -90,18 +91,43 @@ struct NoteEvent
 // ---------------------------------------------------------------------------
 // The instrument.
 //
-//   32 voices -> summed flux -> one coil -> preamp -> vibrato -> cabinet
+//   every tine, always present  ->  harp  ->  every other tine
+//        |
+//        +-> summed flux -> one coil -> preamp -> vibrato -> cabinet
 //
-// The summing point is where the real instrument sums too: every note has its
-// own pickup, but they are all wired onto one bus feeding one preamp, so the
-// nonlinearities downstream of that bus are SHARED. Two notes played together
-// intermodulate in the preamp exactly as they do on the real thing, which is a
-// large part of why a Rhodes chord does not sound like two Rhodes notes.
+// There is no voice allocation. A Rhodes has one tine per note, permanently,
+// and so does this: eighty-eight of them, each cut for its own note and struck
+// when its key goes down. That removes an entire class of problem rather than
+// managing it -- nothing is ever stolen, so nothing is ever cut off mid-ring,
+// and a repeated note strikes a tine that is still moving, which is what makes
+// repeated notes on the real instrument reinforce or fight the one before
+// depending on where in the cycle the hammer lands.
+//
+// It also buys the thing that cannot be faked with a voice pool: every tine is
+// bolted to the same harp, so a struck one shakes the frame and the frame
+// shakes the rest. With the pedal down the whole keyboard answers. That is
+// most of what a pedalled Rhodes chord is, and with allocated voices there is
+// simply nothing there to answer.
+//
+// The cost is real and is paid where it should be: a tine with no energy and no
+// hammer on it is skipped, so an unpedalled passage costs what the notes cost,
+// and a pedalled one costs the whole instrument -- which is exactly the
+// bargain the real thing makes.
+//
+// The pickups all sit on one bus feeding one preamp, so the nonlinearities
+// downstream of that bus are SHARED and a chord intermodulates there rather
+// than arriving as the sum of its notes.
 // ---------------------------------------------------------------------------
 class EpiEngine
 {
 public:
-    static constexpr int kMaxVoices = 32;
+    // The full piano compass. A 73-key Rhodes runs E1 to E6; the extra octaves
+    // cost nothing when they are not ringing and mean a part written outside
+    // the real range still plays.
+    static constexpr int kLoNote   = 21;    // A0
+    static constexpr int kHiNote   = 108;   // C8
+    static constexpr int kNumTines = kHiNote - kLoNote + 1;
+    static constexpr int kMaxVoices = kNumTines;
 
     void prepare (double sampleRate, int maxBlockSize);
     void reset();
@@ -145,15 +171,15 @@ public:
 private:
     void handleEvent (const NoteEvent& e, const EngineParams& p);
     RhodesVoice::Config rhodesConfig (const EngineParams& p) const;
-    int  allocateVoice (int note);
     void publishField();
+    void retuneAll (const RhodesVoice::Config& cfg);
 
     double fs = 48000.0;
 
     MagneticPickup field;
-    std::array<RhodesVoice, kMaxVoices> voices;
-    std::array<int, kMaxVoices> voiceAge {};
-    int ageCounter = 0;
+    std::array<RhodesVoice, kNumTines> tines;
+    std::array<bool, kNumTines> keyDown {};
+    Harp harp;
 
     Decimator decimator;
     PickupCoil coil;

@@ -358,6 +358,7 @@ static Rendered render (int note, double velocity, const RhodesVoice::Config& cf
 {
     RhodesVoice v;
     v.prepare (kFs, &pu);
+    v.setNote (note, cfg);
     v.noteOn (note, velocity, cfg, 0x51u + static_cast<unsigned> (note));
 
     Rendered r;
@@ -598,6 +599,7 @@ static void testNothingGrows()
 
                     RhodesVoice v;
                     v.prepare (kFs, &pu);
+                    v.setNote (n, cfg);
                     v.noteOn (n, 1.0, cfg, 0x99u);
 
                     double early = 0.0, late = 0.0, peak = 0.0;

@@ -161,6 +161,7 @@ public:
         controlCounter = 0;
         fadeLeft = 0;
         pendingNote = -1;
+        reduced = false;
         configured = false;
     }
 
@@ -198,20 +199,26 @@ public:
     // So the voice is faded first, over a couple of milliseconds, and the
     // strike happens at the end of that. Two milliseconds is below anything a
     // player can feel and well above what it takes to avoid a step.
+    // Give this tine its note. Called once, when the instrument is built --
+    // a tine is cut for one note and stays there.
+    void setNote (int midiNote, const Config& cfg)
+    {
+        note = midiNote;
+        noteHz = 440.0 * std::pow (2.0, (static_cast<double> (midiNote) - 69.0) / 12.0);
+        traceDecim = std::max (1, static_cast<int> (fs / (noteHz * kTraceLen / 4.0)));
+        configure (cfg);
+    }
+
+    // Strike it. The state is NEVER cleared: a hammer meeting a tine that is
+    // already moving is what happens when a player repeats a note, and it is
+    // why a repeated note reinforces or fights the one before it depending on
+    // where in the cycle it lands. There is also nothing to steal here -- every
+    // note has its own tine, as the instrument does -- so the whole class of
+    // bug that voice allocation brings simply does not arise.
     void noteOn (int midiNote, double velocity, const Config& cfg, std::uint32_t seed)
     {
-        if (sounding && midiNote != note && sys.energy() > 1.0e-16)
-        {
-            pendingNote = midiNote;
-            pendingVel  = velocity;
-            pendingSeed = seed;
-            fadeLeft    = static_cast<int> (0.002 * fs);
-            fadeFactor  = std::exp (-9.0 / std::max (1.0, 0.002 * fs));
-            held = true;
-            return;
-        }
-
-        strikeNow (midiNote, velocity, cfg, seed, ! sounding || midiNote != note);
+        (void) midiNote;
+        strikeNow (note, velocity, cfg, seed, false);
     }
 
     void strikeNow (int midiNote, double velocity, const Config& cfg,
@@ -222,13 +229,15 @@ public:
         sounding = true;
         rng = Rng (seed | 1u);
 
+        if (reduced) { sys.setNumModes (kNumModes); reduced = false; }
+
         if (freshState)
         {
             sys.clear();
             sys.setNumModes (kNumModes);
             for (int i = 0; i < 3; ++i) { vHist[i] = 0.0; hHist[i] = 0.0; }
+            configure (cfg);
         }
-        configure (cfg);
 
         // A Rhodes hammer arrives somewhere between a fraction of a metre per
         // second and about six. The exponent is the key's own leverage, not a
@@ -327,17 +336,69 @@ public:
         if (++controlCounter >= kControlDecim)
         {
             controlCounter = 0;
-            if (! hammer.isActive() && sys.energy() < 1.0e-18)
+
+            // How many modes are worth integrating.
+            //
+            // A tine answering sympathetically is being driven by the frame at
+            // frequencies nowhere near its overtones, so it responds in its
+            // fundamental and nothing else -- the upper modes of a tine ringing
+            // at a hundredth of a millimetre are carrying nothing at all. Below
+            // the quiet threshold only the fundamental is stepped, and the rest
+            // are frozen rather than cleared, so a strike picks them straight
+            // back up.
+            //
+            // Switching only happens below the threshold, where the modes being
+            // parked hold nothing audible, so it cannot make a discontinuity.
+            const double e = sys.energy();
+            if (! hammer.isActive() && e < quietEnergy)
             {
-                sounding = false;
-                sys.clear();
-                sys.setNumModes (kNumModes);
+                if (! reduced) { sys.setNumModes (1); reduced = true; }
             }
+            else if (reduced)
+            {
+                sys.setNumModes (kNumModes);
+                reduced = false;
+            }
+
+            if (! hammer.isActive() && e < 1.0e-24)
+                sounding = false;   // not cleared: the harp can wake it again
         }
 
-        // -- transduction, oversampled ----------------------------------------
+        // -- transduction ------------------------------------------------------
         const double vNow = sys.displacementAt (shapeTipV);
         const double hNow = sys.displacementAt (shapeTipH);
+
+        // A tine swinging a small fraction of the pole's flat is sampling a
+        // patch of the field that is straight. A straight function of a sine is
+        // a sine: there are no harmonics to alias, so there is nothing for the
+        // oversampling to protect. Most of the instrument is in this state most
+        // of the time -- the eighty-odd tines answering sympathetically move by
+        // microns -- and evaluating the field four times for each of them buys
+        // exactly nothing.
+        //
+        // This is a statement about where the field is linear, not a shortcut
+        // around the nonlinearity. The threshold is checked against the pole
+        // geometry, so it moves with it.
+        if (std::abs (vNow) < linearSwing)
+        {
+            const double arc = (vNow * vNow) / (2.0 * std::max (1.0e-4, tineLength));
+            const double gap = std::max (0.25e-3, staticGap - arc);
+            const double f = field != nullptr ? field->flux (staticOffset + vNow, gap) : 0.0;
+            for (int k = 0; k < kOver; ++k) fluxOut[k] = f;
+
+            vHist[0] = vHist[1]; vHist[1] = vHist[2]; vHist[2] = vNow;
+            hHist[0] = hHist[1]; hHist[1] = hHist[2]; hHist[2] = hNow;
+            lastTipV = vNow;
+            lastTipH = hNow;
+
+            if (--traceCount <= 0)
+            {
+                traceCount = traceDecim;
+                traceIdx = (traceIdx + 1) & (kTraceLen - 1);
+                trace[traceIdx] = static_cast<float> (vNow);
+            }
+            return;
+        }
 
         for (int k = 0; k < kOver; ++k)
         {
@@ -394,6 +455,24 @@ public:
     // differentiated signal is not a tiny modulation riding on a large
     // constant, which in a narrower type would throw away most of its bits.
     double restingFlux() const { return restFlux; }
+
+    // The tine's displacement where it is bolted to the harp, and a force
+    // applied there. This is the whole of the sympathetic path: a struck tine
+    // shakes the harp through its own clamp, and the harp shakes every other
+    // tine through theirs. Same shape vector both ways, so the coupling is
+    // reciprocal and cannot manufacture energy.
+    double clampDisplacement() const { return sys.displacementAt (shapeClamp); }
+
+    void addClampForce (double f)
+    {
+        for (int m = 0; m < kTineModes; ++m) sys.addForce (kV0 + m, f * shapeClamp[kV0 + m]);
+    }
+
+    // Worth integrating at all? A tine with no energy and no hammer on it
+    // contributes nothing, and there are eighty-eight of them.
+    bool isRinging() const { return sounding || hammer.isActive(); }
+    double energy() const { return sys.energy(); }
+    void setSounding (bool s) { sounding = s; }
 
     void refresh (const Config& cfg) { if (sounding) configure (cfg); }
 
@@ -711,6 +790,7 @@ private:
             shapeTipV[kV0 + m]    = shapeMode[m][kTip];
             shapeTipH[kH0 + m]    = shapeMode[m][kTip];
             shapeStrikeV[kV0 + m] = shapeMode[m][kStrike] * w;
+            shapeClamp[kV0 + m]   = shapeMode[m][kBlock];
         }
 
         // ---- the joint --------------------------------------------------------
@@ -808,6 +888,11 @@ private:
         staticGap    = 0.6e-3 + 4.4e-3 * std::clamp (cfg.pickupGapNorm, 0.0, 1.0);
         restFlux     = field != nullptr ? field->flux (staticOffset, staticGap) : 0.0;
 
+        // Where the field stops being usefully curved, and where the energy is
+        // too small for the quadratised terms to matter.
+        linearSwing  = 0.04 * halfWidth;
+        quietEnergy  = 1.0e-13;
+
         // The stretching term, and why it is a small fraction of EA/L rather
         // than EA/L itself.
         //
@@ -891,6 +976,16 @@ private:
 
     void updateStretchTerm()
     {
+        // Both quadratised terms are quadratic in amplitude. On a tine moving
+        // by microns they are below the precision of everything around them,
+        // and carrying them costs the whole rank-two solve.
+        if (sys.energy() < quietEnergy)
+        {
+            sys.disableTerm (kTermStretch);
+            sys.disableTerm (kTermJoint);
+            return;
+        }
+
         if (stretchGain <= 0.0 || ! configured)
         {
             sys.disableTerm (kTermStretch);
@@ -960,6 +1055,7 @@ private:
     double barShape[kBarModes] {};
 
     double shapeTipV[kNumModes] {}, shapeTipH[kNumModes] {}, shapeStrikeV[kNumModes] {};
+    double shapeClamp[kNumModes] {};
     double stretchGrad[kNumModes] {}, jointGrad[kNumModes] {};
 
     double stretchEA = 0.0, stretchGain = 0.5;
@@ -967,6 +1063,8 @@ private:
     double damperFactor = 1.0;
     double tineLength = 0.1;
     double staticOffset = 0.0, staticGap = 1.5e-3, restFlux = 0.0;
+    double linearSwing = 1.0e-4, quietEnergy = 1.0e-13;
+    bool   reduced = false;
 
     int  note = 60;
     bool sounding = false, held = false, pedal = false, configured = false;
