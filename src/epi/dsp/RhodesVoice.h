@@ -212,6 +212,9 @@ public:
     float traceAt (int i) const { return trace[i & (kTraceLen - 1)]; }
     int   traceHead() const { return traceIdx; }
     double soundingHz() const { return noteHz; }
+
+    // For tests and for the retirement threshold below to be chosen from data.
+    double modalEnergy() const { return sys.energy(); }
     bool   justStruck() const { return strikeFlag; }
     void   clearStrikeFlag() { strikeFlag = false; }
     int  contactSamples() const { return hammer.contactDurationSamples(); }
@@ -392,8 +395,15 @@ public:
                 reduced = false;
             }
 
-            if (! hammer.isActive() && e < 1.0e-24)
-                sounding = false;   // not cleared: the harp can wake it again
+            // Retired one decade below the point where the quadratised terms
+            // stop being carried, which is measured at about 120 dB under the
+            // note -- comfortably inaudible, and reached about half a second
+            // after the damper lands. The old threshold of 1e-24 was 11 decades
+            // further down: with the psi resync above it is reachable, and
+            // without it, it never was. The state is not cleared, so the harp
+            // can still wake this tine.
+            if (! hammer.isActive() && e < quietEnergy * 0.1)
+                sounding = false;
         }
 
         // -- transduction ------------------------------------------------------
@@ -1173,6 +1183,23 @@ private:
             const double u = sys.displacement (i);
             if (u != 0.0) sys.scaleMode (i, damperFactor);
         }
+
+        // And the quadratised terms have to be told, because they carry their
+        // own energy and it is not in the modal state.
+        //
+        // psi is defined as sqrt(2V) of the CURRENT state. Forcing the state
+        // down without touching psi leaves the two describing different
+        // systems, and since the reported energy counts psi^2/2, it leaves a
+        // floor that never decays: measured on a released bass note, the energy
+        // fell four orders of magnitude in a quarter second and then sat at
+        // 1.2e-7 forever. Nothing retires below that, so every note ever played
+        // stayed live and fully processed for the rest of the session, and the
+        // cost climbed until the host could not keep up.
+        //
+        // Disabling them here is the resync: updateStretchTerm re-enables them
+        // on the next sample and seeds psi from the state as it now is.
+        sys.disableTerm (kTermStretch);
+        sys.disableTerm (kTermJoint);
     }
 
     double fs = 48000.0;
