@@ -18,11 +18,21 @@ const VB_W = 1280, VB_H = 300;
 const BAR_X0 = 120, BAR_X1 = 540, BAR_Y = 74;      // tone bar
 const TINE_X0 = 150, TINE_X1 = 700, TINE_Y = 176;  // tine at rest
 const BLOCK_X = 132;                                // the aluminium block
-const HAMMER_X = 268;
+const PIVOT_X = BLOCK_X + 13;                       // where both prongs are bolted
+/* The tip lands about a fifth of the way along the free length, which is
+   where RhodesVoice::configure puts it (0.13 to 0.26 of the length, bass to
+   treble). It is not a decorative position: striking that close to the clamp
+   is why the tine meets an effective mass of hundreds of grams and swings
+   millimetres rather than centimetres. */
+const HAMMER_X = 220;
 const POLE_X = 742;                                 // magnet face
 const FIELD_X0 = 762, FIELD_X1 = 1244;              // field plot
 const FIELD_CY = 176, FIELD_H = 108;
 const TINE_SWING = 46;                              // px for a full swing
+/* The hammer tip is drawn HAMMER_GAP below the tine and parked HAMMER_REST
+   below that, so a full rise brings its face exactly onto the tine. */
+const HAMMER_GAP = 26;
+const HAMMER_REST = 30;
 
 function InstrumentView({ pickupPos, setPickupPos, pickupDist }) {
   const lv = JuceBridge.useEventRef('levels', { out: [-90, -90], field: [], trace: [], noteHz: 0, strikes: 0, voices: 0 });
@@ -113,15 +123,24 @@ function InstrumentView({ pickupPos, setPickupPos, pickupDist }) {
         else if (t < 0.10) rise = 1;                        // contact
         else if (t < 0.45) rise = Math.max(0, 1 - (t - 0.10) / 0.35);
         else               rise = 0;
+        /* HAMMER_REST below the tine when away, and exactly touching it at
+           full rise. The travel used to be 30 while the tip started 26 below
+           the tine, so the hammer stopped 26 units short of the string it was
+           supposed to be hitting -- every time, at every velocity. */
         hammerRef.current.setAttribute('transform',
-          `translate(0 ${(30 - 30 * rise).toFixed(1)})`);
+          `translate(0 ${(HAMMER_REST - (HAMMER_REST + HAMMER_GAP) * rise).toFixed(1)})`);
       }
 
       /* The tone bar is enslaved to the tine -- same frequency, opposite phase,
-         far more heavily damped -- so it moves with it and much less. */
+         far more heavily damped -- so it moves with it and much less.
+         It PIVOTS about the block rather than sliding, because that is what it
+         is: the other prong of a tuning fork, bolted to the same lump of
+         aluminium at one end and free at the other. Translating the whole bar
+         moved its clamped end too, which left it visibly detached from the
+         block it is bolted to while the tine stayed put. */
       if (barRef.current)
         barRef.current.setAttribute('transform',
-          `translate(0 ${(-swing * 5).toFixed(2)})`);
+          `rotate(${(-swing * 0.7).toFixed(3)} ${PIVOT_X} ${BAR_Y + 7})`);
 
       /* ---- the field, straight from the engine ---- */
       const F = (L.field && L.field.length > 8) ? L.field : null;
@@ -218,10 +237,10 @@ function InstrumentView({ pickupPos, setPickupPos, pickupDist }) {
 
         {/* ---- hammer ---- */}
         <g ref={hammerRef}>
-          <rect className="iv-hammer" x={HAMMER_X} y={TINE_Y + 30} width="46" height="15" rx="7" />
-          <rect className="iv-hammertip" x={HAMMER_X + 40} y={TINE_Y + 26} width="13" height="23" rx="6" />
+          <rect className="iv-hammer" x={HAMMER_X} y={TINE_Y + HAMMER_GAP + 4} width="46" height="15" rx="7" />
+          <rect className="iv-hammertip" x={HAMMER_X + 40} y={TINE_Y + HAMMER_GAP} width="13" height="23" rx="6" />
         </g>
-        <text className="iv-cap" x={HAMMER_X - 6} y={TINE_Y + 78}>HAMMER</text>
+        <text className="iv-cap" x={HAMMER_X - 6} y={TINE_Y + HAMMER_GAP + HAMMER_REST + 22}>HAMMER</text>
 
         {/* ---- tine ---- */}
         <ellipse ref={orbitRef} className="iv-orbit" cx={TINE_X1} cy={TINE_Y} rx="6" ry="1" />

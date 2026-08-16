@@ -536,8 +536,8 @@ public:
     // iron sees. The bias is what makes it asymmetric, which is the useful part.
     void setCoreSaturation (double sat)
     {
-        satK  = 1.0 + 7.0 * std::clamp (sat, 0.0, 1.0);
-        satOn = sat > 1.0e-4;
+        satAmt = std::clamp (sat, 0.0, 1.0);
+        satOn  = satAmt > 1.0e-4;
         updateRestSaturation();
     }
 
@@ -1016,6 +1016,8 @@ private:
         // pickup entirely.
         staticGap    = 0.6e-3 + 4.4e-3 * std::clamp (cfg.pickupGapNorm, 0.0, 1.0);
         restFlux     = field != nullptr ? field->flux (staticOffset, staticGap) : 0.0;
+        // The most flux this pole can present, used as the floor for the knee.
+        peakFlux     = field != nullptr ? std::abs (field->flux (0.0, staticGap)) : 1.0;
         updateRestSaturation();
 
         // Where the field stops being usefully curved, and where the energy is
@@ -1193,7 +1195,7 @@ private:
     double damperFactor = 1.0;
     double tineLength = 0.1;
     double staticOffset = 0.0, staticGap = 1.5e-3, restFlux = 0.0;
-    double satK = 1.0;
+    double satK = 0.0, satAmt = 0.0, satNorm = 1.0, peakFlux = 1.0;
     bool   satOn = false;
 
     // The curve at the resting operating point, and its slope there. A tine
@@ -1203,15 +1205,57 @@ private:
     // sample per tine. With the pedal down that is eighty-eight of them.
     double satRestVal = 0.0, satRestSlope = 1.0;
 
+    // The knee is set RELATIVE to the magnet's own bias, and the curve is then
+    // normalised to unity slope at that bias.
+    //
+    // Without both of those the control is not a saturation control at all, it
+    // is a fader. The iron sees the magnet's static flux as well as the tine's,
+    // and a fixed knee means turning the control up slides the operating point
+    // down the curve into the flat part, where the slope -- which IS the
+    // signal's gain -- goes to nothing. Measured, the instrument lost 32 dB
+    // between the control's two ends and the tone simply went away.
+    //
+    // Pinning the knee to the bias keeps the operating point in the same place
+    // on the curve however hard the curve is bent, and normalising by the slope
+    // there keeps the small-signal gain at unity. What is left for the control
+    // to do is the only thing it should have been doing: bending the curve, so
+    // that a tine swinging far enough to move the flux by an appreciable
+    // fraction of the bias meets a different gain on the way out than on the
+    // way back.
     void updateRestSaturation()
     {
-        if (! satOn) { satRestVal = restFlux; satRestSlope = 1.0; return; }
+        if (! satOn)
+        {
+            satK = 0.0; satNorm = 1.0;
+            satRestVal = restFlux; satRestSlope = 1.0;
+            return;
+        }
+
+        // A floor tied to the field's own peak, so a pickup voiced right out at
+        // the edge of the pole -- where the resting flux is small -- does not
+        // send the knee to infinity.
+        const double scale = std::max (std::abs (restFlux), 0.05 * std::max (1.0e-12, peakFlux));
+        satK = (0.2 + 1.6 * satAmt) / scale;
+
+        // Normalised by the AVERAGE slope over the range the tine actually
+        // visits, not by the slope at the bias point. The bias sits on the
+        // shoulder, so its slope is the LOWEST the swing meets; normalising
+        // there hands every excursion toward zero a gain above unity and the
+        // instrument gets louder as the control comes up -- measured, by 8 dB,
+        // which is the same usability problem as before with the sign flipped.
+        //
+        // Over the swing 0 to 2*bias the mean of sech^2(k phi) integrates to
+        // tanh(2u)/2u with u = k*bias, so dividing by that leaves the average
+        // gain unchanged and the control free to do nothing but bend the curve.
+        const double u = satK * std::abs (restFlux);
+        satNorm = u > 1.0e-9 ? (2.0 * u) / std::tanh (2.0 * u) : 1.0;
+
         const double th = std::tanh (satK * restFlux);
-        satRestVal   = th / satK;
-        satRestSlope = 1.0 - th * th;
+        satRestSlope = (1.0 - th * th) * satNorm;
+        satRestVal   = th / satK * satNorm;
     }
 
-    double saturate (double phi) const { return std::tanh (satK * phi) / satK; }
+    double saturate (double phi) const { return std::tanh (satK * phi) / satK * satNorm; }
     Collision diag;
     double linearSwing = 1.0e-4, quietEnergy = 1.0e-13;
     bool   reduced = false;
