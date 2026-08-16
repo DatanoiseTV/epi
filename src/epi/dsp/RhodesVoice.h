@@ -549,12 +549,26 @@ private:
         // clangy than plain beam theory predicts.
         const double shearNumber = 0.0016 + 0.0090 * reg;
 
-        // Steel loses almost nothing internally; what actually ends a Rhodes
-        // note is energy walking out through the clamp into the bar and the
-        // harp, and that path is far more open to the higher modes. So the
-        // fundamental rings for seconds while the clang is gone inside one.
+        // Two constant-Q laws, not one ramp across the keyboard.
+        //
+        // The fundamental is privileged, and it is privileged for a reason: the
+        // tine and its tonebar are a tuned fork, and a fork's balanced mode puts
+        // almost no net force into what holds it, so it loses energy only to the
+        // steel. Spring steel's internal loss is close to frequency-independent,
+        // so that mode's Q is constant across the compass and the sustain falls
+        // as 1/f. Measured on a Mark I -- 28 s at A2, 19 s at D4, 5.7 s at E5,
+        // 1.7 s at C7 -- that works out at Q = 1400 to 2500.
+        //
+        // No higher mode is balanced by the bar. Each one drives the clamp block
+        // directly, and a bolted joint into a heavy bar is a poor place to keep
+        // energy, so their Q is lower by more than an order of magnitude. That
+        // is the numerical form of ISMA's central observation: filmed at ten
+        // thousand frames a second, the tine is a clean sine within about
+        // fourteen milliseconds of being hit.
         const double damp = std::clamp (cfg.damping, 0.0, 1.0);
-        const double t60Base = (7.0 - 4.5 * reg) * (1.35 - 0.9 * damp);
+        const double qTrim        = 1.35 - 0.9 * damp;
+        const double qFundamental = 1800.0 * qTrim;
+        const double qOvertone    =   70.0 * qTrim;
 
         // Where the hammer lands, as a fraction of the free length.
         //
@@ -648,23 +662,17 @@ private:
             const double r = CantileverModes::ratio (m, mu, springPos, shearNumber);
             tineFreq[m] = f0 * r;
 
-            // Damping keyed on the mode's FREQUENCY RATIO, not its index.
+            // Damping from the mode's own FREQUENCY and its own Q, not from a
+            // power of its index. Indexing by m looks equivalent and is not: a
+            // clamped-free beam's frequencies grow roughly as (2m-1)^2, so a
+            // polynomial in m that also grows quadratically cancels against them
+            // and leaves the top modes barely damped -- by mode 7 the old rule
+            // under-damped by two orders of magnitude against anything
+            // defensible.
             //
-            // Indexing by m looks equivalent and is not. A clamped-free beam's
-            // frequencies grow roughly as (2m-1)^2, so a polynomial in m that
-            // also grows quadratically cancels against them and leaves the top
-            // modes barely damped -- by mode 7 the old rule under-damped by two
-            // orders of magnitude against anything defensible. Every published
-            // implementation keys off frequency.
-            //
-            // The exponent is bracketed by the sources: bar theory with the
-            // standard loss term gives constant Q, so 1.0; the only measured
-            // Rhodes study works out at 1.2 to 1.3, its strongest inharmonic
-            // mode decaying forty to fifty times faster than the fundamental;
-            // the one shipping Wurlitzer model uses 2.0 and reports rejecting
-            // 1.5 as audibly metallic. 1.5 sits inside that range, and the
-            // amplitude taper below makes the choice far less critical.
-            tineT60[m] = t60Base / std::pow (r, 1.5);
+            // T60 = 6.91 / (pi f / Q) = 2.20 Q / f.
+            const double q = (m == 0 ? qFundamental : qOvertone);
+            tineT60[m] = 2.1985 * q / std::max (1.0, tineFreq[m]);
         }
 
         double trim = 1.0;
