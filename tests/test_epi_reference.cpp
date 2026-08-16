@@ -250,19 +250,35 @@ static void sectionB()
     // this, and no amount of tuning would make it.
     for (TestNote tn : { kLowMid, kMid })
     {
-        const auto& x = render (tn.midi, kSoft, 4.0);
+        // Moderate velocity, not the softest available. Played very softly the
+        // third harmonic of this model sits below the render's own inharmonic
+        // floor, and what gets measured then is the floor's slope, not the
+        // partial's. The relation being tested is a property of the
+        // nonlinearity below the point where it starts to compress, which this
+        // is comfortably inside.
+        const double vel = 0.4;
+        const auto& x = render (tn.midi, vel, 4.0);
         const double f0 = an::refineF0 (x, kFs, noteHz (tn.midi));
 
-        // Fit each partial only over the range where it is still well above
-        // the floor. A partial that has fallen 60 dB is being measured against
-        // whatever else is at that level, and its apparent slope flattens.
-        auto slope = [&x, f0] (double mult)
+        an::Envelope env[3];
+        double loudest = -300.0;
+        for (int k = 0; k < 3; ++k)
         {
-            const an::Envelope e = an::heterodyne (x, kFs, mult * f0, f0);
-            if (e.z.empty()) return an::LineFit {};
-            return an::fitDecay (e, 0.3, 3.5, e.dbAt (0.3) - 35.0);
+            env[k] = an::heterodyne (x, kFs, static_cast<double> (k + 1) * f0, f0);
+            if (! env[k].z.empty()) loudest = std::max (loudest, env[k].dbAt (0.3));
+        }
+        // Everything the harmonic series cannot explain, in the same units, so
+        // a partial can be checked against it.
+        const double floorDb = loudest + an::inharmonicDb (x, kFs, f0, 0.300);
+
+        auto slope = [&env, floorDb] (int k) -> an::LineFit
+        {
+            if (env[k].z.empty()) return {};
+            const double lvl = env[k].dbAt (0.3);
+            if (lvl < floorDb + 15.0) return {};   // in the floor; not measurable
+            return an::fitDecay (env[k], 0.3, 3.5, std::max (lvl - 35.0, floorDb + 6.0));
         };
-        const an::LineFit f1 = slope (1.0), f2 = slope (2.0), f3 = slope (3.0);
+        const an::LineFit f1 = slope (0), f2 = slope (1), f3 = slope (2);
 
         const double r2 = (f1.valid && f2.valid && f1.slopeDbPerS < -0.01)
                         ? f2.slopeDbPerS / f1.slopeDbPerS : 0.0;

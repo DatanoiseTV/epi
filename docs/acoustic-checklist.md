@@ -98,15 +98,52 @@ not over seconds.
 
 ## Known gaps
 
-Tracked here so they are not rediscovered as surprises:
+Tracked here so they are not rediscovered as surprises. Run
+`ctest -R epi_reference` for the current numbers; this is the standing list of
+what is understood and unfixed.
 
+- **C2, inharmonic content at 300 ms**: the model reaches −57 to −73 dB where
+  the reference wants −78 to −92. The character is right — it starts at the
+  right level and dies — but it stops about 15 dB short. Note that the
+  reference's own two figures for this are in tension: content starting at
+  −12 to −20 dB and decaying at the quoted −27 dB/s would only reach −20 dB by
+  300 ms, so the −78 figure implies the faster end of the quoted decay range.
+- **B5, the envelope is a single exponential** (0.34 dB residual against a
+  measured 1.4–5.1). The real instrument's two-slope decay comes from the
+  tine's two polarisations decaying at different rates. The model carries both
+  but only the vertical one reaches the magnet, because when the horizontal set
+  was let through at 1.004×f0 it beat against the fundamental by several dB —
+  far outside E1 — and a listener flagged it. Doing this properly means the two
+  at the *same* frequency with different decay rates, which gives two slopes
+  and no beating.
+- **C5, the bass attack is fast**: 6.3 ms against a measured 14–21. The hammer
+  leaves the tine sooner than the real one does.
+- **F2, tuning drifts to −4.3 cents** at the bottom of the compass, against a
+  3-cent budget. The tine geometry is solved per note, so this is the solve and
+  the assembled-fork trim disagreeing slightly, not a table with a typo.
 - **Tine swing across the compass** spans about 4× in the model; a real one
   spans past 50× (tens of mm at the bottom, under 1 mm at the top). The hammer
   had to be graduated against the tine's effective mass to keep the treble
   collision stable, and that flattened the gradient.
 - **Growl is not stronger in the bass than the middle**, for the same reason.
-- **C2 is not met**: inharmonic content is still 18–35 dB up at 300 ms where it
-  should be 78–92 down. It starts at the right level and does not die.
+
+### Retired gaps
+
+Kept briefly because each was believed to be a defect in the model and was not:
+
+- "Inharmonic content sits at −18 to −35 dB at 300 ms" — a measurement error.
+  The residual was computed against only sixteen harmonics, so 30 dB of
+  ordinary harmonic energy above H16 was being counted as noise. Measured
+  properly it was already −40 to −72, and after the staircase fix below,
+  −57 to −73.
+- "Harmonics decay at the same rate as the fundamental" — also measurement.
+  The comb was cut to the analysis frequency rather than to the fundamental,
+  so measuring H2 mostly measured H1 leaking through at −11.8 dB.
+- "The partials are 10 cents off an exact series" and "the attack is three
+  times brighter than the sustain when played softly" — both real, both one
+  bug: the quiet-tine fast path held one value across all four oversampled
+  subsamples instead of interpolating the tip's path, and the resulting
+  staircase put a flat comb of odd harmonics into every quiet note.
 
 ## Sources
 
