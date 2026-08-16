@@ -113,10 +113,15 @@ private:
     // A coupling gain into the frame, not a force in newtons -- the harp's
     // mass is a lumped modal figure, so the scale here is only meaningful
     // against it. Calibrated by measurement rather than by ear: at the
-    // control's maximum the mechanism sits 32 dB under the note that made it,
-    // and at the default setting about 42, which is where a key thump sits on
-    // a direct feed from a real one.
-    static constexpr double kForce = 1500.0;
+    // control's maximum the mechanism sits about 30 dB under the note that
+    // made it, which is where a key thump sits on a direct feed from a real
+    // one.
+    //
+    // Recalibrated once the frame started resonating. It was set against a
+    // harp whose modes had been wiped by clear(), which left it an integrator
+    // rather than a resonator -- a force produced a permanent velocity, so it
+    // gave far more displacement for far less force than the real thing.
+    static constexpr double kForce = 220000.0;
 
     double fs = 48000.0;
     double knockEnv = 0.0, thudEnv = 0.0;

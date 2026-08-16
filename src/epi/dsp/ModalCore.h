@@ -126,13 +126,22 @@ public:
         clear();
     }
 
+    // Clears the STATE. It does not touch the mode definitions, and it used to:
+    // it set every stiffness to zero and every inverse mass to one, which
+    // destroys the modes rather than clearing them.
+    //
+    // That mattered because Harp::prepare sets its six modes and then calls
+    // reset(), so the frame's modes were wiped immediately after being
+    // configured and it has never resonated -- it behaved as a damped free
+    // mass. Nothing caught it because the step read stiffness and mass live,
+    // so a zero stiffness is a perfectly well behaved integrator, and the
+    // sympathetic path still passed its test by moving at all.
     void clear()
     {
         for (int i = 0; i < MaxN; ++i)
         {
             q[i] = qPrev[i] = 0.0;
-            invM[i] = 1.0;
-            stiff[i] = 0.0;
+            drive[i] = 0.0;
         }
         for (int p = 0; p < MaxP; ++p) { psi[p] = 0.0; termActive[p] = false; }
     }
@@ -165,6 +174,7 @@ public:
             stiff[i] = 0.0; invM[i] = 0.0; damp[i] = 0.0;
             q[i] = qPrev[i] = 0.0;
             live[i] = false;
+            cacheStep (i);
             return;
         }
 
@@ -189,6 +199,7 @@ public:
         freq[i]  = freqHz;
         baseFreq[i] = freqHz;
         t60[i]   = t60Sec;
+        cacheStep (i);
     }
 
     // Retune without touching stored energy. Used by the geometric
@@ -244,16 +255,10 @@ public:
         // the poles exact.
         double b[MaxN];
 
+        // Branch-free: a dead mode has zero coefficients, so it contributes
+        // nothing and does not need testing for.
         for (int i = 0; i < n; ++i)
-        {
-            if (! live[i]) { b[i] = 0.0; continue;  }
-            const double a  = damp[i];
-            const double c1 = 2.0 / (1.0 + a);
-            const double c2 = (1.0 - a) / (1.0 + a);
-            b[i] = c1 * q[i] - c2 * qPrev[i]
-                 - (k * k * invM[i] * stiff[i] / (1.0 + a)) * q[i]
-                 + (k * k * invM[i] / (1.0 + a)) * drive[i];
-        }
+            b[i] = (cA[i] - cK[i]) * q[i] - cB[i] * qPrev[i] + cD[i] * drive[i];
 
         // Collect the active terms.
         int act[MaxP], na = 0;
@@ -273,8 +278,7 @@ public:
             const int p = act[j];
             for (int i = 0; i < n; ++i)
             {
-                const double a = damp[i];
-                alpha[j][i] = live[i] ? 0.5 * k * invM[i] * g[p][i] / (1.0 + a) : 0.0;
+                alpha[j][i] = cAl[i] * g[p][i];
                 beta[j][i]  = 0.5 * k * g[p][i];
             }
         }
@@ -412,6 +416,26 @@ public:
     }
 
 private:
+    // The step's per-mode coefficients, which depend only on the mode and so
+    // have no business being recomputed every sample.
+    //
+    // They were, and it was the single largest cost in the instrument: two
+    // divisions per mode per sample is 186 million divisions a second across
+    // eighty-eight tines of twenty-two modes, for numbers that change only when
+    // a mode is retuned. Hoisting them also removes the live[] branch from the
+    // inner loop, which is what was stopping it vectorising.
+    void cacheStep (int i)
+    {
+        if (! live[i]) { cA[i] = cB[i] = cK[i] = cD[i] = cAl[i] = 0.0; return; }
+        const double a  = damp[i];
+        const double r  = 1.0 / (1.0 + a);
+        cA[i]  = 2.0 * r;
+        cB[i]  = (1.0 - a) * r;
+        cK[i]  = k * k * invM[i] * stiff[i] * r;
+        cD[i]  = k * k * invM[i] * r;
+        cAl[i] = 0.5 * k * invM[i] * r;
+    }
+
     void setModeKeepingState (int i, double freqHz, double t60Sec)
     {
         const double w     = 2.0 * kPiD * freqHz;
@@ -420,6 +444,7 @@ private:
         const double inner = 2.0 - 2.0 * std::cos (w * k) / std::cosh (sT);
         damp[i]  = std::tanh (sT);
         stiff[i] = mass[i] * std::max (0.0, inner) / (k * k);
+        cacheStep (i);
         freq[i]  = freqHz;
     }
 
@@ -427,6 +452,7 @@ private:
     int    n  = 0;
 
     double q[MaxN] {}, qPrev[MaxN] {}, drive[MaxN] {};
+    double cA[MaxN] {}, cB[MaxN] {}, cK[MaxN] {}, cD[MaxN] {}, cAl[MaxN] {};
     double invM[MaxN] {}, mass[MaxN] {}, stiff[MaxN] {}, damp[MaxN] {};
     double freq[MaxN] {}, baseFreq[MaxN] {}, t60[MaxN] {};
     bool   live[MaxN] {};
