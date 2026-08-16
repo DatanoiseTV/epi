@@ -185,9 +185,25 @@
         trace.push(env * (Math.sin(a) + 0.10 * Math.sin(2 * a + 0.6)) * 2.2e-3);
       }
 
+      /* The whole harp: a held chord plus a little sympathetic movement in
+         everything else, since with the pedal down the frame shakes the lot.
+         Swing falls with pitch the way it does on the instrument, which is
+         what the drawing is there to show. */
+      const harp = [];
+      const chord = [19, 26, 31, 38, 45];
+      /* The same chord held down, packed as the engine packs it. */
+      const mockKeys = [0, 0, 0];
+      chord.forEach((i) => { mockKeys[i >> 5] |= (1 << (i & 31)); });
+      for (let i = 0; i < 88; i++) {
+        const near = 1 - i / 87;
+        const own = chord.includes(i) ? 1 : 0.05 + 0.10 * Math.abs(Math.sin(i * 1.7 + t));
+        harp.push(env * own * (0.06 + 0.94 * near * near) * 3000);
+      }
+
       emit('levels', {
         out: [-90 + 84 * env, -90 + 84 * env],
         field, tip, offset: off, trace, noteHz: f0, strikes,
+        harp, keys: mockKeys, pedal: true, lastNote: 21 + 31, loNote: 21,
         flux: tip, voices: env > 0.02 ? 4 : 0,
         vibL: 1 - depth * (1 - lfo), vibR: 1 - depth * lfo,
       });

@@ -258,7 +258,13 @@ void WebEditor::emitLevels()
     root->setProperty ("vibL",    engine.vizVibratoL());
     root->setProperty ("vibR",    engine.vizVibratoR());
     root->setProperty ("voices",  engine.activeVoices());
+    juce::Array<juce::var> keys;
+    for (int w = 0; w < epi::EpiEngine::kKeyWords; ++w)
+        keys.add (juce::var (static_cast<double> (engine.vizKeys (w))));
+
     root->setProperty ("harp",    juce::var (harp));
+    root->setProperty ("keys",    juce::var (keys));
+    root->setProperty ("pedal",   engine.vizPedal());
     root->setProperty ("lastNote", engine.vizLastNote());
     root->setProperty ("loNote",  epi::EpiEngine::kLoNote);
 

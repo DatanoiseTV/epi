@@ -411,6 +411,17 @@ void EpiEngine::process (float* outL, float* outR, int numSamples,
         vTineTip[i].store (tineBlockPeak[i], std::memory_order_relaxed);
         tineBlockPeak[i] = 0.0f;
     }
+    for (int w = 0; w < kKeyWords; ++w)
+    {
+        std::uint32_t bits = 0;
+        for (int b = 0; b < 32; ++b)
+        {
+            const int i = w * 32 + b;
+            if (i < kNumTines && keyDown[i]) bits |= (1u << b);
+        }
+        vKeys[w].store (bits, std::memory_order_relaxed);
+    }
+    vPedal.store (pedalDown, std::memory_order_relaxed);
 
     while (nextEvent < numEvents) handleEvent (events[nextEvent++], p);
 

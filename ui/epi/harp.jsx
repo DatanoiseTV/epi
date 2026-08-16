@@ -21,11 +21,25 @@ const HARP_N = 88;
 /* Where the assemblies sit. Successive notes step up and to the right,
    which is the oblique projection, and the whole run occupies rather
    less height than it does width because the viewBox is a wide strip. */
-const H_X0 = 96, H_Y0 = 268;          // the bottom note's block
-const H_DX = 176, H_DY = 150;         // total travel across the compass
-const H_LEN0 = 430, H_LENK = 0.62;    // longest tine, and how much it shrinks
-const H_BAR_DY = 26;                  // tone bar above its tine, at the front
+const H_X0 = 72, H_Y0 = 252;          // the bottom note's block
+const H_DX = 226, H_DY = 200;         // total travel across the compass
+const H_LEN0 = 520, H_LENK = 0.60;    // longest tine, and how much it shrinks
+const H_BAR_DY = 30;                  // tone bar above its tine, at the front
 const H_SWING = 15;                   // px at full deflection
+
+/* The action, in front of the harp and in the same projection: one key per
+   tine, in the same order, because that is the relationship the picture is
+   for. A key can be held long after its tine has gone quiet, which the
+   motion alone cannot show and which is exactly what the pedal changes. */
+const K_DX = -104, K_DY = 56;         // where a key sits relative to its block
+const K_W = 76, K_H = 7;              // the key itself, at the front
+const K_BLACK = [1, 3, 6, 8, 10];     // pitch classes that are black keys, from A0
+
+/* Eighty-eight assemblies in a couple of hundred pixels is about two
+   pixels each, so weight has to be spent carefully: the bars are drawn
+   thin and dim, as the striped surface they read as from this angle, and
+   the tines get what is left, because the tines are the part that
+   moves. */
 
 function harpGeometry(i) {
   const t = i / (HARP_N - 1);
@@ -44,22 +58,42 @@ function harpGeometry(i) {
 
 /* One assembly. Everything that moves is mutated through a ref, so a
    playing instrument never touches React. */
+function isBlackKey(i) { return K_BLACK.indexOf((i + 9) % 12) >= 0; }
+
+/* One key. Black keys sit slightly back and are drawn shorter, which is all
+   the cue needed at this size. */
+function HarpKey({ i, keyRef }) {
+  const g = harpGeometry(i);
+  const near = 1 - g.depth;
+  const black = isBlackKey(i);
+  const w = (K_W * (0.55 + 0.45 * near)) * (black ? 0.62 : 1);
+  const h = Math.max(1.2, K_H * (0.45 + 0.55 * near));
+  const x = g.x + K_DX * (0.55 + 0.45 * near) + (black ? w * 0.32 : 0);
+  const y = g.y + K_DY * (0.5 + 0.5 * near);
+  return (
+    <rect ref={keyRef} className={black ? 'hp-key black' : 'hp-key'}
+          x={x.toFixed(1)} y={y.toFixed(1)}
+          width={w.toFixed(1)} height={h.toFixed(1)} rx={(h * 0.35).toFixed(1)}
+          opacity={(0.18 + 0.5 * near).toFixed(3)} />
+  );
+}
+
 function HarpTine({ i, tineRef, barRef }) {
   const g = harpGeometry(i);
   const near = 1 - g.depth;
   return (
-    <g className="hp-unit" opacity={(0.30 + 0.55 * near).toFixed(3)}>
+    <g className="hp-unit" opacity={(0.22 + 0.62 * near).toFixed(3)}>
       <line className="hp-bar" ref={barRef}
             x1={g.x - 6} y1={g.y - g.barDy}
-            x2={g.x - 6 + g.len * 0.74} y2={g.y - g.barDy}
-            strokeWidth={(1.1 + 1.7 * near).toFixed(2)} />
+            x2={g.x - 6 + g.len * 0.58} y2={g.y - g.barDy}
+            strokeWidth={(0.45 + 1.0 * near).toFixed(2)} />
       <line className="hp-block"
             x1={g.x - 3} y1={g.y - g.barDy}
             x2={g.x - 3} y2={g.y}
-            strokeWidth={(1.6 + 2.2 * near).toFixed(2)} />
+            strokeWidth={(0.8 + 1.5 * near).toFixed(2)} />
       <line className="hp-tine" ref={tineRef}
             x1={g.x} y1={g.y} x2={g.x + g.len} y2={g.y}
-            strokeWidth={(1.0 + 1.6 * near).toFixed(2)} />
+            strokeWidth={(0.7 + 1.9 * near).toFixed(2)} />
     </g>
   );
 }
@@ -70,11 +104,13 @@ function HarpView() {
 
   const tineRefs = useRef([]);
   const barRefs = useRef([]);
+  const keyRefs = useRef([]);
   const hammerRef = useRef(null);
   const capRef = useRef(null);
   if (tineRefs.current.length !== HARP_N) {
     tineRefs.current = Array.from({ length: HARP_N }, () => React.createRef());
     barRefs.current = Array.from({ length: HARP_N }, () => React.createRef());
+    keyRefs.current = Array.from({ length: HARP_N }, () => React.createRef());
   }
 
   useEffect(() => {
@@ -124,6 +160,19 @@ function HarpView() {
         if (b) b.setAttribute('transform', `translate(0 ${(-a * H_SWING * 0.22).toFixed(2)})`);
       }
 
+      /* Which keys are down, unpacked from the bitfield. */
+      const K = L.keys || [];
+      for (let i = 0; i < HARP_N; i++) {
+        const el = keyRefs.current[i].current;
+        if (!el) continue;
+        const w = K[i >> 5] || 0;
+        const down = (w & (1 << (i & 31))) !== 0;
+        const cls = (isBlackKey(i) ? 'hp-key black' : 'hp-key') + (down ? ' down' : '');
+        if (el.getAttribute('class') !== cls) el.setAttribute('class', cls);
+        /* A key that is down moves, by about its own thickness. */
+        el.setAttribute('transform', down ? 'translate(3 2)' : 'translate(0 0)');
+      }
+
       /* A hammer on the note that was last struck, so the mechanism is
          visible without drawing eighty-eight of them. */
       const note = (L.lastNote || 60) - lo;
@@ -155,6 +204,10 @@ function HarpView() {
     return () => cancelAnimationFrame(raf);
   }, []);
 
+  const keys = [];
+  for (let i = HARP_N - 1; i >= 0; i--)
+    keys.push(<HarpKey key={'k' + i} i={i} keyRef={keyRefs.current[i]} />);
+
   const units = [];
   /* Drawn from the top of the compass down, so the near, long, bass
      assemblies are painted last and overlap the ones behind them. */
@@ -166,11 +219,12 @@ function HarpView() {
   return (
     <g className="hp">
       {units}
+      {keys}
       <g ref={hammerRef} opacity="0">
         <rect className="hp-hammer" x="-16" y="0" width="22" height="6" rx="3" />
         <rect className="hp-tip" x="2" y="-3" width="7" height="11" rx="3" />
       </g>
-      <text className="iv-cap" x={H_X0 - 4} y={H_Y0 + 22}>HARP · 88 TINES</text>
+      <text className="iv-cap" x={10} y={H_Y0 + K_DY + 24}>HARP · 88 TINES AND THEIR KEYS</text>
       <text className="iv-cap hp-count" ref={capRef}
             x={H_X0 + H_DX + 96} y={H_Y0 - H_DY - 14}>0 tines moving</text>
     </g>

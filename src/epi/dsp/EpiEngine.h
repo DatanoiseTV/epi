@@ -180,6 +180,12 @@ public:
     float vizTineTip (int i) const { return vTineTip[i].load (std::memory_order_relaxed); }
     int   vizLastNote() const      { return vLastNote.load (std::memory_order_relaxed); }
 
+    // Which keys are down, packed a bit per note. A key can be held long after
+    // its tine has gone quiet, so the motion alone cannot show it.
+    std::uint32_t vizKeys (int word) const { return vKeys[word].load (std::memory_order_relaxed); }
+    static constexpr int kKeyWords = (kNumTines + 31) / 32;
+    bool  vizPedal() const { return vPedal.load (std::memory_order_relaxed); }
+
     static constexpr int kTraceLen = RhodesVoice::kTraceLen;
     float vizTrace (int i) const { return vTrace[i].load (std::memory_order_relaxed); }
     float vizNoteHz() const      { return vNoteHz.load (std::memory_order_relaxed); }
@@ -234,6 +240,8 @@ private:
     std::atomic<int>   vStrikes { 0 };
     std::atomic<int>   vLastNote { 60 };
     std::atomic<float> vTineTip[kNumTines];
+    std::atomic<std::uint32_t> vKeys[kKeyWords];
+    std::atomic<bool> vPedal { false };
     float tineBlockPeak[kNumTines] {};
     int strikeCount = 0;
 };

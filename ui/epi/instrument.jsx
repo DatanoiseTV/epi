@@ -12,7 +12,7 @@
    The 60 Hz telemetry never touches React state.
    ============================================================ */
 
-const VB_W = 1280, VB_H = 300;
+const VB_W = 1280, VB_H = 340;
 
 /* Layout, in SVG user units. */
 const BAR_X0 = 120, BAR_X1 = 540, BAR_Y = 74;      // tone bar
@@ -39,9 +39,7 @@ function InstrumentView({ pickupPos, setPickupPos, pickupDist }) {
   const P = useRef({ pickupPos, pickupDist });
   P.current = { pickupPos, pickupDist };
 
-  const tineRef = useRef(null), tipRef = useRef(null), orbitRef = useRef(null);
-  const hammerRef = useRef(null), barRef = useRef(null);
-  const fieldRef = useRef(null), markerRef = useRef(null), traceRef = useRef(null);
+    const fieldRef = useRef(null), markerRef = useRef(null), traceRef = useRef(null);
   const gapRef = useRef(null), noteRef = useRef(null), voiceRef = useRef(null);
 
   useEffect(() => {
@@ -82,65 +80,6 @@ function InstrumentView({ pickupPos, setPickupPos, pickupDist }) {
       if (T) for (let i = 0; i < T.length; i++) tmax = Math.max(tmax, Math.abs(T[i]));
       const swing = T ? sampleTrace(0) / tmax * Math.min(1, level * 1.4) : 0;
       const y = TINE_Y + swing * TINE_SWING;
-
-      if (tineRef.current) {
-        let d = `M ${TINE_X0} ${TINE_Y}`;
-        const N = 26;
-        for (let i = 1; i <= N; i++) {
-          const u = i / N;
-          /* A clamped-free beam is flat at the clamp and steepest at the tip.
-             Each point along it lags slightly, because a bending wave takes
-             time to travel -- which is why a struck tine looks like a whip. */
-          const w = u * u * (3 - 2 * u);
-          const lag = sampleTrace(-u * 2.5) / tmax * Math.min(1, level * 1.4);
-          const x = TINE_X0 + (TINE_X1 - TINE_X0) * u;
-          d += ` L ${x.toFixed(1)} ${(TINE_Y + lag * TINE_SWING * w).toFixed(1)}`;
-        }
-        tineRef.current.setAttribute('d', d);
-      }
-      if (tipRef.current) tipRef.current.setAttribute('cy', y.toFixed(1));
-
-      /* The tip traces an ellipse: the two polarisations sit a few cents apart,
-         so the orbit slowly precesses instead of closing on itself. */
-      if (orbitRef.current) {
-        const env = Math.min(1, level * 1.4);
-        orbitRef.current.setAttribute('rx', (3 + 6 * env).toFixed(1));
-        orbitRef.current.setAttribute('ry', Math.max(0.5, TINE_SWING * env).toFixed(1));
-        orbitRef.current.setAttribute('opacity', (0.28 * env).toFixed(3));
-      }
-
-      /* The hammer is a one-shot, fired by an actual strike in the engine, not
-         a shape derived from the envelope. It comes up, touches for about four
-         milliseconds, and falls away -- and it does not come back, because the
-         key has already escaped. */
-      const strikes = L.strikes || 0;
-      if (strikes !== lastStrikes) { lastStrikes = strikes; hammerT = 0; }
-      hammerT += dt;
-      if (hammerRef.current) {
-        const t = hammerT;
-        let rise;
-        if (t < 0.05)      rise = t / 0.05;                 // travelling up
-        else if (t < 0.10) rise = 1;                        // contact
-        else if (t < 0.45) rise = Math.max(0, 1 - (t - 0.10) / 0.35);
-        else               rise = 0;
-        /* HAMMER_REST below the tine when away, and exactly touching it at
-           full rise. The travel used to be 30 while the tip started 26 below
-           the tine, so the hammer stopped 26 units short of the string it was
-           supposed to be hitting -- every time, at every velocity. */
-        hammerRef.current.setAttribute('transform',
-          `translate(0 ${(HAMMER_REST - (HAMMER_REST + HAMMER_GAP) * rise).toFixed(1)})`);
-      }
-
-      /* The tone bar is enslaved to the tine -- same frequency, opposite phase,
-         far more heavily damped -- so it moves with it and much less.
-         It PIVOTS about the block rather than sliding, because that is what it
-         is: the other prong of a tuning fork, bolted to the same lump of
-         aluminium at one end and free at the other. Translating the whole bar
-         moved its clamped end too, which left it visibly detached from the
-         block it is bolted to while the tine stayed put. */
-      if (barRef.current)
-        barRef.current.setAttribute('transform',
-          `rotate(${(-swing * 0.7).toFixed(3)} ${PIVOT_X} ${BAR_Y + 7})`);
 
       /* ---- the field, straight from the engine ---- */
       const F = (L.field && L.field.length > 8) ? L.field : null;
@@ -226,27 +165,8 @@ function InstrumentView({ pickupPos, setPickupPos, pickupDist }) {
           </radialGradient>
         </defs>
 
-        {/* ---- tone bar ---- */}
-        <g ref={barRef}>
-          <rect className="iv-bar" x={BAR_X0} y={BAR_Y} width={BAR_X1 - BAR_X0} height="15" rx="4" />
-        </g>
-        <text className="iv-cap" x={BAR_X0} y={BAR_Y - 10}>TONE BAR</text>
-
-        {/* ---- block ---- */}
-        <rect className="iv-block" x={BLOCK_X} y={BAR_Y + 12} width="26" height={TINE_Y - BAR_Y - 4} rx="3" />
-
-        {/* ---- hammer ---- */}
-        <g ref={hammerRef}>
-          <rect className="iv-hammer" x={HAMMER_X} y={TINE_Y + HAMMER_GAP + 4} width="46" height="15" rx="7" />
-          <rect className="iv-hammertip" x={HAMMER_X + 40} y={TINE_Y + HAMMER_GAP} width="13" height="23" rx="6" />
-        </g>
-        <text className="iv-cap" x={HAMMER_X - 6} y={TINE_Y + HAMMER_GAP + HAMMER_REST + 22}>HAMMER</text>
-
-        {/* ---- tine ---- */}
-        <ellipse ref={orbitRef} className="iv-orbit" cx={TINE_X1} cy={TINE_Y} rx="6" ry="1" />
-        <path ref={tineRef} className="iv-tine" d="" />
-        <circle ref={tipRef} className="iv-tip" cx={TINE_X1} cy={TINE_Y} r="6" />
-        <text className="iv-cap" x={TINE_X0 - 2} y={TINE_Y + 34}>TINE</text>
+        {/* ---- the harp: every tine, and the one being hit ---- */}
+        <HarpView />
 
         {/* ---- magnet ---- */}
         <circle className="iv-poleglow" cx={POLE_X + 8} cy={TINE_Y} r="54" fill="url(#poleglow)" />
