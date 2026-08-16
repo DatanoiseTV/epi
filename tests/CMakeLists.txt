@@ -39,3 +39,12 @@ if(APPLE OR WIN32)
     endif()
 endif()
 
+
+# ---------------------------------------------------------------------------
+# Epi DSP cores. Framework-free like the didgeridoo's, so this builds with no
+# JUCE at all.
+# ---------------------------------------------------------------------------
+add_executable(epi_dsp_tests test_epi_dsp.cpp)
+target_include_directories(epi_dsp_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_features(epi_dsp_tests PRIVATE cxx_std_20)
+add_test(NAME epi_dsp COMMAND epi_dsp_tests)

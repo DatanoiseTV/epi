@@ -62,9 +62,9 @@ add_subdirectory(external/JUCE)
 add_subdirectory(external/clap-juce-extensions EXCLUDE_FROM_ALL)
 
 # Local-install copy is on by default for developer iteration; CI builds set
-# -DDIDGE_INSTALL_LOCAL=OFF so they don't try to write into the user's
+# -DPLUGIN_INSTALL_LOCAL=OFF so they don't try to write into the user's
 # plug-in directories.
-option(DIDGE_INSTALL_LOCAL "Copy built plugins into the user's plug-in dirs" ON)
+option(PLUGIN_INSTALL_LOCAL "Copy built plugins into the user's plug-in dirs" ON)
 
 juce_add_plugin(Didge
     COMPANY_NAME            "DatanoiseTV"
@@ -81,7 +81,7 @@ juce_add_plugin(Didge
     EDITOR_WANTS_KEYBOARD_FOCUS FALSE
     NEEDS_WEB_BROWSER       TRUE   # pulls webkit2gtk + gtk pkg-config on Linux
     NEEDS_WEBVIEW2          TRUE   # Windows: statically link the WebView2 loader
-    COPY_PLUGIN_AFTER_BUILD ${DIDGE_INSTALL_LOCAL}
+    COPY_PLUGIN_AFTER_BUILD ${PLUGIN_INSTALL_LOCAL}
     VST3_CATEGORIES         Instrument Synth
     AU_MAIN_TYPE            kAudioUnitType_MusicDevice)
 
@@ -104,7 +104,7 @@ clap_juce_extensions_plugin(TARGET Didge
 # plugin never reaches the network. The vendored React UMDs and
 # babel-standalone are MIT-licensed.
 # -----------------------------------------------------------------------------
-file(GLOB DIDGE_UI_SRC    CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/ui/src/*")
+file(GLOB DIDGE_UI_SRC    CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/ui/didge/*")
 file(GLOB DIDGE_UI_VENDOR CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/ui/vendor/*")
 juce_add_binary_data(DidgeUI
     SOURCES     ${DIDGE_UI_SRC} ${DIDGE_UI_VENDOR}
@@ -149,6 +149,16 @@ target_link_libraries(Didge PRIVATE
     juce::juce_recommended_config_flags
     juce::juce_recommended_lto_flags
     juce::juce_recommended_warning_flags)
+
+# =============================================================================
+# Epi — physically modeled electric pianos (Rhodes / Wurlitzer / Clavinet /
+# CP-70). A second product sharing this repository's plugin shell.
+#
+# The plugin target is not wired up yet: the DSP cores under src/epi/dsp are
+# built and measured by epi_dsp_tests, and the JUCE wrapper follows once the
+# Rhodes voice passes across the whole compass. See CHANGELOG.md for what is
+# verified and what is not.
+# =============================================================================
 
 # -----------------------------------------------------------------------------
 # Unit tests (DSP cores + state round-trip). Built only when top-level.
