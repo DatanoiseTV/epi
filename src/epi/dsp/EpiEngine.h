@@ -198,10 +198,10 @@ private:
     float expression = 1.0f;
     std::uint32_t seed = 0x2545f491u;
 
-    // Cached so a parameter that costs a full voice reconfigure only triggers
-    // one when it actually moves.
-    float lastPickupPos = -99.0f, lastPickupDist = -99.0f;
-    float lastTipMass = -99.0f, lastResDamp = -99.0f, lastBarCouple = -99.0f;
+    // The configuration the tines are currently built to, compared whole so a
+    // newly added field cannot be forgotten. Deliberately initialised to
+    // something no real configuration equals, so the first block always builds.
+    RhodesVoice::Config lastCfg { -1.0e30 };
 
     std::atomic<int>   numActive { 0 };
     std::atomic<float> peakL { 0.0f }, peakR { 0.0f };

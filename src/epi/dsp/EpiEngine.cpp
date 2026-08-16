@@ -12,6 +12,8 @@
 
 #include "EpiEngine.h"
 
+#include <cstring>
+
 #include <algorithm>
 
 namespace epi
@@ -93,6 +95,10 @@ RhodesVoice::Config EpiEngine::rhodesConfig (const EngineParams& p) const
     c.nonlinearity   = p.nonlinAmt;
     c.pickupOffset   = p.pickupPos;
     c.pickupGapNorm  = p.pickupDist;
+    // Master tuning and the wheel are the same adjustment as far as a tine is
+    // concerned, so they arrive as one number.
+    c.detuneCents    = static_cast<double> (p.tuneCents)
+                     + 100.0 * static_cast<double> (bendSemis);
     return c;
 }
 
@@ -155,19 +161,24 @@ void EpiEngine::process (float* outL, float* outR, int numSamples,
 {
     const auto cfg = rhodesConfig (p);
 
-    // Reconfiguring a voice re-solves its beam geometry and its tuning trim,
-    // so it only happens when a parameter that changes them actually moves.
-    const bool geometryMoved =
-           std::abs (p.pickupPos  - lastPickupPos)  > 1.0e-4f
-        || std::abs (p.pickupDist - lastPickupDist) > 1.0e-4f
-        || std::abs (p.tipMass    - lastTipMass)    > 1.0e-4f
-        || std::abs (p.resDamp    - lastResDamp)    > 1.0e-4f
-        || std::abs (p.barCouple  - lastBarCouple)  > 1.0e-4f;
-    if (geometryMoved)
+    // Reconfiguring a voice re-solves its beam geometry and its tuning trim, so
+    // it only happens when something it depends on has actually moved.
+    //
+    // This used to be a hand-written list of five fields against a Config of
+    // eleven, and it had gone stale exactly as that arrangement always does:
+    // master tuning, the hammer's hardness and mass, the damper's grip, the
+    // tonebar's tuning and the bloom amount were all read here and none of them
+    // were watched, so turning any of those knobs did nothing at all until some
+    // OTHER knob happened to move and drag the value in with it. Comparing the
+    // whole struct cannot go stale when a field is added, which is the only
+    // property worth having here.
+    //
+    // Measured cost of the worst case -- a knob swept continuously, so this
+    // fires every block and re-solves all eighty-eight tines -- is 0.41 ms
+    // against a 2.67 ms budget at 128 samples.
+    if (std::memcmp (&cfg, &lastCfg, sizeof cfg) != 0)
     {
-        lastPickupPos = p.pickupPos;   lastPickupDist = p.pickupDist;
-        lastTipMass   = p.tipMass;     lastResDamp    = p.resDamp;
-        lastBarCouple = p.barCouple;
+        lastCfg = cfg;
         retuneAll (cfg);
     }
 

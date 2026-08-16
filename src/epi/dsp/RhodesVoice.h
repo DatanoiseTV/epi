@@ -16,6 +16,8 @@
 #include "ModalCore.h"
 #include "PickupMagnetic.h"
 
+#include <type_traits>
+
 namespace epi
 {
 
@@ -139,7 +141,20 @@ public:
         // Transducer
         double pickupOffset   = -0.35;   // in pole half-widths
         double pickupGapNorm  = 0.35;
+
+        // Master tuning and pitch bend together, in cents. Applied the way the
+        // instrument is tuned: by moving the spring, not by re-cutting the
+        // tine. So the geometry below stays fixed to the nominal note and only
+        // the frequencies move -- which is also why a bend does not change how
+        // the note is struck.
+        double detuneCents    = 0.0;
     };
+
+    // Compared byte-for-byte by the engine to decide whether the instrument
+    // needs rebuilding, so it must have no padding for that comparison to mean
+    // what it says.
+    static_assert (std::is_trivially_copyable<Config>::value, "Config must be memcmp-able");
+    static_assert (sizeof (Config) == 12 * sizeof (double), "Config has padding");
 
     void prepare (double sampleRate, const MagneticPickup* sharedField)
     {
@@ -563,7 +578,13 @@ private:
 
     void configure (const Config& cfg)
     {
-        const double f0 = 440.0 * std::pow (2.0, (static_cast<double> (note) - 69.0) / 12.0);
+        // The note this tine was cut for, and the note it is currently tuned
+        // to. They are not the same thing once master tuning or a bend is in
+        // play, and keeping them apart is what makes a bend physical: the
+        // steel does not change length, so the mass the hammer meets and the
+        // point it strikes stay exactly where they were.
+        const double f0Nom = 440.0 * std::pow (2.0, (static_cast<double> (note) - 69.0) / 12.0);
+        const double f0 = f0Nom * std::pow (2.0, cfg.detuneCents / 1200.0);
         const double reg = registerPosition();
 
         // ---- tine geometry --------------------------------------------------
@@ -575,7 +596,7 @@ private:
         // steeply: taking too much off makes the top octaves so light that the
         // hammer overwhelms them.
         const double radius = (0.95 - 0.30 * reg) * 1.0e-3;
-        tineLength = CantileverModes::lengthForFrequency (f0, radius, kSpringSteel);
+        tineLength = CantileverModes::lengthForFrequency (f0Nom, radius, kSpringSteel);
         const double area = kPiD * radius * radius;
         const double modalMass = std::max (1.0e-8, kSpringSteel.density * area * tineLength * 0.25);
 
@@ -672,7 +693,7 @@ private:
         // Taking the smaller of the two ratios means the joint is a modest
         // fraction of whichever party is weaker at that note, which is the only
         // form that stays sane from one end of the compass to the other.
-        const double barF0  = TonebarTable::barFrequency (f0) * std::pow (2.0, cfg.barTuneSemis / 12.0);
+        const double barF0  = TonebarTable::barFrequency (f0Nom) * std::pow (2.0, cfg.barTuneSemis / 12.0);
         const double barW0  = 2.0 * kPiD * barF0;
         const double barM0  = modalMass * 26.0;
         const double phiBar = CantileverModes::shape (0, 0.10);
@@ -746,7 +767,7 @@ private:
         }
 
         // ---- tonebar --------------------------------------------------------
-        const double barF = TonebarTable::barFrequency (f0) * std::pow (2.0, cfg.barTuneSemis / 12.0);
+        const double barF = TonebarTable::barFrequency (f0Nom) * std::pow (2.0, cfg.barTuneSemis / 12.0);
         const double barMass = modalMass * 26.0;   // far heavier than the tine
 
         for (int m = 0; m < kBarModes; ++m)

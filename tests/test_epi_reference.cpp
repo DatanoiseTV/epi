@@ -668,11 +668,13 @@ static void sectionStructural()
     {
         struct Knob { const char* name; float EngineParams::*f; float lo, hi; };
         const Knob knobs[] = {
+            { "tune",        &EngineParams::tuneCents, -50.0f, 50.0f },
             { "velCurve",    &EngineParams::velCurve,    0.0f, 1.0f },
             { "hammerHard",  &EngineParams::hammerHard,  0.0f, 1.0f },
             { "hammerMass",  &EngineParams::hammerMass,  0.0f, 1.0f },
             { "escapement",  &EngineParams::escapement,  0.0f, 1.0f },
             { "strikeNoise", &EngineParams::strikeNoise, 0.0f, 1.0f },
+            { "damperGrip",  &EngineParams::damperGrip,  0.0f, 1.0f },
             { "tipMass",     &EngineParams::tipMass,     0.0f, 1.0f },
             { "resDamp",     &EngineParams::resDamp,     0.0f, 1.0f },
             { "barCouple",   &EngineParams::barCouple,   0.0f, 1.0f },
@@ -687,61 +689,89 @@ static void sectionStructural()
             { "preampDrive", &EngineParams::preampDrive, 0.0f, 1.0f },
             { "bass",        &EngineParams::bassDb,    -12.0f, 12.0f },
             { "treble",      &EngineParams::trebleDb,  -12.0f, 12.0f },
+            { "tremRate",    &EngineParams::tremRate,    0.5f, 9.0f },
             { "tremDepth",   &EngineParams::tremDepth,   0.0f, 1.0f },
             { "cabMix",      &EngineParams::cabMix,      0.0f, 1.0f },
             { "spaceMix",    &EngineParams::spaceMix,    0.0f, 1.0f },
+            { "spaceSize",   &EngineParams::spaceSize,   0.0f, 1.0f },
         };
 
-        auto renderWith = [] (const EngineParams& p, int note)
+        // A knob is MOVED at 0.6 s and a fresh note is struck at 0.9 s, and the
+        // judgement is made on that second note.
+        //
+        // Rendering two takes with the value fixed from the start -- the
+        // obvious test, and the one written first -- cannot see this class of
+        // bug at all, because the engine always builds itself on its first
+        // block and so picks up whatever the value happened to be. Six
+        // controls passed that test while doing nothing whatsoever when a
+        // player turned them.
+        //
+        // Everything downstream is switched on, or a control that modulates
+        // something disabled reads as dead when it is only idle.
+        auto run = [] (const Knob& k, float from, float to)
         {
-            const int N = static_cast<int> (kFs * 1.5);
-            const int block = 512;
+            const int N = static_cast<int> (kFs * 2.0);
+            const int block = 128;
             EpiEngine e;
             e.prepare (kFs, block);
+
+            EngineParams p = referenceParams();
+            p.tremDepth = 0.5f;
+            p.spaceMix  = 0.3f;
+            p.cabMix    = 0.5f;
+            p.*(k.f) = from;
+
             std::vector<float> L (static_cast<std::size_t> (N), 0.0f);
             std::vector<float> R (static_cast<std::size_t> (N), 0.0f);
-            NoteEvent ev { 0, NoteEvent::noteOn, note, 0.75f };
+
+            const int offAt = static_cast<int> (0.5 * kFs);
+            const int turnAt = static_cast<int> (0.6 * kFs);
+            const int againAt = static_cast<int> (0.9 * kFs);
+            // The second note is released too, or nothing that only acts on
+            // the release -- the damper's grip, for one -- can be seen at all.
+            const int off2At = static_cast<int> (1.4 * kFs);
+
             for (int i = 0; i < N; i += block)
             {
+                if (i >= turnAt) p.*(k.f) = to;
                 const int n = std::min (block, N - i);
-                e.process (L.data() + i, R.data() + i, n, p,
-                           i == 0 ? &ev : nullptr, i == 0 ? 1 : 0);
+                NoteEvent ev[3];
+                int ne = 0;
+                if (i == 0)                          ev[ne++] = { 0, NoteEvent::noteOn, kMid.midi, 0.75f };
+                if (i <= offAt   && offAt   < i + n) ev[ne++] = { offAt - i, NoteEvent::noteOff, kMid.midi, 0.0f };
+                if (i <= againAt && againAt < i + n) ev[ne++] = { againAt - i, NoteEvent::noteOn, kMid.midi, 0.75f };
+                if (i <= off2At  && off2At  < i + n) ev[ne++] = { off2At - i, NoteEvent::noteOff, kMid.midi, 0.0f };
+                e.process (L.data() + i, R.data() + i, n, p, ne ? ev : nullptr, ne);
             }
-            std::vector<double> mono (static_cast<std::size_t> (N));
-            for (int i = 0; i < N; ++i)
-                mono[static_cast<std::size_t> (i)] = 0.5 * (L[static_cast<std::size_t> (i)]
-                                                          + R[static_cast<std::size_t> (i)]);
-            return mono;
+            std::vector<double> out (static_cast<std::size_t> (N));
+            for (int i = 0; i < N; ++i) out[static_cast<std::size_t> (i)] = L[static_cast<std::size_t> (i)];
+            return out;
         };
 
-        std::string dead;
+        std::string dead, weak;
         double quietest = 0.0;
         for (const Knob& k : knobs)
         {
-            EngineParams a = referenceParams(), b = referenceParams();
-            a.*(k.f) = k.lo;
-            b.*(k.f) = k.hi;
-            const std::vector<double> xa = renderWith (a, kMid.midi);
-            const std::vector<double> xb = renderWith (b, kMid.midi);
+            const std::vector<double> a = run (k, k.lo, k.lo);
+            const std::vector<double> b = run (k, k.lo, k.hi);
 
             double diff = 0.0, ref = 0.0;
-            for (std::size_t i = 0; i < xa.size(); ++i)
+            for (std::size_t i = static_cast<std::size_t> (0.95 * kFs); i < a.size(); ++i)
             {
-                diff = std::max (diff, std::abs (xa[i] - xb[i]));
-                ref  = std::max (ref, std::abs (xa[i]));
+                diff = std::max (diff, std::abs (a[i] - b[i]));
+                ref  = std::max (ref, std::abs (a[i]));
             }
             const double db = ref > 0.0 ? 20.0 * std::log10 (std::max (1.0e-12, diff / ref)) : -300.0;
-            if (db < -80.0)
-            {
-                if (! dead.empty()) dead += ", ";
-                dead += k.name;
-            }
+
+            if (db < -60.0)      { if (! dead.empty()) dead += ", "; dead += k.name; }
+            else if (db < -40.0) { if (! weak.empty()) weak += ", "; weak += k.name; }
             quietest = std::min (quietest, db);
         }
-        row ("S4", "every control changes the sound", "all above -80 dB",
-             dead.empty() ? fmt ("quietest %.0f dB", quietest)
-                          : std::string ("dead: ") + dead,
-             dead.empty() ? Verdict::pass : Verdict::fail);
+        row ("S4", "turning a control changes the sound", "all above -40 dB",
+             dead.empty() && weak.empty() ? fmt ("quietest %.0f dB", quietest)
+             : (! dead.empty() ? std::string ("dead: ") + dead
+                               : std::string ("weak: ") + weak),
+             (dead.empty() && weak.empty()) ? Verdict::pass : Verdict::fail);
     }
 
     // The room has to decay at the rate its own control asks for. A feedback
