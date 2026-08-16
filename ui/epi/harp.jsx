@@ -1,258 +1,207 @@
 /* ============================================================
-   Epi · the harp
+   Epi · the harp, in three dimensions
    ============================================================
-   Eighty-eight tine-and-tonebar assemblies, drawn in oblique
-   projection, each one moving because the engine says it is.
+   Eighty-eight assemblies -- key, hammer, tine, tone bar, pickup --
+   built as real geometry in millimetres and put through a pinhole
+   camera, rather than sheared about until they looked like depth.
 
-   The single-tine cutaway shows what a note IS. This shows what the
-   INSTRUMENT is, and it shows one thing that cannot be seen any other
-   way: every tine is bolted to the same frame, so striking one shakes
-   the rest. With the pedal down the whole harp answers, and that is
-   most of what a pedalled chord actually is.
+   The layout is the decision that matters, and two attempts got it
+   backwards before this one. Sending the NOTE axis into the distance
+   gives every note about two pixels of the picture, and eighty-eight
+   things two pixels apart are a striped sheet whatever else is done to
+   them. On the instrument the note axis runs across the player and the
+   mechanism goes away from them -- which gives each note a dozen pixels
+   of width, puts the depth on the axis that has any, and is also simply
+   what one looks like.
 
-   Oblique rather than perspective on purpose. A vanishing point would
-   foreshorten the bass tines, which are the long ones and the ones
-   whose length is the point -- pitch here is length, and a projection
-   that distorts length would be drawing the wrong thing.
+   Everything is in millimetres, close enough to the real instrument that
+   the proportions come out on their own: a harp about 1.2 m wide, tines
+   from 175 mm at the bottom to 22 at the top, keys 140 mm long. That
+   eight-to-one range in tine length is not a graphic effect. It is why
+   the bass growls and the top octave pings, and it is the one thing a
+   picture of this instrument ought to show.
    ============================================================ */
 
 const HARP_N = 88;
 
-/* Where the assemblies sit. Successive notes step up and to the right,
-   which is the oblique projection, and the whole run occupies rather
-   less height than it does width because the viewBox is a wide strip. */
-const H_X0 = 120, H_Y0 = 236;         // the bottom note's block
-const H_DX = 226, H_DY = 196;         // total travel across the compass
-const H_LEN0 = 470, H_LENK = 0.60;    // longest tine, and how much it shrinks
-const H_BAR_DY = 30;                  // tone bar above its tine, at the front
-const H_SWING = 13;                   // px at full deflection
+/* ---- the instrument, in millimetres ----
+   Everything here is prefixed. These files are plain scripts sharing one
+   global lexical scope, so a top-level `const` that clashes with another
+   file's throws a redeclaration error and that file simply never defines
+   anything -- which is exactly what happened: this named its tone bar
+   BAR_Y, instrument.jsx already had one, and the whole interface went
+   blank with an error pointing somewhere else entirely. */
+const HP_WKW = 23;                        // white key width
+const HP_BLACK_PC = [1, 3, 6, 8, 10];     // pitch classes that are black
 
-/* The action, in front of the harp and in the same projection: one key per
-   tine, in the same order, because that is the relationship the picture is
-   for. A key can be held long after its tine has gone quiet, which the
-   motion alone cannot show and which is exactly what the pedal changes. */
-// A CONSTANT offset, which is not a detail. This is an oblique projection,
-// and under one of those a rigid translation in three dimensions is a rigid
-// translation in two -- so the keyboard is the harp's own layout moved
-// bodily, and every key lands in front of its own tine by construction.
-// Scaling the offset with depth, which is what this did, slides each key
-// away from the tine it belongs to and the two rows stop corresponding.
-const K_DX = -132, K_DY = 54;         // where a key sits relative to its block
-const K_W = 148;                      // key length, the same for every key
-const K_BLACK = [1, 3, 6, 8, 10];     // pitch classes that are black keys, from A0
+const HP_TINE_LEN0 = 175, HP_TINE_LEN1 = 22; // bass and treble tine
+const HP_BAR_Y = 34, HP_BAR_X0 = -16;        // tone bar: above, and back to the block
+const HP_BAR_LEN0 = 150, HP_BAR_LEN1 = 66;
+const HP_KEY_Y = -54, HP_KEY_X0 = -205, HP_KEY_X1 = -62;
+const HP_KEY_DIP = 7;                     // how far a key falls when played
+const HP_HAM_AT = 0.20;                   // where the hammer meets the tine
+const HP_SWING = 11;                      // mm of tip travel at full deflection
 
-/* Eighty-eight assemblies in a couple of hundred pixels is about two
-   pixels each, so weight has to be spent carefully: the bars are drawn
-   thin and dim, as the striped surface they read as from this angle, and
-   the tines get what is left, because the tines are the part that
-   moves. */
+const HP_TINE_HW = 1.3, HP_BAR_HW = 3.4, HP_POLE_HW = 3.0;   // half-widths across z
 
-function harpGeometry(i) {
+/* Note positions: the keyboard's own layout, with each tine sitting at
+   its key's centre. A real harp spaces its tines evenly and lets them
+   fall where they may against the keys. Putting each one behind its own
+   key costs a little truth and buys what the picture is for, which is
+   being able to see which note is which. */
+const HP_KEY_Z = new Float64Array(HARP_N);
+const HP_IS_BLACK = new Uint8Array(HARP_N);
+(function () {
+  let w = 0;
+  for (let i = 0; i < HARP_N; i++) {
+    const pc = (21 + i) % 12;
+    const black = HP_BLACK_PC.indexOf(pc) >= 0;
+    HP_IS_BLACK[i] = black ? 1 : 0;
+    if (black) HP_KEY_Z[i] = w * HP_WKW;                  // on the boundary between whites
+    else { HP_KEY_Z[i] = w * HP_WKW + HP_WKW * 0.5; w++; }
+  }
+})();
+const HP_HARP_W = HP_KEY_Z[HARP_N - 1] + HP_WKW * 0.5;
+
+/* Length against pitch. A beam's frequency goes as 1/L^2, so halving the
+   length is two octaves -- which is where the eight to one comes from,
+   not from picking numbers that looked good. */
+function hpTineLen(i) {
   const t = i / (HARP_N - 1);
-  /* Nearer notes get more room, which is the entire point of drawing this
-     in depth: the bass tines are the long, slow, visibly moving ones.
-     This eased the other way and crushed them into a solid slab while
-     spending the space on the top octave, which is a row of stubs however
-     it is drawn. */
-  const d = 1.28 * t - 0.28 * t * t;
-  /* How much vertical room this note has to itself, which is the derivative
-     of the same curve. Nothing may be drawn thicker than this or the
-     eighty-eight lines fuse into a surface -- which is what they did. */
-  const pitch = H_DY * (1.28 - 0.56 * t) / (HARP_N - 1);
-  return {
-    x: H_X0 + d * H_DX,
-    y: H_Y0 - d * H_DY,
-    len: H_LEN0 * (1 - H_LENK * d),
-    barDy: H_BAR_DY * (1 - 0.35 * d),
-    pitch,
-    depth: d,
-  };
+  return HP_TINE_LEN0 * Math.pow(HP_TINE_LEN1 / HP_TINE_LEN0, t);
+}
+function hpBarLen(i) {
+  const t = i / (HARP_N - 1);
+  return HP_BAR_LEN0 * Math.pow(HP_BAR_LEN1 / HP_BAR_LEN0, t);
 }
 
-/* One assembly. Everything that moves is mutated through a ref, so a
-   playing instrument never touches React. */
-function isBlackKey(i) { return K_BLACK.indexOf((i + 9) % 12) >= 0; }
+/* ---- the camera ----
+   In front of the keyboard, above it, looking down and back along the
+   mechanism. A pinhole: no shear and no fudge, so straight things are
+   straight and parallel things converge because they are meant to. */
+const HP_CAM = { x: -430, y: 560, z: HP_HARP_W * 0.5, atx: -20, aty: 0, F: 372 };
+const HP_VIEW_CX = 384, HP_VIEW_CY = 196;
 
-/* One key. Black keys sit slightly back and are drawn shorter, which is all
-   the cue needed at this size. */
-function HarpKey({ i, keyRef }) {
-  const g = harpGeometry(i);
-  const near = 1 - g.depth;
-  const black = isBlackKey(i);
-  /* Black keys are shorter and sit further back, which at this angle is the
-     whole of what makes a keyboard legible. */
-  const w = black ? K_W * 0.58 : K_W;
-  const h = Math.max(1.0, g.pitch * (black ? 0.58 : 0.86));
-  const x = g.x + K_DX + (black ? K_W * 0.42 : 0);
-  const y = g.y + K_DY - h * 0.5;
-  return (
-    <rect ref={keyRef} className={black ? 'hp-key black' : 'hp-key'}
-          x={x.toFixed(1)} y={y.toFixed(1)}
-          width={w.toFixed(1)} height={h.toFixed(1)}
-          opacity={(0.55 + 0.40 * near).toFixed(3)} />
-  );
+const _P = Math.atan2(HP_CAM.y - HP_CAM.aty, HP_CAM.atx - HP_CAM.x);
+const _cp = Math.cos(_P), _sp = Math.sin(_P);
+
+function hpProject(x, y, z) {
+  const rx = x - HP_CAM.x, ry = y - HP_CAM.y, rz = z - HP_CAM.z;
+  const depth = rx * _cp - ry * _sp;                 // along the view direction
+  const up = rx * _sp + ry * _cp;
+  const s = HP_CAM.F / Math.max(80, depth);
+  return [HP_VIEW_CX + rz * s, HP_VIEW_CY - up * s];
 }
 
-function HarpTine({ i, tineRef, barRef }) {
-  const g = harpGeometry(i);
-  const near = 1 - g.depth;
-  return (
-    <g className="hp-unit" opacity={(0.22 + 0.62 * near).toFixed(3)}>
-      <line className="hp-bar" ref={barRef}
-            x1={g.x - 6} y1={g.y - g.barDy}
-            x2={g.x - 6 + g.len * 0.58} y2={g.y - g.barDy}
-            strokeWidth={(g.pitch * 0.42).toFixed(2)} />
-      <line className="hp-block"
-            x1={g.x - 3} y1={g.y - g.barDy}
-            x2={g.x - 3} y2={g.y}
-            strokeWidth={(g.pitch * 0.52).toFixed(2)} />
-      <line className="hp-tine" ref={tineRef}
-            x1={g.x} y1={g.y} x2={g.x + g.len} y2={g.y}
-            strokeWidth={(g.pitch * 0.60).toFixed(2)} />
-    </g>
-  );
+/* Every part of this instrument is a flat hpRibbon lying in the x-z plane
+   at some height, so one helper draws all of them. */
+function hpRibbon(x0, x1, y0, y1, z, hw) {
+  const a = hpProject(x0, y0, z - hw), b = hpProject(x1, y1, z - hw);
+  const c = hpProject(x1, y1, z + hw), d = hpProject(x0, y0, z + hw);
+  return a[0].toFixed(1) + ',' + a[1].toFixed(1) + ' ' +
+         b[0].toFixed(1) + ',' + b[1].toFixed(1) + ' ' +
+         c[0].toFixed(1) + ',' + c[1].toFixed(1) + ' ' +
+         d[0].toFixed(1) + ',' + d[1].toFixed(1);
 }
 
 function HarpView() {
   const lv = JuceBridge.useEventRef('levels',
-    { harp: [], lastNote: 60, loNote: 21, voices: 0 });
+    { harp: [], keys: [], loNote: 21, voices: 0 });
 
   const tineRefs = useRef([]);
-  const barRefs = useRef([]);
   const keyRefs = useRef([]);
-  const hammerRefs = useRef([]);
+  const hamRefs = useRef([]);
   const capRef = useRef(null);
   if (tineRefs.current.length !== HARP_N) {
     tineRefs.current = Array.from({ length: HARP_N }, () => React.createRef());
-    barRefs.current = Array.from({ length: HARP_N }, () => React.createRef());
     keyRefs.current = Array.from({ length: HARP_N }, () => React.createRef());
-    hammerRefs.current = Array.from({ length: HARP_N }, () => React.createRef());
+    hamRefs.current = Array.from({ length: HARP_N }, () => React.createRef());
   }
 
   useEffect(() => {
     let raf = 0, prev = performance.now();
-    /* Per-tine envelopes, and one shared scale.
-
-       Scaling each tine against its own peak would make the top octave
-       swing as far as the bottom, which is exactly the thing that is not
-       true: a bass tine moves millimetres and a treble tine a fraction
-       of one. One decaying maximum across the instrument keeps that
-       relationship visible while still adapting to how hard it is being
-       played. */
     const env = new Float32Array(HARP_N);
     const prevEnv = new Float32Array(HARP_N);
-    /* One hammer per note, not one hammer. A chord is several notes struck
-       together, and showing the last of them was showing a chord as a single
-       note -- which is what it looked like.
-
-       Each is fired by that tine's own level jumping, rather than by a note
-       event, so nothing extra has to be sent from the engine and a note
-       struck while already ringing still fires one. */
     const strikeT = new Float32Array(HARP_N).fill(99);
     let scale = 1e-3;
 
     const frame = (now) => {
       const dt = Math.min(0.1, (now - prev) / 1000); prev = now;
       const L = lv.current || {};
-      const H = L.harp || [];
-      const lo = L.loNote || 21;
+      const H = L.harp || [], K = L.keys || [];
+      const isDown = (i) => ((K[i >> 5] || 0) & (1 << (i & 31))) !== 0;
 
       let peak = 1e-6;
       for (let i = 0; i < HARP_N; i++) {
         const v = i < H.length ? Math.abs(H[i]) : 0;
-        /* Fast up, slow down: the engine hands over a peak per block, and
-           without the release the display strobes at the block rate. */
+        /* Fast up, slow down: the engine sends a peak per block, and
+           without the release it strobes at the block rate. */
         env[i] = v > env[i] ? v : env[i] + (v - env[i]) * Math.min(1, dt * 6);
         if (env[i] > peak) peak = env[i];
       }
       scale = peak > scale ? peak : scale + (peak - scale) * Math.min(1, dt * 0.6);
       const inv = 1 / Math.max(scale, 1e-6);
 
-      /* Mapped in decibels, over a range wide enough to contain the thing
-         worth seeing.
-
-         Linearly, a tine shaken by the frame sits 30 to 40 dB under the one
-         that was struck -- which is a hundredth of the height, indexes below
-         any sensible visibility threshold, and disappears. So the drawing
-         threw away the one behaviour it exists to show. Fifty-four decibels
-         puts a note 30 dB down at a bit under half height, where it reads. */
-      const RANGE = 54;
-      const level = (v) => {
-        if (!(v > 0)) return 0;
-        const db = 20 * Math.log10(v * inv);
-        return db <= -RANGE ? 0 : (db + RANGE) / RANGE;
-      };
-
-      /* Which keys are down, unpacked from the bitfield the engine packs. */
-      const K = L.keys || [];
-      const isDown = (i) => ((K[i >> 5] || 0) & (1 << (i & 31))) !== 0;
+      /* In decibels. A tine shaken by the frame sits 30 to 40 dB under the
+         one that was struck, which linearly is a hundredth of the height
+         and disappears -- so a linear mapping throws away the one thing
+         this drawing is for. */
+      const RANGE = 52;
+      let held = 0, ringing = 0;
 
       for (let i = 0; i < HARP_N; i++) {
-        const g = harpGeometry(i);
-        const a = level(env[i]);
+        const e = env[i] * inv;
+        const a = e > 0 ? Math.min(1, Math.max(0, (20 * Math.log10(e) + RANGE) / RANGE)) : 0;
+        const z = HP_KEY_Z[i], len = hpTineLen(i), down = isDown(i);
+        if (down) held++;
+        if (a > 0.02) ringing++;
+
         const t = tineRefs.current[i].current;
         if (t) {
-          t.setAttribute('y2', (g.y + a * H_SWING).toFixed(1));
-          /* Struck and sympathetic are drawn differently on purpose. A tine
-             that is moving with nobody holding its key is moving because the
-             frame is shaking it, and that is the one thing this drawing
-             exists to show -- with the pedal down it should be most of the
-             instrument. */
-          const cls = a <= 0.02 ? 'hp-tine'
-                    : isDown(i) ? 'hp-tine struck'
-                                : 'hp-tine symp';
+          t.setAttribute('points', hpRibbon(0, len, 0, a * HP_SWING, z, HP_TINE_HW));
+          const cls = a <= 0.02 ? 'hp-tine' : down ? 'hp-tine struck' : 'hp-tine symp';
           if (t.getAttribute('class') !== cls) t.setAttribute('class', cls);
-          if (a > 0.02) t.setAttribute('style', `opacity:${(0.30 + 0.70 * a).toFixed(3)}`);
-          else t.removeAttribute('style');
+          t.setAttribute('opacity', (0.40 + 0.60 * a).toFixed(3));
         }
-        /* The bar is the fork's other prong: same frequency, opposite
-           phase, and far less of it. */
-        const b = barRefs.current[i].current;
-        if (b) b.setAttribute('transform', `translate(0 ${(-a * H_SWING * 0.22).toFixed(2)})`);
-      }
 
-      for (let i = 0; i < HARP_N; i++) {
-        const el = keyRefs.current[i].current;
-        if (!el) continue;
-        const down = isDown(i);
-        const cls = (isBlackKey(i) ? 'hp-key black' : 'hp-key') + (down ? ' down' : '');
-        if (el.getAttribute('class') !== cls) el.setAttribute('class', cls);
-        /* A key that is down moves, along the same axis everything else does. */
-        el.setAttribute('transform', down ? 'translate(4 2)' : 'translate(0 0)');
-      }
+        const k = keyRefs.current[i].current;
+        if (k) {
+          const cls = (HP_IS_BLACK[i] ? 'hp-key black' : 'hp-key') + (down ? ' down' : '');
+          if (k.getAttribute('class') !== cls) k.setAttribute('class', cls);
+          /* A key pivots on its balance rail, so the front falls and the
+             back does not. */
+          k.setAttribute('points',
+            hpRibbon(HP_KEY_X0, HP_KEY_X1, HP_KEY_Y - (down ? HP_KEY_DIP : 0), HP_KEY_Y, z,
+                   HP_IS_BLACK[i] ? HP_WKW * 0.28 : HP_WKW * 0.46));
+        }
 
-      for (let i = 0; i < HARP_N; i++) {
-        /* A jump of a few times, from something already audible: that is a
-           hammer landing and not a note decaying. */
-        if (env[i] > prevEnv[i] * 2.2 && env[i] * inv > 0.02) strikeT[i] = 0;
+        /* One hammer per note, fired by that tine's own level jumping, so
+           a chord shows as a chord and a note struck while already
+           ringing still shows. */
+        if (env[i] > prevEnv[i] * 2.2 && e > 0.02) strikeT[i] = 0;
         prevEnv[i] = env[i];
         strikeT[i] += dt;
 
-        const el = hammerRefs.current[i].current;
-        if (!el) continue;
-        const st = strikeT[i];
-        if (st > 0.45) {
-          if (el.getAttribute('opacity') !== '0') el.setAttribute('opacity', '0');
-          continue;
+        const h = hamRefs.current[i].current;
+        if (h) {
+          const st = strikeT[i];
+          if (st > 0.42) { if (h.getAttribute('opacity') !== '0') h.setAttribute('opacity', '0'); }
+          else {
+            const rise = st < 0.05 ? st / 0.05
+                       : st < 0.10 ? 1
+                       : Math.max(0, 1 - (st - 0.10) / 0.32);
+            const hx = len * HP_HAM_AT;
+            const y = -34 + 32 * rise;               // up to the tine and away
+            h.setAttribute('opacity', (0.30 + 0.70 * rise).toFixed(3));
+            h.setAttribute('points', hpRibbon(hx - 34, hx, y, y, z, HP_WKW * 0.22));
+          }
         }
-        const g = harpGeometry(i);
-        let rise;
-        if (st < 0.05) rise = st / 0.05;
-        else if (st < 0.10) rise = 1;
-        else rise = Math.max(0, 1 - (st - 0.10) / 0.35);
-        const rest = 16;
-        el.setAttribute('opacity', (0.25 + 0.75 * rise).toFixed(3));
-        el.setAttribute('transform',
-          `translate(${(g.x + g.len * 0.2).toFixed(1)} ${(g.y + rest - rest * rise).toFixed(1)})`);
       }
 
       if (capRef.current) {
-        let held = 0;
-        for (let i = 0; i < HARP_N; i++) if (isDown(i)) held++;
-        const n = L.voices || 0;
-        const txt = held > 0 && n > held
-          ? held + ' struck · ' + (n - held) + ' answering'
-          : n + (n === 1 ? ' tine' : ' tines') + ' moving';
+        const txt = held > 0 && ringing > held
+          ? held + ' struck · ' + (ringing - held) + ' answering'
+          : ringing + (ringing === 1 ? ' tine' : ' tines') + ' ringing';
         if (capRef.current.textContent !== txt) capRef.current.textContent = txt;
       }
 
@@ -262,41 +211,49 @@ function HarpView() {
     return () => cancelAnimationFrame(raf);
   }, []);
 
-  const keys = [];
-  for (let i = HARP_N - 1; i >= 0; i--)
-    keys.push(<HarpKey key={'k' + i} i={i} keyRef={keyRefs.current[i]} />);
+  /* Static parts, projected once. Painted back to front: the bar rail is
+     furthest, then bars, blocks, pickups, tines, hammers, and the keys
+     nearest the viewer. Every note is the same distance from the camera
+     -- it looks along the note axis, not across it -- so there is nothing
+     to sort between them. */
+  const bars = [], blocks = [], poles = [], tines = [], hammers = [], keys = [];
+  for (let i = 0; i < HARP_N; i++) {
+    const z = HP_KEY_Z[i], len = hpTineLen(i), bl = hpBarLen(i);
+    bars.push(<polygon key={'b' + i} className="hp-bar"
+                       points={hpRibbon(HP_BAR_X0, HP_BAR_X0 + bl, HP_BAR_Y, HP_BAR_Y, z, HP_BAR_HW)} />);
+    blocks.push(<polygon key={'c' + i} className="hp-block"
+                         points={hpRibbon(HP_BAR_X0, 6, HP_BAR_Y, 0, z, HP_BAR_HW * 0.85)} />);
+    poles.push(<polygon key={'p' + i} className="hp-pole"
+                        points={hpRibbon(len + 4, len + 16, -2, -2, z, HP_POLE_HW)} />);
+    tines.push(<polygon key={'t' + i} ref={tineRefs.current[i]} className="hp-tine"
+                        points={hpRibbon(0, len, 0, 0, z, HP_TINE_HW)} />);
+    hammers.push(<polygon key={'h' + i} ref={hamRefs.current[i]} className="hp-hammer"
+                          opacity="0" points="" />);
+    keys.push(<polygon key={'y' + i} ref={keyRefs.current[i]}
+                       className={HP_IS_BLACK[i] ? 'hp-key black' : 'hp-key'}
+                       points={hpRibbon(HP_KEY_X0, HP_KEY_X1, HP_KEY_Y, HP_KEY_Y, z,
+                                      HP_IS_BLACK[i] ? HP_WKW * 0.28 : HP_WKW * 0.46)} />);
+  }
 
-  const units = [];
-  /* Drawn from the top of the compass down, so the near, long, bass
-     assemblies are painted last and overlap the ones behind them. */
-  for (let i = HARP_N - 1; i >= 0; i--)
-    units.push(<HarpTine key={i} i={i}
-                         tineRef={tineRefs.current[i]}
-                         barRef={barRefs.current[i]} />);
+  const rail = hpRibbon(HP_BAR_X0 - 12, HP_BAR_X0 - 2, HP_BAR_Y + 4, HP_BAR_Y + 4,
+                      HP_HARP_W * 0.5, HP_HARP_W * 0.5 + HP_WKW);
+  const cheek = hpRibbon(HP_KEY_X0 - 6, HP_BAR_X0 - 12, HP_KEY_Y - 10, HP_BAR_Y + 4,
+                       HP_HARP_W * 0.5, HP_HARP_W * 0.5 + HP_WKW);
 
   return (
     <g className="hp">
-      {units}
+      <polygon className="hp-case" points={cheek} />
+      <polygon className="hp-rail" points={rail} />
+      {bars}
+      {blocks}
+      {poles}
+      {tines}
+      {hammers}
       {keys}
-      {Array.from({ length: HARP_N }, (_, i) => {
-        const g = harpGeometry(i);
-        const h = Math.max(1.4, g.pitch * 1.5);
-        return (
-          <g key={'h' + i} ref={hammerRefs.current[i]} opacity="0">
-            <rect className="hp-hammer" x={-g.len * 0.13} y="0"
-                  width={(g.len * 0.13).toFixed(1)} height={h.toFixed(1)}
-                  rx={(h * 0.4).toFixed(1)} />
-            <rect className="hp-tip" x="-2" y={(-h * 0.5).toFixed(1)}
-                  width={(h * 1.1).toFixed(1)} height={(h * 2).toFixed(1)}
-                  rx={(h * 0.5).toFixed(1)} />
-          </g>
-        );
-      })}
-      <text className="iv-cap" x={10} y={H_Y0 + K_DY + 24}>HARP · 88 TINES AND THEIR KEYS</text>
-      <text className="iv-cap hp-count" ref={capRef}
-            x={H_X0 + H_DX + 96} y={H_Y0 - H_DY - 14}>0 tines moving</text>
+      <text className="iv-cap" x="18" y="332">HARP · 88 TINES AND THEIR KEYS</text>
+      <text className="iv-cap hp-count" ref={capRef} x="596" y="332">0 tines ringing</text>
     </g>
   );
 }
 
-Object.assign(window, { HarpView, HARP_N, harpGeometry });
+Object.assign(window, { HarpView, HARP_N });
