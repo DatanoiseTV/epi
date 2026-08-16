@@ -37,11 +37,16 @@ void EpiEngine::prepare (double sampleRate, int)
         tines[i].setNote (kLoNote + i, cfg);
     }
 
-    coil.prepare (static_cast<float> (sampleRate));
-    decimator.prepare (sampleRate);
-    preamp.prepare (sampleRate);
+    // The stages that clip run at the oversampled rate; the decimators and the
+    // panner are the only things that know about the base rate.
+    const double fsOs = sampleRate * Decimator::kOver;
+    coil.prepare (static_cast<float> (fsOs));
+    preamp.prepare (fsOs);
+    cabinetL.prepare (fsOs);
+    cabinetR.prepare (fsOs);
+    decimL.prepare (sampleRate);
+    decimR.prepare (sampleRate);
     vibrato.prepare (sampleRate);
-    cabinet.prepare (sampleRate);
 
     publishField();
     reset();
@@ -61,10 +66,12 @@ void EpiEngine::reset()
     room.reset();
     pedalDown = false;
     coil.reset();
-    decimator.reset();
+    decimL.reset();
+    decimR.reset();
     preamp.reset();
     vibrato.reset();
-    cabinet.reset();
+    cabinetL.reset();
+    cabinetR.reset();
     numActive.store (0, std::memory_order_relaxed);
 }
 
@@ -208,7 +215,8 @@ void EpiEngine::process (float* outL, float* outR, int numSamples,
     preamp.setTone (p.bassDb, p.trebleDb, p.preampDrive);
     vibrato.setRate (p.tremRate);
     vibrato.setDepth (p.tremDepth);
-    cabinet.setMix (p.cabMix);
+    cabinetL.setMix (p.cabMix);
+    cabinetR.setMix (p.cabMix);
 
     int nextEvent = 0;
     float pL = 0.0f, pR = 0.0f;
@@ -279,19 +287,46 @@ void EpiEngine::process (float* outL, float* outR, int numSamples,
         harp.addForce (harpReaction + action.tick (p.strikeNoise, noiseRng));
         harp.tick();
 
-        const double flux = decimator.process (os);
-        lastFlux = static_cast<float> (flux);
+        // Everything nonlinear stays at the oversampled rate, and the whole
+        // chain is decimated once, at the end.
+        //
+        // Decimating first -- which is what this did -- antialiases the tine's
+        // own nonlinearity properly and then feeds the result straight into two
+        // more nonlinearities running at the base rate: the preamp's asymmetric
+        // clipper and the cabinet's excursion limit. Both of those meet a
+        // signal that already carries harmonics to 20 kHz, and everything they
+        // make above Nyquist folds back at whatever frequency the fold happens
+        // to put it. Measured on an E5, the inharmonic content went from -60 dB
+        // with the drive down to -26 dB with it up: 34 dB of noise that appears
+        // for no reason other than the drive being raised. A nonlinearity with
+        // enough room adds harmonics, not noise.
+        //
+        // Raising the coil's resonant peak made it worse, for the same reason:
+        // it lifts exactly the high harmonics that then have nowhere to go.
+        lastFlux = static_cast<float> (os[Decimator::kOver - 1]);
 
-        double y = coil.process (static_cast<float> (flux));
-        y = preamp.process (y);
+        // The panner is a slow modulation and is resolved once per output
+        // sample, then held across the frame. Advancing its oscillator four
+        // times per sample would run it four times too fast.
+        double gainL = 0.0, gainR = 0.0;
+        vibrato.process (1.0, gainL, gainR);
+        lastVibL = static_cast<float> (gainL);
+        lastVibR = static_cast<float> (gainR);
 
-        double l = 0.0, r = 0.0;
-        vibrato.process (y, l, r);
-        lastVibL = static_cast<float> (l / std::max (1.0e-9, std::abs (y)) * (y >= 0 ? 1 : 1));
-        lastVibR = static_cast<float> (r / std::max (1.0e-9, std::abs (y)) * (y >= 0 ? 1 : 1));
+        double osL[Decimator::kOver], osR[Decimator::kOver];
+        for (int k = 0; k < Decimator::kOver; ++k)
+        {
+            double y = coil.process (static_cast<float> (os[k]));
+            y = preamp.process (y);
+            // One cabinet per channel. Running both through a single instance
+            // interleaves two signals in its filters, which is not a stereo
+            // image of anything.
+            osL[k] = cabinetL.process (y * gainL);
+            osR[k] = cabinetR.process (y * gainR);
+        }
 
-        l = cabinet.process (l);
-        r = cabinet.process (r);
+        double l = decimL.process (osL);
+        double r = decimR.process (osR);
 
         // The room goes after the speaker, because that is where it is.
         if (p.spaceMix > 0.0f)

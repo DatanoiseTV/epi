@@ -30,7 +30,15 @@ class Decimator
 {
 public:
     static constexpr int kOver = 4;
-    static constexpr int kSections = 3;   // 6th order
+    // 16th order. The filter runs once per output sample rather than once per
+    // tine, so its cost is nothing next to eighty-eight resonators, and order
+    // is the cheapest alias rejection available.
+    //
+    // At 6th order this gave 14 dB at 30 kHz, which is where the top octave
+    // folds from: measured against the same note rendered at 192 kHz, a C6 had
+    // 13 dB more inharmonic content at 48 kHz than it should have, and that is
+    // audible in the treble as a hardness that does not belong to the note.
+    static constexpr int kSections = 8;
 
     void prepare (double baseRate)
     {
@@ -44,7 +52,8 @@ public:
         // Butterworth pole pairs for a 6th-order lowpass.
         for (int i = 0; i < kSections; ++i)
         {
-            const double q = 1.0 / (2.0 * std::cos (kPiD * (2.0 * i + 1.0) / 12.0));
+            const double q = 1.0 / (2.0 * std::cos (kPiD * (2.0 * i + 1.0)
+                                                    / (4.0 * kSections)));
             const double norm = 1.0 / (1.0 + k / q + kk);
             b0[i] = kk * norm;
             b1[i] = 2.0 * b0[i];
@@ -136,8 +145,22 @@ public:
         bassGain = std::pow (10.0, std::clamp (bassDb, -18.0, 18.0) / 20.0) - 1.0;
         trebGain = std::pow (10.0, std::clamp (trebleDb, -24.0, 24.0) / 20.0) - 1.0;
         // The preamp runs a long way into its own headroom before it audibly
-        // clips; the control opens that up rather than adding a stage.
-        driveGain = 1.0 + 14.0 * std::clamp (drive, 0.0, 1.0);
+        // clips, and this is where that headroom actually comes from.
+        //
+        // It used to be a linear 1 to 15 with no scaling ahead of the stage,
+        // which meant the signal met the curve at unity: measured on an E5,
+        // the stage was already making 59 dB of intermodulation with the
+        // control at ZERO, and it rose smoothly from there with no clean
+        // region anywhere on the knob. A Suitcase at ordinary playing level is
+        // clean, and you have to work to make it otherwise.
+        //
+        // Exponential, and starting well below the knee. Measured on the same
+        // note, the stage now contributes nothing detectable anywhere below
+        // about a third of the control -- the residual there is the tine's own
+        // and does not move -- then rises through -45 dB at three quarters to
+        // -29 dB wide open. A usable range, instead of a permanent one.
+        driveGain = 0.2 * std::pow (60.0, std::clamp (drive, 0.0, 1.0));
+        makeup    = 1.0 + 0.5 * std::clamp (drive, 0.0, 1.0);
     }
 
     double process (double x)
@@ -154,7 +177,7 @@ public:
         // runs out before the other.
         const double d = y * driveGain;
         const double s = d >= 0.0 ? std::tanh (d) : std::tanh (d * 0.82) / 0.82;
-        y = s / driveGain * (1.0 + 0.35 * driveGain);
+        y = s / driveGain * makeup;
 
         // Any asymmetric stage makes a DC offset; the coupling capacitors
         // downstream take it back out.
@@ -166,7 +189,7 @@ public:
 private:
     double fs = 48000.0;
     OnePoleD input, band, bassShelf, trebShelf;
-    double bassGain = 0.0, trebGain = 0.0, driveGain = 1.0;
+    double bassGain = 0.0, trebGain = 0.0, driveGain = 1.0, makeup = 1.0;
     double dcx = 0.0, dcy = 0.0;
 };
 

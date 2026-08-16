@@ -185,11 +185,11 @@ private:
     ActionNoise action;
     Rng noiseRng { 0x51ed270bu };
 
-    Decimator decimator;
     PickupCoil coil;
     SuitcasePreamp preamp;
     SuitcaseVibrato vibrato;
-    Cabinet cabinet;
+    Cabinet cabinetL, cabinetR;
+    Decimator decimL, decimR;
     Room room;
     float lastSpaceSize = -1.0f;
 
