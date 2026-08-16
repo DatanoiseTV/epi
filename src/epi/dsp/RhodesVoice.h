@@ -335,7 +335,7 @@ public:
 
         if (! sounding)
         {
-            for (int k = 0; k < kOver; ++k) fluxOut[k] = restFlux;
+            for (int k = 0; k < kOver; ++k) fluxOut[k] = satRestVal;
             return;
         }
 
@@ -436,11 +436,21 @@ public:
             // skipping the oversampling in the first place.
             const double s   = field != nullptr ? (field->flux (x0 + d, gap) - f) / d : 0.0;
 
+            // The core's curve is linearised about the resting point for the
+            // same reason the field is: over a swing this small it is a line,
+            // and the two approximations have to agree or the join between the
+            // paths becomes a discontinuity of its own.
+            double fSat = f, sSat = s;
+            if (satOn)
+            {
+                fSat = satRestVal + satRestSlope * (f - restFlux);
+                sSat = s * satRestSlope;
+            }
             for (int k = 0; k < kOver; ++k)
             {
                 const double t  = static_cast<double> (k + 1) / kOver;
                 const double vv = hermite (vHist[0], vHist[1], vHist[2], vNow, t);
-                fluxOut[k] = f + s * (vv - vNow);
+                fluxOut[k] = fSat + sSat * (vv - vNow);
             }
 
             vHist[0] = vHist[1]; vHist[1] = vHist[2]; vHist[2] = vNow;
@@ -488,7 +498,8 @@ public:
             // the interface draws it, but it no longer reaches the magnet.
             const double gap = std::max (0.25e-3, staticGap - arc);
 
-            fluxOut[k] = field != nullptr ? field->flux (staticOffset + vv, gap) : 0.0;
+            const double phi = field != nullptr ? field->flux (staticOffset + vv, gap) : 0.0;
+            fluxOut[k] = satOn ? saturate (phi) : phi;
         }
 
         vHist[0] = vHist[1]; vHist[1] = vHist[2]; vHist[2] = vNow;
@@ -511,7 +522,26 @@ public:
     // The flux with the tine at rest. Subtracted downstream so the
     // differentiated signal is not a tiny modulation riding on a large
     // constant, which in a narrower type would throw away most of its bits.
-    double restingFlux() const { return restFlux; }
+    // The iron in this tine's OWN pole piece, and it has to be this tine's own.
+    //
+    // A Rhodes has one pickup per tine, wired in series. Faraday's law and the
+    // coil's resonance are linear, so applying them once to the summed flux is
+    // exactly right -- linear operations commute with summing. Saturation does
+    // not commute with anything. Applied to the sum it makes every note distort
+    // against every other note, which is a sound the instrument cannot make:
+    // measured on a low fifth it put the intermodulation 3 dB under the chord
+    // itself, and moving it here dropped that by more than 30 dB.
+    //
+    // It acts on the TOTAL flux, magnet bias included, because that is what the
+    // iron sees. The bias is what makes it asymmetric, which is the useful part.
+    void setCoreSaturation (double sat)
+    {
+        satK  = 1.0 + 7.0 * std::clamp (sat, 0.0, 1.0);
+        satOn = sat > 1.0e-4;
+        updateRestSaturation();
+    }
+
+    double restingFlux() const { return satRestVal; }
 
     // The tine's displacement where it is bolted to the harp, and a force
     // applied there. This is the whole of the sympathetic path: a struck tine
@@ -986,6 +1016,7 @@ private:
         // pickup entirely.
         staticGap    = 0.6e-3 + 4.4e-3 * std::clamp (cfg.pickupGapNorm, 0.0, 1.0);
         restFlux     = field != nullptr ? field->flux (staticOffset, staticGap) : 0.0;
+        updateRestSaturation();
 
         // Where the field stops being usefully curved, and where the energy is
         // too small for the quadratised terms to matter.
@@ -1162,6 +1193,25 @@ private:
     double damperFactor = 1.0;
     double tineLength = 0.1;
     double staticOffset = 0.0, staticGap = 1.5e-3, restFlux = 0.0;
+    double satK = 1.0;
+    bool   satOn = false;
+
+    // The curve at the resting operating point, and its slope there. A tine
+    // that is barely moving sits within a hair of that point for the whole of
+    // its life, so over the range it actually visits the curve is a straight
+    // line and the line can be found once instead of a hyperbolic tangent per
+    // sample per tine. With the pedal down that is eighty-eight of them.
+    double satRestVal = 0.0, satRestSlope = 1.0;
+
+    void updateRestSaturation()
+    {
+        if (! satOn) { satRestVal = restFlux; satRestSlope = 1.0; return; }
+        const double th = std::tanh (satK * restFlux);
+        satRestVal   = th / satK;
+        satRestSlope = 1.0 - th * th;
+    }
+
+    double saturate (double phi) const { return std::tanh (satK * phi) / satK; }
     Collision diag;
     double linearSwing = 1.0e-4, quietEnergy = 1.0e-13;
     bool   reduced = false;

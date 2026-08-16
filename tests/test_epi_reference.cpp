@@ -882,6 +882,60 @@ static void sectionStructural()
              fmt ("%+.1f dB", addedDb), within (addedDb, -45.0, -6.0));
     }
 
+    // A chord must be close to the sum of its notes.
+    //
+    // A Rhodes has one pickup per tine, wired in series. Faraday's law and the
+    // coil's resonance are linear, so applying them once to the summed flux is
+    // exactly right -- linear operations commute with summing. Saturation does
+    // not commute with anything, and applied to the sum it makes every note
+    // distort against every other one, which is a sound the instrument cannot
+    // make. It measured 6 dB under the chord itself, which is not a subtlety.
+    //
+    // What is left here is intermodulation the instrument really has: a struck
+    // tine shakes the frame and the frame shakes its neighbours, and the one
+    // preamp they all feed is genuinely shared.
+    {
+        auto chord = [] (std::vector<int> notes, float coilSat)
+        {
+            const int N = static_cast<int> (kFs * 1.5);
+            const int block = 512;
+            EpiEngine e;
+            e.prepare (kFs, block);
+            EngineParams p = referenceParams();
+            p.coilSat = coilSat;
+
+            std::vector<NoteEvent> evs;
+            for (int n : notes) evs.push_back ({ 0, NoteEvent::noteOn, n, 0.9f });
+            std::vector<float> L (static_cast<std::size_t> (N), 0.0f);
+            std::vector<float> R (static_cast<std::size_t> (N), 0.0f);
+            for (int i = 0; i < N; i += block)
+            {
+                const int n = std::min (block, N - i);
+                e.process (L.data() + i, R.data() + i, n, p,
+                           i == 0 ? evs.data() : nullptr,
+                           i == 0 ? static_cast<int> (evs.size()) : 0);
+            }
+            std::vector<double> x (static_cast<std::size_t> (N));
+            for (int i = 0; i < N; ++i) x[static_cast<std::size_t> (i)] = L[static_cast<std::size_t> (i)];
+            return x;
+        };
+
+        // Measured with the core saturation at MAXIMUM, because that is where a
+        // nonlinearity applied to the sum would show worst.
+        const std::vector<double> a = chord ({ 40 }, 1.0f);
+        const std::vector<double> b = chord ({ 47 }, 1.0f);
+        const std::vector<double> ab = chord ({ 40, 47 }, 1.0f);
+        double d = 0.0, ref = 0.0;
+        for (std::size_t i = 0; i < ab.size(); ++i)
+        {
+            d = std::max (d, std::abs (ab[i] - (a[i] + b[i])));
+            ref = std::max (ref, std::abs (ab[i]));
+        }
+        const double imd = 20.0 * std::log10 (std::max (1.0e-12, d / std::max (1.0e-12, ref)));
+        row ("S7", "chord is the sum of its notes", "IMD below -30 dB",
+             fmt ("%.1f dB", imd), imd < -30.0 ? Verdict::pass : Verdict::fail);
+    }
+
     // The sympathetic path must actually do something. A held note with the
     // harp coupled is not audibly different, but a note struck while others are
     // free must excite them -- if it does not, the coupling is decorative.

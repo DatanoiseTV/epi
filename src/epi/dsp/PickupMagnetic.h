@@ -282,28 +282,24 @@ public:
 
     void setSensitivity (float s) { sensitivity = std::max (0.0f, s); }
 
-    // `freqHz` is the resonant peak, `q` its sharpness, `saturation` how hard
-    // the core clips (0 = linear iron, 1 = a pole piece run into saturation).
-    void setResponse (float freqHz, float q, float saturation)
+    // `freqHz` is the resonant peak and `q` its sharpness. There is no
+    // saturation here any more: the iron belongs to one tine's pole piece and
+    // saturates inside the voice, before the fluxes are summed. See
+    // RhodesVoice::setCoreSaturation.
+    void setResponse (float freqHz, float q)
     {
         const float f = std::clamp (freqHz, 200.0f, 0.45f * fs);
         gTan = std::tan (kPi * f / fs);
         qInv = 1.0f / std::clamp (q, 0.35f, 12.0f);
-        sat  = std::clamp (saturation, 0.0f, 1.0f);
     }
 
-    // Flux in, electromotive force out.
+    // Summed flux in, electromotive force out. Everything here is linear, and
+    // that is what makes it correct to apply once to the sum of eighty-eight
+    // pickups rather than to each of them: differentiation and filtering both
+    // commute with addition. Saturation does not, which is why it is not here.
     float process (float fluxIn)
     {
-        // Core saturation acts on the flux itself, before Faraday. A tanh with
-        // its knee set by the saturation control: at zero the iron is
-        // effectively linear over the range the tine drives it.
-        float phi = fluxIn;
-        if (sat > 0.0f)
-        {
-            const float k = 1.0f + 7.0f * sat;
-            phi = std::tanh (k * phi) / k;
-        }
+        const float phi = fluxIn;
 
         // Faraday: the coil responds to the RATE of flux change, not the flux.
         // A plain difference is the right differentiator here because the
@@ -329,7 +325,7 @@ public:
 private:
     float fs = 48000.0f;
     float sensitivity = kNominalSensitivity;
-    float gTan = 0.1f, qInv = 1.0f, sat = 0.0f;
+    float gTan = 0.1f, qInv = 1.0f;
     float s1 = 0.0f, s2 = 0.0f, fluxPrev = 0.0f;
 };
 

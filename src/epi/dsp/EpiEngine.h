@@ -202,6 +202,7 @@ private:
     // newly added field cannot be forgotten. Deliberately initialised to
     // something no real configuration equals, so the first block always builds.
     RhodesVoice::Config lastCfg { -1.0e30 };
+    float lastCoilSat = -1.0f;
 
     std::atomic<int>   numActive { 0 };
     std::atomic<float> peakL { 0.0f }, peakR { 0.0f };

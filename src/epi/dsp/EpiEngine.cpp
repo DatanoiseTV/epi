@@ -195,8 +195,16 @@ void EpiEngine::process (float* outL, float* outR, int numSamples,
     // capacitance and the cable, peaks somewhere in the presence region. Where
     // exactly is what separates one pickup from another.
     coil.setResponse (900.0f + 5600.0f * std::clamp (p.coilFreq, 0.0f, 1.0f),
-                      0.55f + 5.0f * std::clamp (p.coilQ, 0.0f, 1.0f),
-                      p.coilSat);
+                      0.55f + 5.0f * std::clamp (p.coilQ, 0.0f, 1.0f));
+
+    // The iron each tine has its own of. Kept out of the Config that drives a
+    // rebuild, because changing it needs no geometry re-solved -- only a
+    // coefficient handed to every voice.
+    if (std::abs (p.coilSat - lastCoilSat) > 1.0e-4f)
+    {
+        lastCoilSat = p.coilSat;
+        for (auto& t : tines) t.setCoreSaturation (p.coilSat);
+    }
     preamp.setTone (p.bassDb, p.trebleDb, p.preampDrive);
     vibrato.setRate (p.tremRate);
     vibrato.setDepth (p.tremDepth);

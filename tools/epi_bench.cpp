@@ -13,6 +13,7 @@
 #include "epi/dsp/EpiEngine.h"
 
 #include <chrono>
+#include <cstdlib>
 #include <cstdio>
 #include <vector>
 
@@ -31,6 +32,7 @@ Result run (const char* name, int numNotes, bool pedal, double seconds, double f
     e.prepare (fs, block);
 
     EngineParams p;                       // stock, everything in the path
+    if (const char* v = std::getenv ("EPI_COIL_SAT")) p.coilSat = (float) atof (v);
     std::vector<float> L (static_cast<std::size_t> (block));
     std::vector<float> R (static_cast<std::size_t> (block));
 
