@@ -167,6 +167,18 @@ public:
     int  noteNumber() const { return note; }
     double tipDisplacement() const { return lastTipV; }
     double tipHorizontal()   const { return lastTipH; }
+
+    // A window of the tine's actual motion, decimated so the stored span
+    // covers a few cycles whatever the note. The interface draws the tine from
+    // this rather than from a wobble of its own invention -- at eighty hertz a
+    // sixty-hertz telemetry tick cannot carry the waveform, so sending the
+    // instantaneous value and animating between them shows nothing real.
+    static constexpr int kTraceLen = 128;
+    float traceAt (int i) const { return trace[i & (kTraceLen - 1)]; }
+    int   traceHead() const { return traceIdx; }
+    double soundingHz() const { return noteHz; }
+    bool   justStruck() const { return strikeFlag; }
+    void   clearStrikeFlag() { strikeFlag = false; }
     int  contactSamples() const { return hammer.contactDurationSamples(); }
 
     // ---- note lifecycle ---------------------------------------------------
@@ -182,10 +194,13 @@ public:
         for (int i = 0; i < 3; ++i) { vHist[i] = 0.0; hHist[i] = 0.0; }
         configure (cfg);
 
-        // A Rhodes hammer arrives somewhere between about a tenth of a metre
-        // per second and four. The square law is the key's own leverage, not a
-        // taste curve.
-        const double v = 0.12 + 3.9 * velocity * velocity;
+        // A Rhodes hammer arrives somewhere between a fraction of a metre per
+        // second and about six. The exponent is the key's own leverage, not a
+        // taste curve -- but it was too steep at 2, which pushed everything a
+        // player does below mezzo-forte into the part of the magnet's field
+        // that is nearly flat, and the instrument came out as a sine bank with
+        // a bark that only appeared at the very top of the velocity range.
+        const double v = 0.18 + 5.6 * std::pow (std::clamp (velocity, 0.0, 1.0), 1.7);
 
         // Escapement: the gap left between tip and tine with the key fully
         // down. The service manual specifies a quarter to three eighths of an
@@ -194,6 +209,13 @@ public:
         const double reg = registerPosition();
         const double escMm = (6.4 - 5.6 * reg) * (0.4 + 1.2 * cfg.escapementNorm);
         hammer.strike (v, escMm * 1.0e-3);
+
+        noteHz = 440.0 * std::pow (2.0, (static_cast<double> (midiNote) - 69.0) / 12.0);
+        traceDecim = std::max (1, static_cast<int> (fs / (noteHz * kTraceLen / 4.0)));
+        traceCount = 1;
+        traceIdx = 0;
+        for (int i = 0; i < kTraceLen; ++i) trace[i] = 0.0f;
+        strikeFlag = true;
     }
 
     void noteOff() { held = false; }
@@ -292,6 +314,16 @@ public:
 
         lastTipV = vNow;
         lastTipH = hNow;
+
+        // Capture the waveform for the interface. The decimation is chosen so
+        // the buffer always holds about four cycles, so a bass note and a
+        // treble note both arrive as a drawable shape.
+        if (--traceCount <= 0)
+        {
+            traceCount = traceDecim;
+            traceIdx = (traceIdx + 1) & (kTraceLen - 1);
+            trace[traceIdx] = static_cast<float> (vNow);
+        }
     }
 
     // The flux with the tine at rest. Subtracted downstream so the
@@ -831,6 +863,10 @@ private:
     bool sounding = false, held = false, pedal = false, configured = false;
     double lastTipV = 0.0, lastTipH = 0.0;
     double vHist[3] {}, hHist[3] {};
+    float  trace[kTraceLen] {};
+    int    traceIdx = 0, traceDecim = 8, traceCount = 1;
+    double noteHz = 440.0;
+    bool   strikeFlag = false;
     int  controlCounter = 0;
     Rng  rng { 0x12345u };
 };

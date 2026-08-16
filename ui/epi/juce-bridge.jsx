@@ -153,11 +153,12 @@
       return out;
     })();
 
-    let t = 0, env = 0, phase = 0;
+    const TRACE_N = 128;
+    let t = 0, env = 0, phase = 0, strikes = 0;
     setInterval(() => {
       t += 0.016;
       const trig = (t % 2.4) < 0.02;
-      if (trig) env = 1;
+      if (trig) { env = 1; strikes++; }
       env *= 0.985;
       const f0 = 82;
       phase += 2 * Math.PI * (f0 / 22) * 0.016;
@@ -166,9 +167,17 @@
       const depth = sliders.tremDepth.getNormalisedValue();
       const rate = 0.1 + 11.9 * sliders.tremRate.getNormalisedValue();
       const lfo = 0.5 + 0.5 * Math.sin(2 * Math.PI * rate * t * 0.35);
+      /* Four cycles of tine motion, as the engine sends. Slightly clipped at
+         the peaks, which is what a hard-struck tine actually looks like. */
+      const trace = [];
+      for (let i = 0; i < TRACE_N; i++) {
+        const a = 2 * Math.PI * 4 * i / TRACE_N + phase;
+        trace.push(env * (Math.sin(a) + 0.10 * Math.sin(2 * a + 0.6)) * 2.2e-3);
+      }
+
       emit('levels', {
         out: [-90 + 84 * env, -90 + 84 * env],
-        field, tip, offset: off,
+        field, tip, offset: off, trace, noteHz: f0, strikes,
         flux: tip, voices: env > 0.02 ? 4 : 0,
         vibL: 1 - depth * (1 - lfo), vibR: 1 - depth * lfo,
       });

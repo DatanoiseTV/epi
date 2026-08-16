@@ -231,8 +231,19 @@ void WebEditor::emitLevels()
     for (int i = 0; i < epi::EpiEngine::kFieldPoints; ++i)
         profile.add (juce::var (engine.vizField (i)));
 
+    // The tine's own motion, decimated to about four cycles. Without this the
+    // interface can only invent a wobble: at sixty telemetry ticks a second it
+    // cannot otherwise represent an eighty-hertz waveform, let alone a treble
+    // note.
+    juce::Array<juce::var> trace;
+    for (int i = 0; i < epi::EpiEngine::kTraceLen; ++i)
+        trace.add (juce::var (engine.vizTrace (i)));
+
     juce::DynamicObject::Ptr root = new juce::DynamicObject();
     root->setProperty ("out",     juce::var (outArr));
+    root->setProperty ("trace",   juce::var (trace));
+    root->setProperty ("noteHz",  engine.vizNoteHz());
+    root->setProperty ("strikes", engine.vizStrikes());
     root->setProperty ("field",   juce::var (profile));
     root->setProperty ("tip",     engine.vizTipDisplacement());
     root->setProperty ("flux",    engine.vizFlux());

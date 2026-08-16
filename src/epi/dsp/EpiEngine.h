@@ -134,6 +134,14 @@ public:
     static constexpr int kFieldPoints = 96;
     float vizField (int i) const { return vField[i].load (std::memory_order_relaxed); }
 
+    // The loudest sounding voice's actual tine motion, and the note it is
+    // playing. The interface animates from this, so what moves on screen is
+    // what the model is doing.
+    static constexpr int kTraceLen = RhodesVoice::kTraceLen;
+    float vizTrace (int i) const { return vTrace[i].load (std::memory_order_relaxed); }
+    float vizNoteHz() const      { return vNoteHz.load (std::memory_order_relaxed); }
+    int   vizStrikes() const     { return vStrikes.load (std::memory_order_relaxed); }
+
 private:
     void handleEvent (const NoteEvent& e, const EngineParams& p);
     RhodesVoice::Config rhodesConfig (const EngineParams& p) const;
@@ -168,6 +176,10 @@ private:
     std::atomic<float> vTip { 0.0f }, vFlux { 0.0f }, vOffset { 0.0f };
     std::atomic<float> vVibL { 1.0f }, vVibR { 1.0f };
     std::atomic<float> vField[kFieldPoints];
+    std::atomic<float> vTrace[RhodesVoice::kTraceLen];
+    std::atomic<float> vNoteHz { 440.0f };
+    std::atomic<int>   vStrikes { 0 };
+    int strikeCount = 0;
 };
 
 } // namespace epi

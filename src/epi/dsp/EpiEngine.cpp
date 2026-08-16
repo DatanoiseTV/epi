@@ -183,6 +183,8 @@ void EpiEngine::process (float* outL, float* outR, int numSamples,
 
     int nextEvent = 0;
     float pL = 0.0f, pR = 0.0f;
+    RhodesVoice* loudestVoice = nullptr;
+    float loudest = -1.0f;
     float lastTip = 0.0f, lastFlux = 0.0f, lastVibL = 1.0f, lastVibR = 1.0f;
 
     for (int n = 0; n < numSamples; ++n)
@@ -206,7 +208,11 @@ void EpiEngine::process (float* outL, float* outR, int numSamples,
             const double rest = v.restingFlux();
             for (int k = 0; k < Decimator::kOver; ++k) os[k] += voiceFlux[k] - rest;
             ++active;
+            // Follow the loudest voice, which is the one a player is looking at.
+            const float amp = static_cast<float> (std::abs (v.tipDisplacement()));
+            if (amp >= loudest) { loudest = amp; loudestVoice = &v; }
             lastTip = static_cast<float> (v.tipDisplacement());
+            if (v.justStruck()) { v.clearStrikeFlag(); ++strikeCount; }
         }
 
         const double flux = decimator.process (os);
@@ -243,6 +249,17 @@ void EpiEngine::process (float* outL, float* outR, int numSamples,
     };
     bump (peakL, pL);
     bump (peakR, pR);
+
+    // Publish the loudest voice's waveform, unrolled so the interface reads it
+    // oldest-first and does not have to know about the ring buffer.
+    if (loudestVoice != nullptr)
+    {
+        const int head = loudestVoice->traceHead();
+        for (int i = 0; i < RhodesVoice::kTraceLen; ++i)
+            vTrace[i].store (loudestVoice->traceAt (head + 1 + i), std::memory_order_relaxed);
+        vNoteHz.store (static_cast<float> (loudestVoice->soundingHz()), std::memory_order_relaxed);
+    }
+    vStrikes.store (strikeCount, std::memory_order_relaxed);
 
     vTip.store (lastTip, std::memory_order_relaxed);
     vFlux.store (lastFlux, std::memory_order_relaxed);

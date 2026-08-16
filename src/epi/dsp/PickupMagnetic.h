@@ -78,12 +78,21 @@ class MagneticPickup
 public:
     struct Geometry
     {
-        // All in metres. Defaults are a Rhodes pickup: a pole piece a few
-        // millimetres across whose tip is ground to a wedge, sitting about a
-        // millimetre and a half off the tine.
-        float halfWidth   = 3.0e-3f;   // half the pole face, centreline to edge
-        float flatHalf    = 0.5e-3f;   // half-width of the flat at the wedge tip
-        float wedgeDepth  = 1.6e-3f;   // how far the surface recedes at the edge
+        // All in metres. A Rhodes pole piece is ground to a narrow wedge, and
+        // what matters is not the size of the slug but the width of the region
+        // whose field the tine actually samples -- Pfeifle's FEM shows only a
+        // small part of the tip carries the field.
+        //
+        // This number is half the story of the instrument's voice. The other
+        // half is how far the tine swings, and it is their RATIO that decides
+        // how much of the field's curvature the tine explores per cycle, and
+        // therefore how many harmonics come out. At a ratio near a half the
+        // tine only ever sees the flat top of the curve and the output is a
+        // sine -- which is what this model did at any normal playing strength
+        // until the pole was narrowed and the hammer given its proper energy.
+        float halfWidth   = 1.6e-3f;   // half the pole face, centreline to edge
+        float flatHalf    = 0.28e-3f;  // half-width of the flat at the wedge tip
+        float wedgeDepth  = 0.95e-3f;  // how far the surface recedes at the edge
         float nominalGap  = 1.5e-3f;   // tine-to-wedge-tip distance at rest
     };
 

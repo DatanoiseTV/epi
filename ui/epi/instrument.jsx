@@ -25,7 +25,7 @@ const FIELD_CY = 176, FIELD_H = 108;
 const TINE_SWING = 46;                              // px for a full swing
 
 function InstrumentView({ pickupPos, setPickupPos, pickupDist }) {
-  const lv = JuceBridge.useEventRef('levels', { out: [-90, -90], field: [], tip: 0, offset: 0, voices: 0 });
+  const lv = JuceBridge.useEventRef('levels', { out: [-90, -90], field: [], trace: [], noteHz: 0, strikes: 0, voices: 0 });
   const P = useRef({ pickupPos, pickupDist });
   P.current = { pickupPos, pickupDist };
 
@@ -36,8 +36,9 @@ function InstrumentView({ pickupPos, setPickupPos, pickupDist }) {
 
   useEffect(() => {
     let raf = 0, last = performance.now();
-    let level = 0, phase = 0, glow = 0;
-    const trail = new Array(72).fill(0);
+    let level = 0, readPos = 0, lastStrikes = -1;
+    let hammerT = 99;                       // seconds since the last strike
+    const trail = new Array(96).fill(0);
     let trailAt = 0;
 
     const tick = (now) => {
@@ -45,56 +46,82 @@ function InstrumentView({ pickupPos, setPickupPos, pickupDist }) {
       const L = lv.current || {};
       const db = (L.out && L.out[0]) || -90;
       const target = Math.max(0, Math.min(1, (db + 60) / 60));
-      level += (target - level) * (1 - Math.exp(-dt / 0.09));
-      glow  += (target - glow)  * (1 - Math.exp(-dt / 0.14));
+      level += (target - level) * (1 - Math.exp(-dt / 0.06));
 
-      /* The real note sits far above the frame rate, so the drawing is geared
-         down by a fixed ratio: relative pitch still reads without strobing. */
-      phase += 2 * Math.PI * 5.5 * dt;
+      /* Read the tine's ACTUAL waveform, which the engine sends as about four
+         cycles of its real motion. Playing it back at a fixed slow rate shows
+         the true shape -- the closed part of a hard-struck swing, the way it
+         rounds off as the note decays -- instead of a sine the interface made
+         up. A real Rhodes at eighty hertz cannot be drawn at its own rate
+         anyway; sixty telemetry ticks a second cannot carry it. */
+      const T = (L.trace && L.trace.length > 8) ? L.trace : null;
+      const cycles = 4;                     // what the buffer spans
+      readPos += dt * 6.0 * (T ? T.length / cycles : 0);   // ~6 cycles/second
+      if (T && readPos >= T.length) readPos -= T.length;
 
-      const swing = Math.sin(phase) * level;
+      const sampleTrace = (o) => {
+        if (!T) return 0;
+        const i = Math.floor((readPos + o) % T.length);
+        return T[i < 0 ? i + T.length : i];
+      };
+
+      /* Scale so a full swing fills the drawing. The model works in metres --
+         a couple of millimetres in the bass, a fraction of one in the treble --
+         so a fixed scale would make the top of the keyboard invisible. */
+      let tmax = 1e-9;
+      if (T) for (let i = 0; i < T.length; i++) tmax = Math.max(tmax, Math.abs(T[i]));
+      const swing = T ? sampleTrace(0) / tmax * Math.min(1, level * 1.4) : 0;
       const y = TINE_Y + swing * TINE_SWING;
 
-      /* The tine bends; it does not pivot. A clamped-free beam's first mode is
-         flat at the clamp and steepest at the tip, so the curve is drawn from
-         the mode shape rather than as a straight line. */
       if (tineRef.current) {
         let d = `M ${TINE_X0} ${TINE_Y}`;
         const N = 26;
         for (let i = 1; i <= N; i++) {
           const u = i / N;
-          /* A clamped-free beam's first mode is flat at the clamp and steepest
-             at the tip. Smoothstep is close enough to that shape at this size
-             and costs nothing. */
+          /* A clamped-free beam is flat at the clamp and steepest at the tip.
+             Each point along it lags slightly, because a bending wave takes
+             time to travel -- which is why a struck tine looks like a whip. */
           const w = u * u * (3 - 2 * u);
+          const lag = sampleTrace(-u * 2.5) / tmax * Math.min(1, level * 1.4);
           const x = TINE_X0 + (TINE_X1 - TINE_X0) * u;
-          d += ` L ${x.toFixed(1)} ${(TINE_Y + swing * TINE_SWING * w).toFixed(1)}`;
+          d += ` L ${x.toFixed(1)} ${(TINE_Y + lag * TINE_SWING * w).toFixed(1)}`;
         }
         tineRef.current.setAttribute('d', d);
       }
-      if (tipRef.current) { tipRef.current.setAttribute('cy', y.toFixed(1)); }
+      if (tipRef.current) tipRef.current.setAttribute('cy', y.toFixed(1));
 
-      /* The tip traces an ellipse, not a line: the two polarisations run a few
-         cents apart, so the orbit slowly precesses. */
+      /* The tip traces an ellipse: the two polarisations sit a few cents apart,
+         so the orbit slowly precesses instead of closing on itself. */
       if (orbitRef.current) {
-        const rx = 3 + 7 * level, ry = TINE_SWING * level;
-        orbitRef.current.setAttribute('rx', rx.toFixed(1));
-        orbitRef.current.setAttribute('ry', Math.max(0.5, ry).toFixed(1));
-        orbitRef.current.setAttribute('opacity', (0.30 * level).toFixed(3));
+        const env = Math.min(1, level * 1.4);
+        orbitRef.current.setAttribute('rx', (3 + 6 * env).toFixed(1));
+        orbitRef.current.setAttribute('ry', Math.max(0.5, TINE_SWING * env).toFixed(1));
+        orbitRef.current.setAttribute('opacity', (0.28 * env).toFixed(3));
       }
 
-      /* Hammer: rides in during the attack and drops away. */
+      /* The hammer is a one-shot, fired by an actual strike in the engine, not
+         a shape derived from the envelope. It comes up, touches for about four
+         milliseconds, and falls away -- and it does not come back, because the
+         key has already escaped. */
+      const strikes = L.strikes || 0;
+      if (strikes !== lastStrikes) { lastStrikes = strikes; hammerT = 0; }
+      hammerT += dt;
       if (hammerRef.current) {
-        const k = Math.max(0, level - 0.55) / 0.45;
+        const t = hammerT;
+        let rise;
+        if (t < 0.05)      rise = t / 0.05;                 // travelling up
+        else if (t < 0.10) rise = 1;                        // contact
+        else if (t < 0.45) rise = Math.max(0, 1 - (t - 0.10) / 0.35);
+        else               rise = 0;
         hammerRef.current.setAttribute('transform',
-          `translate(0 ${(26 - 22 * Math.min(1, k)).toFixed(1)})`);
+          `translate(0 ${(30 - 30 * rise).toFixed(1)})`);
       }
 
-      /* The tone bar is enslaved to the tine: same frequency, opposite phase,
-         and far more heavily damped. */
+      /* The tone bar is enslaved to the tine -- same frequency, opposite phase,
+         far more heavily damped -- so it moves with it and much less. */
       if (barRef.current)
         barRef.current.setAttribute('transform',
-          `translate(0 ${(-swing * 7).toFixed(2)})`);
+          `translate(0 ${(-swing * 5).toFixed(2)})`);
 
       /* ---- the field, straight from the engine ---- */
       const F = (L.field && L.field.length > 8) ? L.field : null;
@@ -108,11 +135,11 @@ function InstrumentView({ pickupPos, setPickupPos, pickupDist }) {
         fieldRef.current.setAttribute('d', d);
       }
 
-      /* Where the tine sits on that curve, right now. This is the whole
-         instrument in one dot: the shape of the field under the swing is the
-         waveform that comes out. */
-      const off = P.current.pickupPos;          // -1..1 in pole half-widths
-      const span = 4;                            // table spans +/-4 half-widths
+      /* Where the tine is on that curve right now. This is the whole
+         instrument in one dot: the shape of the field under the swing IS the
+         waveform that comes out of the jack. */
+      const off = P.current.pickupPos;
+      const span = 4;
       const u = (off + swing * 0.9 + span) / (2 * span);
       if (markerRef.current && F) {
         const x = FIELD_X0 + (FIELD_X1 - FIELD_X0) * Math.max(0, Math.min(1, u));
@@ -120,7 +147,7 @@ function InstrumentView({ pickupPos, setPickupPos, pickupDist }) {
         const yy = FIELD_CY + FIELD_H * 0.5 - Math.min(1.6, F[idx]) * FIELD_H * 0.5;
         markerRef.current.setAttribute('cx', x.toFixed(1));
         markerRef.current.setAttribute('cy', yy.toFixed(1));
-        markerRef.current.setAttribute('opacity', (0.25 + 0.75 * level).toFixed(3));
+        markerRef.current.setAttribute('opacity', (0.25 + 0.75 * Math.min(1, level * 1.4)).toFixed(3));
 
         trail[trailAt = (trailAt + 1) % trail.length] = F[idx];
         if (traceRef.current) {
@@ -128,11 +155,11 @@ function InstrumentView({ pickupPos, setPickupPos, pickupDist }) {
           for (let i = 0; i < trail.length; i++) {
             const j = (trailAt + 1 + i) % trail.length;
             const tx = FIELD_X0 + (FIELD_X1 - FIELD_X0) * (i / (trail.length - 1));
-            const ty = FIELD_CY + FIELD_H + 34 - Math.min(1.6, trail[j]) * 26;
+            const ty = FIELD_CY + FIELD_H + 30 - Math.min(1.6, trail[j]) * 24;
             td += (i ? ' L ' : 'M ') + tx.toFixed(1) + ' ' + ty.toFixed(1);
           }
           traceRef.current.setAttribute('d', td);
-          traceRef.current.setAttribute('opacity', (0.30 + 0.60 * level).toFixed(3));
+          traceRef.current.setAttribute('opacity', (0.25 + 0.65 * Math.min(1, level * 1.4)).toFixed(3));
         }
       }
 
@@ -140,7 +167,11 @@ function InstrumentView({ pickupPos, setPickupPos, pickupDist }) {
         const g = 0.6 + 4.4 * P.current.pickupDist;
         gapRef.current.setAttribute('width', Math.max(2, g * 5).toFixed(1));
       }
-      if (voiceRef.current) voiceRef.current.textContent = (L.voices || 0) + ' voices';
+      if (voiceRef.current) {
+        const hz = L.noteHz || 0;
+        voiceRef.current.textContent =
+          (L.voices || 0) + ' voices' + (hz > 1 ? '  ·  ' + hz.toFixed(1) + ' Hz' : '');
+      }
 
       raf = requestAnimationFrame(tick);
     };
