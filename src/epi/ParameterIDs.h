@@ -144,6 +144,7 @@ namespace epi::ids
                                   Rng { 0.0f, 1.0f, 0.0f }, 0.35f,
                                   attrs ([] (float v, int)
                                   {
+                                      // Must track staticGap in RhodesVoice::configure.
                                       return juce::String (0.6f + 4.4f * v, 2) + " mm";
                                   })));
         add (std::make_unique<Pc> (juce::ParameterID { pickupSel, 1 }, "Pickup",

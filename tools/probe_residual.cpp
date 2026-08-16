@@ -29,6 +29,8 @@ int main (int argc, char** argv)
     EngineParams p;
     p.tremDepth = 0.0f; p.spaceMix = 0.0f; p.cabMix = 0.0f;
     p.preampDrive = 0.0f; p.coilSat = 0.0f;
+    if (argc > 4) p.pickupDist = (float) atof (argv[4]);
+    if (argc > 5) p.pickupPos  = (float) atof (argv[5]);
 
     std::vector<float> L (N, 0.0f), R (N, 0.0f);
     NoteEvent ev { 0, NoteEvent::noteOn, note, static_cast<float> (vel) };

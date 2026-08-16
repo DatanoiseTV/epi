@@ -17,6 +17,7 @@
 #include "epi/dsp/EpiEngine.h"
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <map>
 #include <string>
@@ -93,9 +94,22 @@ static double noteHz (int n) { return 440.0 * std::pow (2.0, (n - 69) / 12.0); }
 // The instrument alone. The reference recordings are a direct feed from the
 // harp, so the amplifier, the speaker and the room are all out of the path --
 // otherwise the suite would be measuring the cabinet's opinion of the tine.
+// The voicing is two coupled controls, and moving either one moves most of the
+// table at once -- a gap that fixes the bass fundamental's rise can break the
+// decay ratios, the beating and the attack all together. Overriding them from
+// the environment lets the whole suite be the judge of a voicing rather than
+// whichever three rows were being watched at the time.
+static double envOr (const char* name, double fallback)
+{
+    if (const char* v = std::getenv (name)) return std::atof (v);
+    return fallback;
+}
+
 static EngineParams referenceParams()
 {
     EngineParams p;
+    p.pickupPos  = static_cast<float> (envOr ("EPI_PICKUP_POS",  p.pickupPos));
+    p.pickupDist = static_cast<float> (envOr ("EPI_PICKUP_DIST", p.pickupDist));
     p.tremDepth   = 0.0f;
     p.spaceMix    = 0.0f;
     p.cabMix      = 0.0f;
@@ -243,6 +257,27 @@ static void sectionA()
         row ("A4", (std::string ("velocity swing, ") + tn.name).c_str(), "16 .. 37 dB",
              fmt ("%.1f dB", h21[1] - h21[0]), within (h21[1] - h21[0], 16.0, 37.0));
     }
+
+    // A5: and the octave-dominance has to go away toward the top. On the real
+    // instrument the fundamental takes over somewhere around two to five
+    // hundred hertz, because a treble tine is short and stiff and barely moves
+    // -- it stays in the straight part of the field however hard it is hit,
+    // where a bass tine at the same blow is swinging across the curved part.
+    // This is the row that catches a model whose tines all swing alike.
+    {
+        auto h21At = [] (int midi, double vel)
+        {
+            const auto& x = render (midi, vel, 2.0);
+            const double f0 = an::refineF0 (x, kFs, noteHz (midi));
+            const an::Envelope e1 = an::heterodyne (x, kFs, f0);
+            const an::Envelope e2 = an::heterodyne (x, kFs, 2.0 * f0, f0);
+            if (e1.z.empty() || e2.z.empty()) return 0.0;
+            return e2.dbAt (0.3) - e1.dbAt (0.3);
+        };
+        const double top = h21At (kTop.midi, kHard);
+        row ("A5", "H2-H1 hard, C7 (2093 Hz)", "below -6 dB",
+             fmt ("%+.1f dB", top), top < -6.0 ? Verdict::pass : Verdict::knownGap);
+    }
 }
 
 // ===========================================================================
@@ -337,6 +372,26 @@ static void sectionB()
              fmt2 ("%.1f s (+/-%.0f%%)", t.want, t.tol * 100.0),
              t60 > 0.0 ? fmt2 ("%.1f s (%.0f dB seen)", t60, span) : std::string ("no decay"),
              t60 > 0.0 ? within (t60, lo, hi) : Verdict::fail);
+    }
+
+    // B6: hit a bass note hard and its fundamental gets LOUDER for the first
+    // few seconds. It is not a resonance and not an envelope: at that
+    // amplitude the tine is swinging across the curved part of the field, so
+    // most of what the pickup makes comes out at the octave and the
+    // fundamental is suppressed. As the note decays the tine returns to the
+    // straight part and the fundamental is handed back. Nothing else in the
+    // suite tests the depth of the field excursion, and it is what separates
+    // the instrument from a filtered oscillator.
+    {
+        const auto& x = render (kBass.midi, kHard, 8.0);
+        const double f0 = an::refineF0 (x, kFs, noteHz (kBass.midi), 1.0, 5.0);
+        const an::LineFit f = an::fitDecay (an::heterodyne (x, kFs, f0), 0.5, 5.0);
+        const double rise = f.valid ? f.slopeDbPerS : -99.0;
+        row ("B6", "hard bass fundamental rises", "+2.2 .. +3.9 dB/s",
+             f.valid ? fmt ("%+.2f dB/s", rise) : std::string ("n/a"),
+             // Accepted holding rather than rising; it must not fall away at
+             // the tine's own rate, which would mean no field excursion at all.
+             gap (rise, 2.2, 3.9, -1.5, 6.0));
     }
 
     // B5: the real envelope is not one exponential. Two slopes fit it well,
@@ -510,6 +565,23 @@ static void sectionG()
         const double ratio = c[0] > 0.0 ? c[1] / c[0] : 0.0;
         row ("G1", (std::string ("centroid soft->hard, ") + tn.name).c_str(), "2.5 .. 6.0 x",
              fmt ("%.2f x", ratio), within (ratio, 2.5, 6.0));
+    }
+
+    // G2: across the compass at high velocity the steady centroid barely moves
+    // -- about half an octave from the bottom of the instrument to E5, where
+    // the fundamental itself has risen by more than three. In other words the
+    // bass is FAR richer relative to its own pitch than the treble is, which
+    // is the same fact as A5 seen broadband, and the same underlying cause: a
+    // bass tine swings across the curved part of the field and a treble tine
+    // does not.
+    {
+        const auto& lo = render (33, kHard, 2.0);          // A1, 55 Hz
+        const auto& hi = render (kUpper.midi, kHard, 2.0); // E5, 659 Hz
+        const double cl = an::spectralCentroid (lo, kFs, static_cast<std::size_t> (0.30 * kFs), 8192);
+        const double ch = an::spectralCentroid (hi, kFs, static_cast<std::size_t> (0.30 * kFs), 8192);
+        const double ratio = cl > 0.0 ? ch / cl : 0.0;
+        row ("G2", "centroid A1->E5 at hard vel", "1.0 .. 2.2 x (f0 x12)",
+             fmt ("%.2f x", ratio), gap (ratio, 1.0, 2.2, 0.5, 7.0));
     }
 
     // G3/G4: and the attack is brighter than the sustain only when the note is
@@ -715,5 +787,6 @@ int main()
         std::printf ("all reference rows within tolerance\n");
     else
         std::printf ("%d row%s outside tolerance\n", failures, failures == 1 ? "" : "s");
+    std::printf ("SUMMARY fail=%d gap=%d\n", failures, gaps);
     return failures == 0 ? 0 : 1;
 }

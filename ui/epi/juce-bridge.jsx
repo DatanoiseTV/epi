@@ -82,6 +82,7 @@
     pickupPos:   { label: 'Height',    map: M.pickupPos, def: M.pickupPos.from(-0.35),
                    format: (n) => (M.pickupPos.to(n) * 2).toFixed(2) + ' mm', bipolar: true },
     pickupDist:  { label: 'Gap',       map: M.unit,      def: 0.35,
+                   // Tracks staticGap in RhodesVoice::configure.
                    format: (n) => (0.6 + 4.4 * n).toFixed(2) + ' mm' },
     coilFreq:    { label: 'Coil Peak', map: M.unit,      def: 0.50,
                    format: (n) => Math.round(900 + 5600 * n) + ' Hz' },

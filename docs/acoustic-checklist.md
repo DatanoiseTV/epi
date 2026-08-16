@@ -126,11 +126,39 @@ what is understood and unfixed.
   block, and the DSP never touches either. One factory preset sets `spaceMix`
   to 0.30, so it promises a reverb that does not exist. Awaiting a decision to
   implement or remove; row S4 catches any third one.
-- **Tine swing across the compass** spans about 4× in the model; a real one
-  spans past 50× (tens of mm at the bottom, under 1 mm at the top). The hammer
-  had to be graduated against the tine's effective mass to keep the treble
-  collision stable, and that flattened the gradient.
-- **Growl is not stronger in the bass than the middle**, for the same reason.
+- **B6, a hard bass strike's fundamental does not rise**: +0.15 dB/s against a
+  measured +2.2 to +3.9. Same root cause as G2 below.
+- **G2, the bass is not rich enough relative to its own pitch**: the steady
+  centroid rises 6.2× from A1 to E5 where the reference rises about 1.5 while
+  the fundamental rises twelvefold. A hard bass note's spectrum has died by its
+  eighth harmonic; the real one carries energy past its thirtieth. Note the one
+  caveat on this row: the reference recordings carry a fixed recording EQ, and
+  a treble-tilted one inflates the bass centroid more than the treble's, so the
+  target may be somewhat high. The direction is not in doubt.
+- **Tine swing across the compass** is not monotonic: measured, it *peaks* in
+  the middle of the keyboard at 3.9 mm and falls to 3.1 mm at the bottom and
+  0.29 mm at the top. The cause is visible in the collision diagnostics -- the
+  hammer mass sits pinned at its 6 g ceiling from note 28 to note 71, more than
+  half the compass, while the tine's effective mass at the strike point falls
+  52× across the same span. This is upstream of B6 and G2: a bass tine that
+  does not out-swing a middle one cannot growl more than one.
+
+### Ruled out, with the measurement
+
+- **The stiffness cap on the hammer contact is not binding anywhere.** The code
+  notes that the principled fix is to carry the contact's elastic part through
+  the quadratised path, which would remove the explicit time-step limit
+  entirely. Measured across the compass, the cap never engages, so that work
+  would change nothing. Worth revisiting only if the hammer is re-sized.
+- **The growl is not sitting behind the pickup gap.** The argument for closing
+  it is good -- the field is smooth far from the pole and nearly a cusp close
+  in, and at 0.6 mm the hard bass fundamental rises at 2.8 dB/s, which is
+  exactly what B6 asks for. It breaks nine other rows doing it: the tine is
+  swinging two pole-widths, so it leaves the field entirely twice a cycle, and
+  that spike puts the inharmonic floor up 45 dB, starts the fundamental beating
+  against itself, and collapses the middle-register attack to half a
+  millisecond. Swept over both voicing controls against the whole suite, the
+  best setting is within a hair of the shipped one.
 
 ### Retired gaps
 

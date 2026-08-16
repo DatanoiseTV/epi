@@ -168,6 +168,23 @@ public:
     bool isSounding() const { return sounding; }
     bool isHeld()     const { return held; }
     int  noteNumber() const { return note; }
+    // What the collision was actually configured as, so the compromises in it
+    // can be measured rather than reasoned about. The stiffness cap in
+    // particular is invisible from outside: it silently softens the treble
+    // hammer, and whether it is binding at a given note is not something that
+    // can be worked out reliably on paper.
+    struct Collision
+    {
+        double tineLength    = 0.0;   // m
+        double modalMass     = 0.0;   // kg
+        double effTineMass   = 0.0;   // kg, at the strike point
+        double hammerMass    = 0.0;   // kg
+        double stiffnessWant = 0.0;   // N/m^alpha, before the stability cap
+        double stiffnessUsed = 0.0;   // N/m^alpha, after it
+        bool   capBinding    = false;
+    };
+    const Collision& collision() const { return diag; }
+
     double tipDisplacement() const { return lastTipV; }
     double tipHorizontal()   const { return lastTipH; }
 
@@ -898,13 +915,20 @@ private:
         // potential k/(alpha+1) * d^(alpha+1) is non-negative and therefore
         // admissible -- at which point the time step stops constraining it at
         // all. The system has spare term slots for exactly that.
+        diag.tineLength    = tineLength;
+        diag.modalMass     = modalMass;
+        diag.effTineMass   = effTineMass;
+        diag.hammerMass    = hammerCfg.mass;
+        diag.stiffnessWant = hammerCfg.stiffness;
         {
             const double mRed = 1.0 / (1.0 / hammerCfg.mass + 1.0 / effTineMass);
             const double vRef = 2.0;                       // a firm blow, m/s
             const double wMax = 2.0 * kPiD * 0.06 * fs;    // contact resonance ceiling
             const double kMax = mRed / vRef * std::pow (wMax / 1.5305, 3.0);
+            diag.capBinding = hammerCfg.stiffness > kMax;
             if (hammerCfg.stiffness > kMax) hammerCfg.stiffness = kMax;
         }
+        diag.stiffnessUsed = hammerCfg.stiffness;
 
 
 
@@ -918,6 +942,27 @@ private:
         // ---- pickup placement -----------------------------------------------------
         const double halfWidth = field != nullptr ? field->halfWidth() : 3.0e-3;
         staticOffset = std::clamp (cfg.pickupOffset, -1.0, 1.0) * halfWidth;
+        // The gap. Its scale was questioned and then measured, because the
+        // reasoning against it was good: what decides whether the instrument
+        // growls is the gap against the pole's own features -- a flat 0.28 mm
+        // across, a wedge 0.95 mm deep -- and on that argument a default of
+        // 2.1 mm sits out where the field is smooth, which is why a bass note's
+        // spectrum has died by its eighth harmonic.
+        //
+        // Closing it does exactly what the argument predicts, and it is still
+        // wrong. At 0.6 mm the hard-struck bass fundamental rises at 2.8 dB/s
+        // against a measured 2.2 to 3.9, which is the row it was meant to fix.
+        // It also breaks nine others: the tine is swinging two pole-widths, so
+        // it leaves the field entirely twice a cycle, and the spike that makes
+        // puts the inharmonic floor up by 45 dB, starts the fundamental beating
+        // against itself, and collapses the middle-register attack to half a
+        // millisecond. Swept against the whole suite the best voicing is within
+        // a hair of this one.
+        //
+        // So the growl is not sitting behind this control, and the range stays
+        // as it was. What the sweep is really saying is that the bass tine
+        // swings too far for the pole it is crossing, which is upstream of the
+        // pickup entirely.
         staticGap    = 0.6e-3 + 4.4e-3 * std::clamp (cfg.pickupGapNorm, 0.0, 1.0);
         restFlux     = field != nullptr ? field->flux (staticOffset, staticGap) : 0.0;
 
@@ -1096,6 +1141,7 @@ private:
     double damperFactor = 1.0;
     double tineLength = 0.1;
     double staticOffset = 0.0, staticGap = 1.5e-3, restFlux = 0.0;
+    Collision diag;
     double linearSwing = 1.0e-4, quietEnergy = 1.0e-13;
     bool   reduced = false;
 
