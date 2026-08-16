@@ -121,6 +121,11 @@ what is understood and unfixed.
 - **F2, tuning drifts to −4.3 cents** at the bottom of the compass, against a
   3-cent budget. The tine geometry is solved per note, so this is the solve and
   the assembled-fork trim disagreeing slightly, not a table with a typo.
+- **Two controls do nothing**: `strikeNoise` and `spaceMix` are declared, shown
+  on the panel, saved in factory presets and read into the engine's parameter
+  block, and the DSP never touches either. One factory preset sets `spaceMix`
+  to 0.30, so it promises a reverb that does not exist. Awaiting a decision to
+  implement or remove; row S4 catches any third one.
 - **Tine swing across the compass** spans about 4× in the model; a real one
   spans past 50× (tens of mm at the bottom, under 1 mm at the top). The hammer
   had to be graduated against the tine's effective mass to keep the treble

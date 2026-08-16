@@ -588,6 +588,93 @@ static void sectionStructural()
              mono ? Verdict::pass : Verdict::fail);
     }
 
+    // Every control must change the sound. A parameter that is declared,
+    // shown, automated and read by the processor but never reached by the DSP
+    // is invisible until a player turns it and nothing happens, and nothing
+    // else in the suite would catch it.
+    {
+        struct Knob { const char* name; float EngineParams::*f; float lo, hi; };
+        const Knob knobs[] = {
+            { "velCurve",    &EngineParams::velCurve,    0.0f, 1.0f },
+            { "hammerHard",  &EngineParams::hammerHard,  0.0f, 1.0f },
+            { "hammerMass",  &EngineParams::hammerMass,  0.0f, 1.0f },
+            { "escapement",  &EngineParams::escapement,  0.0f, 1.0f },
+            { "strikeNoise", &EngineParams::strikeNoise, 0.0f, 1.0f },
+            { "tipMass",     &EngineParams::tipMass,     0.0f, 1.0f },
+            { "resDamp",     &EngineParams::resDamp,     0.0f, 1.0f },
+            { "barCouple",   &EngineParams::barCouple,   0.0f, 1.0f },
+            { "barTune",     &EngineParams::barTune,    -1.0f, 1.0f },
+            { "bodyMix",     &EngineParams::bodyMix,     0.0f, 1.0f },
+            { "nonlinAmt",   &EngineParams::nonlinAmt,   0.0f, 1.0f },
+            { "pickupPos",   &EngineParams::pickupPos,  -0.6f, 0.1f },
+            { "pickupDist",  &EngineParams::pickupDist,  0.0f, 1.0f },
+            { "coilFreq",    &EngineParams::coilFreq,    0.0f, 1.0f },
+            { "coilQ",       &EngineParams::coilQ,       0.0f, 1.0f },
+            { "coilSat",     &EngineParams::coilSat,     0.0f, 1.0f },
+            { "preampDrive", &EngineParams::preampDrive, 0.0f, 1.0f },
+            { "bass",        &EngineParams::bassDb,    -12.0f, 12.0f },
+            { "treble",      &EngineParams::trebleDb,  -12.0f, 12.0f },
+            { "tremDepth",   &EngineParams::tremDepth,   0.0f, 1.0f },
+            { "cabMix",      &EngineParams::cabMix,      0.0f, 1.0f },
+            { "spaceMix",    &EngineParams::spaceMix,    0.0f, 1.0f },
+        };
+
+        auto renderWith = [] (const EngineParams& p, int note)
+        {
+            const int N = static_cast<int> (kFs * 1.5);
+            const int block = 512;
+            EpiEngine e;
+            e.prepare (kFs, block);
+            std::vector<float> L (static_cast<std::size_t> (N), 0.0f);
+            std::vector<float> R (static_cast<std::size_t> (N), 0.0f);
+            NoteEvent ev { 0, NoteEvent::noteOn, note, 0.75f };
+            for (int i = 0; i < N; i += block)
+            {
+                const int n = std::min (block, N - i);
+                e.process (L.data() + i, R.data() + i, n, p,
+                           i == 0 ? &ev : nullptr, i == 0 ? 1 : 0);
+            }
+            std::vector<double> mono (static_cast<std::size_t> (N));
+            for (int i = 0; i < N; ++i)
+                mono[static_cast<std::size_t> (i)] = 0.5 * (L[static_cast<std::size_t> (i)]
+                                                          + R[static_cast<std::size_t> (i)]);
+            return mono;
+        };
+
+        std::string dead;
+        double quietest = 0.0;
+        for (const Knob& k : knobs)
+        {
+            EngineParams a = referenceParams(), b = referenceParams();
+            a.*(k.f) = k.lo;
+            b.*(k.f) = k.hi;
+            const std::vector<double> xa = renderWith (a, kMid.midi);
+            const std::vector<double> xb = renderWith (b, kMid.midi);
+
+            double diff = 0.0, ref = 0.0;
+            for (std::size_t i = 0; i < xa.size(); ++i)
+            {
+                diff = std::max (diff, std::abs (xa[i] - xb[i]));
+                ref  = std::max (ref, std::abs (xa[i]));
+            }
+            const double db = ref > 0.0 ? 20.0 * std::log10 (std::max (1.0e-12, diff / ref)) : -300.0;
+            if (db < -80.0)
+            {
+                if (! dead.empty()) dead += ", ";
+                dead += k.name;
+            }
+            quietest = std::min (quietest, db);
+        }
+        // Two are known dead and are awaiting a decision to implement or
+        // remove; a third would be a regression and fails.
+        const bool onlyKnown = (dead == "strikeNoise, spaceMix");
+        row ("S4", "every control changes the sound", "all above -80 dB",
+             dead.empty() ? fmt ("quietest %.0f dB", quietest)
+                          : std::string ("dead: ") + dead,
+             dead.empty() ? Verdict::pass
+                          : (onlyKnown ? Verdict::knownGap : Verdict::fail));
+    }
+
     // The sympathetic path must actually do something. A held note with the
     // harp coupled is not audibly different, but a note struck while others are
     // free must excite them -- if it does not, the coupling is decorative.
