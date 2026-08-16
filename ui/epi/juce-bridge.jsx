@@ -46,7 +46,8 @@
 
   /* Choice lists. Order must match the C++ StringArrays in
      src/epi/ParameterIDs.h. */
-  const INSTRUMENTS = ['Rhodes', 'Wurlitzer', 'Clavinet', 'CP-70'];
+  // Must match epi::ids::instrumentNames. Only Rhodes is implemented.
+  const INSTRUMENTS = ['Rhodes'];
   const PICKUP_SEL  = ['Neck', 'Bridge', 'Both +', 'Both \u2212'];
 
   const pct  = (n) => Math.round(n * 100) + '%';
@@ -119,7 +120,7 @@
       const ev = mk();
       sliders[id] = { getNormalisedValue: () => v, setNormalisedValue: (n) => { v = n; ev.fire(); }, valueChangedEvent: ev };
     });
-    [['instrument', 0], ['pickupSel', 1]].forEach(([id, d]) => {
+    [['pickupSel', 1]].forEach(([id, d]) => {
       let i = d; const ev = mk();
       combos[id] = { getChoiceIndex: () => i, setChoiceIndex: (n) => { i = n; ev.fire(); }, valueChangedEvent: ev };
     });

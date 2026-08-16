@@ -30,9 +30,11 @@ namespace epi::ids
     inline constexpr const char* tune       = "tune";        // cents
 
     // Order must match epi::Instrument in dsp/EpiModel.h.
-    inline const juce::StringArray instrumentNames {
-        "Rhodes", "Wurlitzer", "Clavinet", "CP-70"
-    };
+    // Only what exists. The other three are modelled in docs/research and not
+    // in code, and a selector that offers them is a control that does nothing --
+    // which is precisely the defect this project has just spent a day removing
+    // from six other knobs. They go back on the list when they play.
+    inline const juce::StringArray instrumentNames { "Rhodes" };
 
     // ---- Action: key, hammer, damper ---------------------------------------
     inline constexpr const char* velCurve    = "velCurve";    // 0..1
@@ -103,8 +105,11 @@ namespace epi::ids
         };
 
         // ---- Instrument -----------------------------------------------------
-        add (std::make_unique<Pc> (juce::ParameterID { instrument, 1 }, "Instrument",
-                                   instrumentNames, 0));
+        // No selector while there is only one instrument to select. Beyond
+        // being a control that does nothing, a choice parameter with a single
+        // entry has the range [0, 0], and normalising a value across it divides
+        // by zero -- Audio Unit validation reads back NaN and fails the plugin
+        // outright. The id and the name list are kept for when the others play.
         add (std::make_unique<P> (juce::ParameterID { tune, 1 }, "Tune",
                                   Rng { -100.0f, 100.0f, 0.1f }, 0.0f,
                                   attrs ([] (float v, int) { return juce::String (v, 1) + " ct"; })));

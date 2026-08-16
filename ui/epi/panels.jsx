@@ -10,7 +10,6 @@ function ActionPanel() {
   return (
     <div className="panel">
       <PHead title="Action" />
-      <div className="prow"><PCycle id="instrument" options={INSTRUMENTS} label="INSTRUMENT" /></div>
       <div className="krow">
         <PKnob id="hammerHard" />
         <PKnob id="hammerMass" />
