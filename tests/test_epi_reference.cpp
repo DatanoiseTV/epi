@@ -898,6 +898,79 @@ static void sectionStructural()
              fmt ("%+.1f dB", addedDb), within (addedDb, -45.0, -6.0));
     }
 
+    // Nothing may make it emit a non-finite sample. Ever.
+    //
+    // This is not a stability proof and it is not meant to be: the scheme's
+    // linear part is bounded by construction, and what is NOT bounded by
+    // construction is the conditioning of the rank-two solve carrying the
+    // quadratised terms. Driven to the far corner of the joint's range -- a
+    // nearly rigid joint, a heavy tuning spring and the bar tuned a fifth away,
+    // all moving at once while notes are struck twenty a second -- it lost it,
+    // and the state ran to infinity inside a single block. Reliably, at ten
+    // seconds, having looked perfectly steady for the twenty-four blocks before.
+    //
+    // A tine that diverges now puts itself back, the frame refuses to carry an
+    // infinity from one, and the output chain is rebuilt if one ever reaches
+    // it. This row is what keeps that true.
+    {
+        const double secs = 22.0;
+        const int block = 128;
+        const int N = static_cast<int> (kFs * secs);
+        EpiEngine e;
+        e.prepare (kFs, block);
+        EngineParams p;
+        p.phaserMix = 0.5f; p.spaceMix = 0.3f;
+
+        std::vector<float> L (static_cast<std::size_t> (block));
+        std::vector<float> R (static_cast<std::size_t> (block));
+        std::uint32_t rng = 12345;
+        auto nx = [&rng] { rng = rng * 1664525u + 1013904223u; return rng; };
+
+        long nextNote = 0;
+        bool pedal = false, clean = true;
+        double firstBad = -1.0;
+
+        for (int i = 0; i < N; i += block)
+        {
+            const double t = static_cast<double> (i) / kFs;
+            p.tipMass     = static_cast<float> (0.05 + 0.90 * (0.5 + 0.5 * std::sin (2.0 * an::kPi * 0.17 * t)));
+            p.barCouple   = static_cast<float> (       1.00 * (0.5 + 0.5 * std::sin (2.0 * an::kPi * 0.13 * t)));
+            p.barTune     = static_cast<float> (-12.0 + 24.0 * (0.5 + 0.5 * std::sin (2.0 * an::kPi * 0.11 * t)));
+            p.resDamp     = static_cast<float> (0.12 + 0.43 * (0.5 + 0.5 * std::sin (2.0 * an::kPi * 0.70 * t)));
+            p.pickupPos   = static_cast<float> (-0.80 + 0.76 * (0.5 + 0.5 * std::sin (2.0 * an::kPi * 0.31 * t)));
+            p.pickupDist  = static_cast<float> (0.06 + 0.49 * (0.5 + 0.5 * std::sin (2.0 * an::kPi * 0.23 * t)));
+            p.coilSat     = static_cast<float> (       1.00 * (0.5 + 0.5 * std::sin (2.0 * an::kPi * 0.41 * t)));
+            p.preampDrive = static_cast<float> (       1.00 * (0.5 + 0.5 * std::sin (2.0 * an::kPi * 0.29 * t)));
+
+            std::vector<NoteEvent> evs;
+            while (nextNote < i + block)
+            {
+                const int note = 21 + static_cast<int> (nx() % 88);
+                evs.push_back ({ static_cast<int> (nextNote - i), NoteEvent::noteOn, note,
+                                 0.1f + 0.9f * static_cast<float> (nx() % 1000) / 1000.0f });
+                if (nx() % 3)
+                    evs.push_back ({ std::min (block - 1, static_cast<int> (nextNote - i) + 40),
+                                     NoteEvent::noteOff, note, 0.0f });
+                nextNote += static_cast<long> (kFs * 0.05);
+            }
+            const bool wantPedal = ((i / static_cast<int> (kFs * 2.0)) % 2) == 0;
+            if (wantPedal != pedal)
+            { evs.push_back ({ 0, wantPedal ? NoteEvent::sustainOn : NoteEvent::sustainOff, 0, 0.0f });
+              pedal = wantPedal; }
+
+            e.process (L.data(), R.data(), block, p,
+                       evs.empty() ? nullptr : evs.data(), static_cast<int> (evs.size()));
+
+            for (int n = 0; n < block; ++n)
+                if (! std::isfinite (L[static_cast<std::size_t> (n)]) && clean)
+                { clean = false; firstBad = t; }
+        }
+        row ("S8", "survives every control sweeping", "finite for 22 s",
+             clean ? fmt ("%d chain rebuilds", static_cast<double> (e.recoveryCount()))
+                   : fmt ("non-finite at %.2f s", firstBad),
+             clean ? Verdict::pass : Verdict::fail);
+    }
+
     // A chord must be close to the sum of its notes.
     //
     // A Rhodes has one pickup per tine, wired in series. Faraday's law and the

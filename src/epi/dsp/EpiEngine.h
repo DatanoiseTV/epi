@@ -180,6 +180,12 @@ public:
     float vizTineTip (int i) const { return vTineTip[i].load (std::memory_order_relaxed); }
     int   vizLastNote() const      { return vLastNote.load (std::memory_order_relaxed); }
 
+    // For tests: which tine holds what, so a blow-up can be located rather
+    // than guessed at.
+    const RhodesVoice& tine (int i) const { return tines[i]; }
+    double harpEnergy() const { return harp.energy(); }
+    int    recoveryCount() const { return recoveries.load (std::memory_order_relaxed); }
+
     // Which keys are down, packed a bit per note. A key can be held long after
     // its tine has gone quiet, so the motion alone cannot show it.
     std::uint32_t vizKeys (int word) const { return vKeys[word].load (std::memory_order_relaxed); }
@@ -229,6 +235,8 @@ private:
     std::uint32_t cfgVersion = 0;
     std::array<std::uint32_t, kNumTines> tineCfgVersion {};
     float lastCoilSat = -1.0f;
+    // How many times the output chain had to be rebuilt. Reported by tests.
+    std::atomic<int> recoveries { 0 };
 
     std::atomic<int>   numActive { 0 };
     std::atomic<float> peakL { 0.0f }, peakR { 0.0f };

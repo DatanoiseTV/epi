@@ -14,6 +14,13 @@
 
 #include <cstring>
 
+// How many tines may be rebuilt in one block. Overridable so the bound itself
+// can be tested rather than assumed.
+#ifndef EPI_RETUNE_BUDGET
+ #define EPI_RETUNE_BUDGET 24
+#endif
+namespace { constexpr int kRetuneBudget = EPI_RETUNE_BUDGET; }
+
 #include <algorithm>
 
 namespace epi
@@ -214,7 +221,7 @@ void EpiEngine::process (float* outL, float* outR, int numSamples,
     // the rest fill in behind them, a slice at a time, with a ceiling on the
     // whole job so no single block can be made late by it.
     {
-        int budget = 24;
+        int budget = kRetuneBudget;
         for (int i = 0; i < kNumTines && budget > 0; ++i)
         {
             if (tineCfgVersion[i] == cfgVersion) continue;
@@ -313,7 +320,13 @@ void EpiEngine::process (float* outL, float* outR, int numSamples,
 
             if (harpCoupling > 0.0 && free)
             {
-                const double f = harpCoupling * (harpU - t.clampDisplacement());
+                // Read BEFORE the tine is stepped, so a tine that diverged on
+                // the previous sample would hand its infinity to the frame --
+                // and the frame hands it to all eighty-seven others. The voice
+                // puts itself back a moment later, by which time it is too
+                // late. One test here contains it to the tine it started in.
+                double f = harpCoupling * (harpU - t.clampDisplacement());
+                if (! std::isfinite (f)) f = 0.0;
                 t.addClampForce (f);
                 harpReaction -= f;
                 t.setSounding (true);   // the harp has woken it
@@ -333,6 +346,7 @@ void EpiEngine::process (float* outL, float* outR, int numSamples,
 
         harp.addForce (harpReaction + action.tick (p.strikeNoise, noiseRng));
         harp.tick();
+        if (! std::isfinite (harp.displacement())) harp.reset();
 
         // Everything nonlinear stays at the oversampled rate, and the whole
         // chain is decimated once, at the end.
@@ -391,6 +405,21 @@ void EpiEngine::process (float* outL, float* outR, int numSamples,
             const double mix = std::clamp (static_cast<double> (p.spaceMix), 0.0, 1.0);
             l += mix * wl;
             r += mix * wr;
+        }
+
+        // The last line of defence. Everything downstream of the tines holds
+        // state -- the coil, the preamp, the phaser's feedback loop, the room
+        // -- and a single non-finite sample entering any of them stays there
+        // for good. Nothing should ever get this far; if it does, the chain is
+        // rebuilt and one sample is lost, which is a click rather than a
+        // permanently dead instrument.
+        if (! std::isfinite (l) || ! std::isfinite (r))
+        {
+            coil.reset(); preamp.reset(); cabinetL.reset(); cabinetR.reset();
+            decimL.reset(); decimR.reset(); phaserL.reset(); phaserR.reset();
+            room.reset();
+            l = r = 0.0;
+            ++recoveries;
         }
 
         const float fl = static_cast<float> (l) * p.outGainLin;

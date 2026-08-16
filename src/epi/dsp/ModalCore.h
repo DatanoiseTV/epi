@@ -363,6 +363,8 @@ public:
 
     // ---- readout ---------------------------------------------------------
     double displacement (int i) const { return (i >= 0 && i < MaxN) ? q[i] : 0.0; }
+    double psiValue (int p) const { return (p >= 0 && p < MaxP) ? psi[p] : 0.0; }
+    bool   termIsActive (int p) const { return (p >= 0 && p < MaxP) && termActive[p]; }
 
     double displacementAt (const double* shape) const
     {

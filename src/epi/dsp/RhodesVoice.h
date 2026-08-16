@@ -16,6 +16,10 @@
 #include "ModalCore.h"
 #include "PickupMagnetic.h"
 
+#ifdef EPI_NAN_TRACE
+ #include <cstdio>
+#endif
+
 #include <type_traits>
 
 namespace epi
@@ -199,6 +203,7 @@ public:
         bool   capBinding    = false;
     };
     const Collision& collision() const { return diag; }
+    int divergedCount() const { return diverged; }
 
     double tipDisplacement() const { return lastTipV; }
     double tipHorizontal()   const { return lastTipH; }
@@ -323,8 +328,25 @@ public:
     // the host rate.
     static constexpr int kOver = 4;
 
+#ifdef EPI_NAN_TRACE
+    // Test scaffolding: says WHICH step first produced a non-finite state,
+    // which is the only question worth asking about a one-block blow-up.
+    const char* nanStage = nullptr;
+    void checkNan (const char* where)
+    {
+        if (nanStage) return;
+        for (int i = 0; i < kNumModes; ++i)
+            if (! std::isfinite (sys.displacement (i))) { nanStage = where; return; }
+        if (! std::isfinite (sys.energy())) { nanStage = where; return; }
+    }
+ #define EPI_CHK(x) checkNan (x)
+#else
+ #define EPI_CHK(x) ((void) 0)
+#endif
+
     void process (const Config& cfg, double* fluxOut)
     {
+        EPI_CHK ("on entry");
         // A steal in progress: wind this voice down, then strike the new note.
         if (fadeLeft > 0)
         {
@@ -363,11 +385,11 @@ public:
             }
         }
 
-        glidePickup();
-        updateStretchTerm();
-        sys.tick();
+        glidePickup();      EPI_CHK ("glidePickup");
+        updateStretchTerm(); EPI_CHK ("updateStretchTerm");
+        sys.tick();         EPI_CHK ("sys.tick");
 
-        if (! held && ! pedal) applyDamper();
+        if (! held && ! pedal) { applyDamper(); EPI_CHK ("applyDamper"); }
 
         if (++controlCounter >= kControlDecim)
         {
@@ -386,6 +408,27 @@ public:
             // Switching only happens below the threshold, where the modes being
             // parked hold nothing audible, so it cannot make a discontinuity.
             const double e = sys.energy();
+
+            // A tine that has gone non-finite is put back, and the fact is
+            // recorded rather than hidden.
+            //
+            // Nothing in a physical model should ever reach this, and the
+            // scheme's linear part cannot: its per-mode coefficients are
+            // bounded by construction, so the modal bank alone is stable at any
+            // frequency and any damping. What is not bounded by construction is
+            // the CONDITIONING of the rank-two solve that carries the two
+            // quadratised terms, and driven to the far corner of the joint's
+            // range -- a nearly rigid joint, a heavy tuning spring and the bar
+            // tuned a fifth away, all at once -- it loses it and the state runs
+            // to infinity inside a single block.
+            //
+            // That is a real defect and it is not fixed by this. But the
+            // difference between one note dropping out for a moment and a
+            // non-finite sample reaching the host is the difference between a
+            // blemish and a dead session, and no amount of remaining doubt
+            // about the cause justifies shipping the second one.
+            if (! std::isfinite (e)) { recover (fluxOut); return; }
+
             if (! hammer.isActive() && e < quietEnergy)
             {
                 if (! reduced) { sys.setNumModes (1); reduced = true; }
@@ -409,6 +452,13 @@ public:
 
         // -- transduction ------------------------------------------------------
         const double vNow = sys.displacementAt (shapeTipV);
+
+        // Checked here, every sample, because this is the value that indexes
+        // the field table. A non-finite tip position is not merely a bad sample
+        // -- it converts to an integer index of whatever the hardware feels
+        // like, reads outside the table, and takes the process with it. The
+        // energy check above runs at control rate, which is too late for that.
+        if (! std::isfinite (vNow)) { recover (fluxOut); return; }
         const double hNow = sys.displacementAt (shapeTipH);
 
         // A tine swinging a small fraction of the pole's flat is sampling a
@@ -619,6 +669,7 @@ private:
 
     void configure (const Config& cfg)
     {
+        EPI_CHK ("configure entry");
         // The note this tine was cut for, and the note it is currently tuned
         // to. They are not the same thing once master tuning or a bend is in
         // play, and keeping them apart is what makes a bend physical: the
@@ -1075,7 +1126,28 @@ private:
                     / std::max (1.0e-4, tineLength);
         stretchGain = std::clamp (cfg.nonlinearity, 0.0, 1.0);
 
+        // Reconfiguring changes what the quadratised terms MEAN, so their
+        // auxiliary variables no longer describe the system they belong to.
+        //
+        // psi is sqrt(2V) of the current state under the current potential.
+        // This function has just changed the joint's stiffness, the tine's
+        // stretching constant and every mode's frequency -- all of which
+        // change V -- while psi kept the value it had under the old one. The
+        // gradient then acts with the new definition against a stale psi, and
+        // the term stops being the passive thing it was proved to be: measured,
+        // sweeping the tuning spring, the joint stiffness and the bar's tuning
+        // together ran the instrument to a non-finite state within ten seconds,
+        // reliably, and no one of them did it alone.
+        //
+        // Disabling them is the resync: updateStretchTerm re-enables them on
+        // the next sample and seeds psi from the state as it now is. Same
+        // reason the damper does it, and the same lesson -- an auxiliary
+        // variable is only valid against the definition it was seeded under.
+        sys.disableTerm (kTermStretch);
+        sys.disableTerm (kTermJoint);
+
         configured = true;
+        EPI_CHK ("configure exit");
     }
 
     // psi = sqrt(EA/L)/2 * K, g = sqrt(EA/L) * (Ghat q). No division and no
@@ -1167,6 +1239,11 @@ private:
                 stretchGrad[kV0 + a] = root * gq[0][a];
                 stretchGrad[kH0 + a] = root * gq[1][a];
             }
+#ifdef EPI_NAN_TRACE
+            if (! std::isfinite (root) || ! std::isfinite (kk))
+                std::printf ("    STRETCH bad: root %g  kk %g  stretchEA %g  gain %g\n",
+                             root, kk, stretchEA, stretchGain);
+#endif
             sys.setTerm (kTermStretch, stretchGrad, 0.5 * root * kk, true);
         }
 
@@ -1174,12 +1251,44 @@ private:
         {
             double eta = 0.0;
             for (int i = 0; i < kNumModes; ++i) eta += jointGrad[i] * sys.displacement (i);
+#ifdef EPI_NAN_TRACE
+            if (! std::isfinite (eta))
+            {
+                std::printf ("    JOINT bad: eta %g\n      grads:", eta);
+                for (int i = 0; i < kNumModes; ++i)
+                    if (! std::isfinite (jointGrad[i])) std::printf (" g[%d]=%g", i, jointGrad[i]);
+                std::printf ("\n      disps:");
+                for (int i = 0; i < kNumModes; ++i)
+                    if (! std::isfinite (sys.displacement (i)))
+                        std::printf (" q[%d]=%g", i, sys.displacement (i));
+                std::printf ("\n      gHat non-finite:");
+                for (int a = 0; a < kTineModes; ++a)
+                    for (int b = 0; b < kTineModes; ++b)
+                        if (! std::isfinite (gHat[a][b])) std::printf (" [%d][%d]=%g", a, b, gHat[a][b]);
+                std::printf ("\n      stretchGrad non-finite:");
+                for (int i = 0; i < kNumModes; ++i)
+                    if (! std::isfinite (stretchGrad[i])) std::printf (" s[%d]=%g", i, stretchGrad[i]);
+                std::printf ("\n");
+            }
+#endif
             sys.setTerm (kTermJoint, jointGrad, eta, true);
         }
         else
         {
             sys.disableTerm (kTermJoint);
         }
+    }
+
+    // Put a diverged tine back, and record that it happened.
+    void recover (double* fluxOut)
+    {
+        sys.clear();
+        sys.disableTerm (kTermStretch);
+        sys.disableTerm (kTermJoint);
+        hammer.reset();
+        sounding = false;
+        ++diverged;
+        for (int k = 0; k < kOver; ++k) fluxOut[k] = satRestVal;
     }
 
     void applyDamper()
@@ -1316,6 +1425,8 @@ private:
 
     double saturate (double phi) const { return std::tanh (satK * phi) / satK * satNorm; }
     Collision diag;
+    // How many times this tine has had to be put back. Reported by the tests.
+    int diverged = 0;
     double linearSwing = 1.0e-4, quietEnergy = 1.0e-13;
     bool   reduced = false;
 
