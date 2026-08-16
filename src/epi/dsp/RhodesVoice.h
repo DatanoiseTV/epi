@@ -23,7 +23,7 @@ namespace epi
 // The tonebar.
 //
 // Half of Harold Rhodes' patented asymmetric tuning fork. The tine is the
-// lower, thin prong; the tonebar is the upper, much heavier brass one, and the
+// lower, thin prong; the tonebar is the upper, much heavier steel one, and the
 // two are bolted together through an aluminium block.
 //
 // The received wisdom is that the two are tuned alike. They are not. Muenster
@@ -475,14 +475,14 @@ private:
 
         // ---- tonebar --------------------------------------------------------
         const double barF = TonebarTable::barFrequency (f0) * std::pow (2.0, cfg.barTuneSemis / 12.0);
-        const double barMass = modalMass * 26.0;   // brass, far heavier than the tine
+        const double barMass = modalMass * 26.0;   // far heavier than the tine
 
         for (int m = 0; m < kBarModes; ++m)
         {
             barShape[m] = CantileverModes::shape (m, 0.10);
 
             const double r = CantileverModes::ratio (m, 0.0, 1.0, 0.004);
-            // Brass, bolted at both ends into a sprung rail: far more heavily
+            // Bolted at both ends into a sprung rail: far more heavily
             // damped than the tine, which is why its contribution is an attack
             // transient and not a second note.
             const double t60 = (0.10 + 0.14 * (1.0 - damp)) / (1.0 + 1.8 * m);
