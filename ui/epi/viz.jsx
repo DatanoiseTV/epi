@@ -7,11 +7,13 @@
 
    Everything that moves here moves because the engine said so.
    The `levels` event carries every tine's peak displacement this
-   frame, the held-key bitmask and the pedal state; the drawing
-   maps displacement to a vibration envelope in decibels, because
-   a sympathetically shaken tine sits 30-40 dB under a struck one
-   and a linear mapping would erase exactly the thing this picture
-   exists to show.
+   frame, the held-key bitmask and the pedal state. The GEOMETRY is
+   physical -- excursion in pixels follows the reported microns
+   through each rod's drawn-to-real scale, and each core oscillates
+   at its note's true fundamental -- while COLOUR and glow follow a
+   decibel mapping, because a sympathetically shaken tine sits
+   30-40 dB under a struck one and linear brightness would erase
+   exactly the thing worth seeing.
 
    The keys are playable: pointer down maps to a note and velocity
    (deeper on the key is louder, like an accelerating press) and
@@ -23,7 +25,40 @@ const VZ_W = 1128, VZ_H = 300, VZ_PAD = 16, VZ_KH = 54;
 const VZ_N = 88, VZ_LO = 21;
 const VZ_BLACK_PC = [1, 3, 6, 8, 10];
 const VZ_TILT = 0.55, VZ_GLOW = 0.6;
-const VZ_RANGE = 52;                       // dB of visible dynamic range
+const VZ_RANGE = 52;                       // dB range for colour and glow only
+
+/* The drawing is a scaled instrument, so the swing can be physical: the
+   engine reports every tip's peak displacement in microns, each note's rod
+   is drawn at a known fraction of its real length, and the excursion on
+   screen is displacement times that same fraction. One uniform x3
+   magnifier on top -- a microscope, not a lie: it preserves every ratio
+   between notes, and without it a treble tine's fifth of a millimetre is
+   less than a pixel, which is also why you cannot see one move in real
+   life. */
+const VZ_MAG = 3;
+
+/* Real resonator lengths in millimetres. Rhodes tines run 175 down to 22;
+   the CP-70's strings follow the voice's own length law,
+   L = 665 * 2^(-(note-60)/13.16). */
+function vzLenMm(i, tineMode) {
+  if (tineMode) return 175 * Math.pow(22 / 175, i / 87);
+  return 665.2 * Math.pow(2, -((VZ_LO + i) - 60) / 13.16);
+}
+
+/* The CP-70's factory stretch table, the same anchors the voice uses.
+   Without it the drawn string and the heard string disagree by up to a
+   third of a semitone at the ends of the compass. */
+const VZ_STRETCH_M = [21, 28, 42, 60, 88, 100, 108];
+const VZ_STRETCH_C = [-23.0, -13.7, -4.6, 0.0, 7.2, 20.0, 35.0];
+function vzStretchCents(n) {
+  if (n <= VZ_STRETCH_M[0]) return VZ_STRETCH_C[0];
+  for (let i = 0; i < 6; i++)
+    if (n <= VZ_STRETCH_M[i + 1]) {
+      const t = (n - VZ_STRETCH_M[i]) / (VZ_STRETCH_M[i + 1] - VZ_STRETCH_M[i]);
+      return VZ_STRETCH_C[i] + (VZ_STRETCH_C[i + 1] - VZ_STRETCH_C[i]) * t;
+    }
+  return VZ_STRETCH_C[6];
+}
 
 /* Key geometry: 52 equal whites spanning the width, blacks 60% as wide
    overlaid on the boundary. Computed once. */
@@ -90,6 +125,7 @@ function VizCard() {
     const strikeT = new Float32Array(VZ_N).fill(99);
     let scale = 1e-3;
     let raf = 0, prev = performance.now();
+    const tuneRelay = window.Juce && Juce.getSliderState ? Juce.getSliderState('tune') : null;
 
     const frame = (now) => {
       const dt = Math.min(0.1, (now - prev) / 1000); prev = now;
@@ -112,6 +148,12 @@ function VizCard() {
       }
       scale = peak > scale ? peak : scale + (peak - scale) * Math.min(1, dt * 0.6);
       const inv = 1 / Math.max(scale, 1e-6);
+
+      /* Master tune, in cents, read straight off the relay -- the drawn
+         frequency must follow the heard one through the knob. */
+      const tuneCents = tuneRelay
+        ? -100 + 200 * tuneRelay.getNormalisedValue() : 0;
+      const tSec = now / 1000;
 
       ctx.clearRect(0, 0, VZ_W, VZ_H);
 
@@ -167,12 +209,27 @@ function VizCard() {
         const down = isDown(i);
         const sym = a > 0.02 && !down && strikeT[i] > 0.5;
         const active = a > 0.02 ? Math.min(1, a * 1.4) : 0;
-        const A = a * (4 + 8 * (1 - i / 87));
-        /* The second cantilever mode at 6.27 f, shown while the strike is
-           fresh -- it decays several times faster than the fundamental. */
+
+        /* Physical swing: microns to millimetres, millimetres to pixels
+           through this rod's own drawn-to-real scale, times the uniform
+           magnifier. */
+        const A = (env[i] * 1e-3) * (Lm / vzLenMm(i, tineMode)) * VZ_MAG;
+
+        /* Physical frequency: this note's fundamental, with the master
+           tune and (for the strings) the factory stretch. Sampled once
+           per frame, so anything above ~30 Hz aliases -- which is what a
+           tine looks like to the eye: a blur envelope with a slow beat
+           crawling through it. The envelope band carries the true
+           excursion; the sampled core carries the motion. */
+        const n = VZ_LO + i;
+        const cents = tuneCents + (tineMode ? 0 : vzStretchCents(n));
+        const f = 440 * Math.pow(2, (n - 69) / 12) * Math.pow(2, cents / 1200);
+        const ph = 6.283 * f * tSec;
+        /* The second mode: a cantilever's sits at 6.267 f, a string's at
+           2 f. It decays several times faster than the fundamental, so it
+           is shown while the strike is fresh. */
+        const ph2 = ph * (tineMode ? 6.267 : 2.0);
         const A2 = A * 0.45 * Math.exp(-strikeT[i] * 6);
-        const ph = 6.283 * (0.6 + 3.1 * (i / 87)) * (now / 350) + i;
-        const ph2 = ph * 6.267;
 
         const tipX = x + Lm * sx, tipY = baseY - Lm * sy;
 
