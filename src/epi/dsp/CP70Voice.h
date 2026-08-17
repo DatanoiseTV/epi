@@ -399,7 +399,15 @@ private:
         // ---- hammer: urethane over leather, not felt ------------------------
         const double reg = std::clamp ((note - 28.0) / 72.0, 0.0, 1.0);
         hammerCfg.alpha = 2.2;
-        hammerCfg.stiffness = 8.0e8 * std::pow (4.0e10 / 8.0e8, reg)
+        // Softer than the plan's first numbers by a factor of six, and the
+        // change is data-driven, not taste: with the stiffer law the model's
+        // C4 came out with its THIRD harmonic loudest where the real
+        // recording has the fundamental on top by 11 dB, and C5 carried
+        // partials six through ten only 11 dB down -- heard as "very bright,
+        // missing lows and mids, sharp". The hammer's contact time is the
+        // lowpass that shapes the launch spectrum, and the per-partial A/B
+        // against the reference samples is what sets it now.
+        hammerCfg.stiffness = 1.3e8 * std::pow (1.2e9 / 1.3e8, reg)
                             * std::pow (12.0, cfg.hammerHardness - 0.5);
         hammerCfg.lambda = 0.6;
         hammerCfg.mass = 0.011 * std::pow (4.0 / 11.0, reg)

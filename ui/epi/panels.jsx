@@ -29,8 +29,25 @@ function ActionPanel() {
   );
 }
 
-/* ---- TINE: the metal, and what it is bolted to ---- */
-function TinePanel() {
+/* ---- TINE / STRINGS: the resonator, per instrument ----
+   The knobs shown are the ones this instrument's physics can read. The
+   CP-70 has no tone bar, no bloom and no magnetics -- showing those
+   knobs would be showing dead controls, which this project has spent
+   enough time removing to know better. */
+function TinePanel({ cp70 }) {
+  if (cp70) return (
+    <div className="panel">
+      <PHead title="Strings" />
+      <div className="krow">
+        <PKnob id="tipMass" label="UNISON" />
+        <PKnob id="resDamp" label="DECAY" />
+        <PKnob id="tune" />
+      </div>
+      {/* One or two strings per note on a rigid bridge; the unison pair is
+          deliberately uncoupled, because the measurements forbid coupling. */}
+      <div className="note">unison spread · decay trim · stretch-tuned</div>
+    </div>
+  );
   return (
     <div className="panel">
       <PHead title="Tine" />
@@ -53,7 +70,22 @@ function TinePanel() {
 }
 
 /* ---- PICKUP: where the sound is actually made ---- */
-function PickupPanel() {
+function PickupPanel({ cp70 }) {
+  if (cp70) return (
+    <div className="panel">
+      <PHead title="Bridge" meta="PIEZO" />
+      {/* The CP-70's pickup is one piezo element under each bridge, reading
+          the string's termination FORCE -- a +6 dB per octave tilt that is a
+          law of the transducer, not a tone control. There is nothing to
+          voice: no magnet, no gap, no coil, no resonance. What shapes the
+          sound instead is the hammer and the mid-scooped preamp. */}
+      <div className="krow">
+        <PKnob id="strikeNoise" />
+        <PKnob id="damperGrip" />
+      </div>
+      <div className="note">force sensing · fixed by construction</div>
+    </div>
+  );
   const [pos] = useJuceSlider('pickupPos');
   const mm = (PARAMS.pickupPos.map.to(pos) * 2).toFixed(2);
   return (

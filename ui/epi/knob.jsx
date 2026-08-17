@@ -103,12 +103,12 @@ function Knob({ value = 0.5, onChange, size = 'md', label, format, bipolar = fal
 /* ---- Parameter knob ----
    Everything (label, default, formatter, bipolarity) comes from the one
    PARAMS table, so a range change in C++ is mirrored in exactly one place. */
-function PKnob({ id, size, alt }) {
+function PKnob({ id, size, alt, label }) {
   const spec = PARAMS[id];
   const [v, set] = JuceBridge.useJuceSlider(id);
   return (
     <Knob value={v} onChange={set} size={size} alt={alt}
-          label={spec.label} format={spec.format}
+          label={label || spec.label} format={spec.format}
           bipolar={!!spec.bipolar} defaultValue={spec.def} />
   );
 }

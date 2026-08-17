@@ -28,7 +28,11 @@ function Header({ onOpenBrowser }) {
 }
 
 function App() {
-  const { useJuceSlider, useJuceEvent } = JuceBridge;
+  const { useJuceSlider, useJuceEvent, useJuceChoice } = JuceBridge;
+
+  /* Which instrument this is decides which controls exist at all. */
+  const [instIdx] = useJuceChoice('instrument', INSTRUMENTS);
+  const cp70 = instIdx === 1;
 
   /* The hero needs the pickup geometry as drag anchors: dragging the tine in
      the field IS the pickup-height parameter. */
@@ -51,8 +55,8 @@ function App() {
         </div>
         <div className="rack">
           <ActionPanel />
-          <TinePanel />
-          <PickupPanel />
+          <TinePanel cp70={cp70} />
+          <PickupPanel cp70={cp70} />
           <AmpPanel />
           <OutputPanel />
         </div>
