@@ -94,6 +94,13 @@ public:
             z[i] = x + a * y;
             x = y;
         }
+        // The feedback path must never carry a non-finite value forward: once
+        // one is in the loop it stays. The engine's own containment would
+        // catch it a stage later, but a guard at the loop is the difference
+        // between losing one sample of wet signal and rebuilding the whole
+        // output chain. The original this was ported from had this line, and
+        // dropping it in the port was a mistake.
+        if (! std::isfinite (x)) { x = 0.0; reset(); }
         last = x;
 
         return in + mix * (x - in);

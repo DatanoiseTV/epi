@@ -62,6 +62,21 @@ void EpiEngine::prepare (double sampleRate, int)
 
     publishField();
     reset();
+
+    // Everything that exists to avoid redundant re-application must forget
+    // what it knew, because none of it is applied any more. prepare() rebuilds
+    // the tines with a DEFAULT configuration; if the caches survive, the first
+    // block's parameters compare equal to the stale values, nothing re-applies,
+    // and the instrument comes back from a sample-rate or buffer-size change
+    // with default tines, the core saturation off and the room at the wrong
+    // size -- wrong in exactly the way that only shows after the host changes
+    // something, which is the hardest kind of wrong to trace.
+    lastCfg = RhodesVoice::Config {};
+    lastCfg.hammerHardness = -1.0e30;   // guarantee the first comparison differs
+    cfgVersion = 0;
+    tineCfgVersion.fill (0);
+    lastCoilSat = -1.0f;
+    lastSpaceSize = -1.0f;
 }
 
 void EpiEngine::reset()
@@ -314,8 +329,14 @@ void EpiEngine::process (float* outL, float* outR, int numSamples,
             // the whole instrument is in play, which is the expensive case and
             // also the real one.
             const bool free = pedalDown || keyDown[i];
-            const bool live = t.isRinging() || (free && harpCoupling > 0.0
-                                                     && std::abs (harpU) > 1.0e-12);
+            // A tine that diverged stays out until its next strike. Without
+            // this the harp wakes it on the very next sample, it diverges
+            // again, and each recovery fires a step through the differentiating
+            // coil: a diverge-wake-diverge cycle at a few hundred hertz, which
+            // is a steady buzz from an instrument nobody is playing.
+            const bool live = ! t.isLockedOut()
+                           && (t.isRinging() || (free && harpCoupling > 0.0
+                                                      && std::abs (harpU) > 1.0e-12));
             if (! live) continue;
 
             if (harpCoupling > 0.0 && free)
@@ -344,7 +365,8 @@ void EpiEngine::process (float* outL, float* outR, int numSamples,
             if (t.justStruck()) { t.clearStrikeFlag(); ++strikeCount; }
         }
 
-        harp.addForce (harpReaction + action.tick (p.strikeNoise, noiseRng));
+        harp.addForce (harpReaction);
+        harp.addNoiseForce (action.tick (p.strikeNoise, noiseRng));
         harp.tick();
         if (! std::isfinite (harp.displacement())) harp.reset();
 

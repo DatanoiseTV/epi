@@ -71,6 +71,23 @@ public:
         for (int m = 0; m < kModes; ++m) sys.addForce (m, f * shape[m]);
     }
 
+    // The action's noise enters here, and through a different door. The keys
+    // bottom out on the front rail of the key bed, not on the tone-bar rail
+    // the tines hang from, and the two points sit very differently on the
+    // frame's mode shapes: the lowest modes -- the whole frame swaying in its
+    // case -- barely move at the front rail, while the shorter flexural modes
+    // do. Driving the noise through the tone-bar weights instead put most of
+    // it into the 47 and 88 hertz modes, which ring for half a second and sit
+    // close enough to the bottom tines' own pitches to drive them resonantly:
+    // what came out was a tenth of the note's level of low boom, reported as
+    // an unnatural, loud thump. Measured after this: eighteen decibels less
+    // of it, and the residue is a tock instead of a boom.
+    void addNoiseForce (double f)
+    {
+        static constexpr double kNoiseShape[kModes] = { 0.06, 0.12, 0.45, 0.8, 1.0, 1.0 };
+        for (int m = 0; m < kModes; ++m) sys.addForce (m, f * kNoiseShape[m] * shape[m]);
+    }
+
     void tick() { sys.tick(); }
 
     double energy() const { return sys.energy(); }

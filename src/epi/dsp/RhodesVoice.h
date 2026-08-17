@@ -204,6 +204,7 @@ public:
     };
     const Collision& collision() const { return diag; }
     int divergedCount() const { return diverged; }
+    bool isLockedOut() const { return lockedOut; }
 
     double tipDisplacement() const { return lastTipV; }
     double tipHorizontal()   const { return lastTipH; }
@@ -264,6 +265,7 @@ public:
     void strikeNow (int midiNote, double velocity, const Config& cfg,
                     std::uint32_t seed, bool freshState)
     {
+        lockedOut = false;   // a strike is permission to try again
         note = midiNote;
         held = true;
         sounding = true;
@@ -1317,6 +1319,7 @@ private:
         sys.disableTerm (kTermJoint);
         hammer.reset();
         sounding = false;
+        lockedOut = true;   // stays out until the next strike
         ++diverged;
         for (int k = 0; k < kOver; ++k) fluxOut[k] = satRestVal;
     }
@@ -1457,6 +1460,7 @@ private:
     Collision diag;
     // How many times this tine has had to be put back. Reported by the tests.
     int diverged = 0;
+    bool lockedOut = false;
     static constexpr double kReducedEnergy = 1.0e-10;
     double linearSwing = 1.0e-4, quietEnergy = 1.0e-13;
     bool   reduced = false;

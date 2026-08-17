@@ -79,10 +79,14 @@ public:
         v.knockDecay = std::exp (-1.0 / ((0.0030 - 0.0016 * r) * fs));
 
         // The thud: the key bottoming out on its front rail felt. Heavier and
-        // deeper toward the bass, where the lever and hammer are largest.
-        v.thudEnv = vel * (1.35 - 0.85 * r);
-        v.thudCut = 190.0 + 240.0 * r;
-        v.thudDecay = std::exp (-1.0 / ((0.0170 - 0.0080 * r) * fs));
+        // deeper toward the bass, where the lever and hammer are largest --
+        // but only somewhat: measured on the reference recordings, the
+        // mechanical residual is roughly uniform across the compass, and the
+        // earlier weighting put the bass thump within five decibels of the
+        // note itself.
+        v.thudEnv = vel * (0.95 - 0.35 * r);
+        v.thudCut = 260.0 + 260.0 * r;
+        v.thudDecay = std::exp (-1.0 / ((0.0150 - 0.0070 * r) * fs));
     }
 
     // And coming back up: the damper arm dropping onto the tine and the key
@@ -94,8 +98,8 @@ public:
         const double r = std::clamp (reg, 0.0, 1.0);
         Voice& v = alloc();
         v.knockEnv = 0.0;
-        v.thudEnv = 0.30 * (1.25 - 0.7 * r);
-        v.thudCut = 230.0 + 260.0 * r;
+        v.thudEnv = 0.30 * (1.05 - 0.5 * r);
+        v.thudCut = 280.0 + 260.0 * r;
         v.thudDecay = std::exp (-1.0 / (0.0110 * fs));
     }
 
@@ -122,8 +126,15 @@ public:
             out += v.knockState * v.knockEnv;
             v.knockEnv *= v.knockDecay;
 
+            // The thud is a BAND, not a lowpass. A lowpassed noise reaches
+            // down to DC, and a force with energy at 47 and 88 hertz lands
+            // squarely on the frame's two lowest modes -- what came back was
+            // not a key bottoming out, it was the harp rung like a marimba
+            // bar, and it was reported as exactly that. The difference of two
+            // onepoles passes the tock and starves the modes.
             v.thudState += (v.thudCut / fs) * (n - v.thudState);
-            out += v.thudState * v.thudEnv;
+            v.thudFloor += (0.30 * v.thudCut / fs) * (n - v.thudFloor);
+            out += (v.thudState - v.thudFloor) * v.thudEnv;
             v.thudEnv *= v.thudDecay;
 
             if (v.knockEnv < 1.0e-7) v.knockEnv = 0.0;
@@ -137,7 +148,7 @@ private:
     struct Voice
     {
         double knockEnv = 0.0, thudEnv = 0.0;
-        double knockState = 0.0, thudState = 0.0;
+        double knockState = 0.0, thudState = 0.0, thudFloor = 0.0;
         double knockCut = 2000.0, thudCut = 220.0;
         double knockDecay = 0.0, thudDecay = 0.0;
     };
