@@ -122,7 +122,12 @@
   if (!nativeBackend) {
     global.__EPI_MOCK__ = true;
     const sliders = {}, combos = {};
-    const mk = () => { const ls = []; return { addListener: (f) => ls.push(f), fire: () => ls.forEach((f) => f()) }; };
+    const mk = () => {
+      const ls = new Map(); let nid = 0;
+      return { addListener: (f) => { ls.set(++nid, f); return nid; },
+               removeListener: (i) => { ls.delete(i); },
+               fire: () => ls.forEach((f) => f()) };
+    };
 
     Object.keys(PARAMS).forEach((id) => {
       let v = PARAMS[id].def;
@@ -212,9 +217,15 @@
     }, 16);
 
     global.Juce = {
-      getSliderState: (id) => sliders[id] || sliders.outGain,
+      getSliderState: (id) => {
+        if (!sliders[id]) throw new Error('mock: unknown slider id ' + id);
+        return sliders[id];
+      },
       getToggleState: () => ({ getValue: () => false, setValue: () => {}, valueChangedEvent: mk() }),
-      getComboBoxState: (id) => combos[id] || combos.instrument,
+      getComboBoxState: (id) => {
+        if (!combos[id]) throw new Error('mock: unknown combo id ' + id);
+        return combos[id];
+      },
       backend,
       getNativeFunction: (n) => () => Promise.resolve(
         n === 'listFactoryPresets'
@@ -244,9 +255,13 @@
     const relay = global.Juce.getSliderState(id);
     const [v, setV] = useState(relay.getNormalisedValue());
     useEffect(() => {
-      const onChanged = () => setV(relay.getNormalisedValue());
-      relay.valueChangedEvent.addListener(onChanged);
-      return undefined;
+      /* The listener MUST come off again. Panels remount on every
+         instrument switch and every workshop open, and a listener left on
+         the relay keeps firing into unmounted components forever -- after a
+         session of switching, every parameter change fanned out to dozens
+         of dead closures. */
+      const lid = relay.valueChangedEvent.addListener(() => setV(relay.getNormalisedValue()));
+      return () => relay.valueChangedEvent.removeListener(lid);
     }, [id]);
     const set = useCallback((nv) => {
       const c = Math.max(0, Math.min(1, nv));
@@ -273,9 +288,8 @@
     const relay = global.Juce.getToggleState(id);
     const [v, setV] = useState(!!relay.getValue());
     useEffect(() => {
-      const onChanged = () => setV(!!relay.getValue());
-      relay.valueChangedEvent.addListener(onChanged);
-      return undefined;
+      const lid = relay.valueChangedEvent.addListener(() => setV(!!relay.getValue()));
+      return () => relay.valueChangedEvent.removeListener(lid);
     }, [id]);
     const set = useCallback((b) => { relay.setValue(!!b); setV(!!b); }, [id]);
     return [v, set];
@@ -285,9 +299,8 @@
     const relay = global.Juce.getComboBoxState(id);
     const [idx, setIdx] = useState(relay.getChoiceIndex());
     useEffect(() => {
-      const onChanged = () => setIdx(relay.getChoiceIndex());
-      relay.valueChangedEvent.addListener(onChanged);
-      return undefined;
+      const lid = relay.valueChangedEvent.addListener(() => setIdx(relay.getChoiceIndex()));
+      return () => relay.valueChangedEvent.removeListener(lid);
     }, [id]);
     const setIndex = useCallback((ni) => {
       const c = Math.max(0, Math.min(options.length - 1, ni));

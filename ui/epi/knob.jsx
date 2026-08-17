@@ -23,11 +23,22 @@ function arcPath(cx, cy, r, a0, a1) {
 const A0 = -135, A1 = 135, SWEEP = A1 - A0;
 
 /* Shared vertical-drag gesture: 240 px covers the full 0..1 range, shift
-   quarters the rate for fine trims. */
+   quarters the rate for fine trims.
+
+   Exactly one drag can be alive. A pointerup that lands outside the plugin
+   window never reaches this page -- WebView hosts routinely swallow it --
+   and the orphaned move listener then rides along with the NEXT knob
+   touched, so two parameters move under one finger. Reported as exactly
+   that. Every entry first buries any previous drag, the pointer is
+   captured so the release comes home, and pointercancel and window blur
+   both count as letting go. */
+let _activeDragEnd = null;
 function beginVerticalDrag(e, startValue, onChange, onEnd) {
   e.preventDefault();
+  if (_activeDragEnd) _activeDragEnd();
   const pt = e.touches ? e.touches[0] : e;
   const y0 = pt.clientY;
+  try { e.target.setPointerCapture(e.pointerId); } catch (_) {}
   const move = (ev) => {
     const p = ev.touches ? ev.touches[0] : ev;
     const fine = ev.shiftKey ? 0.25 : 1;
@@ -35,12 +46,18 @@ function beginVerticalDrag(e, startValue, onChange, onEnd) {
     onChange && onChange(Math.max(0, Math.min(1, startValue + dv)));
   };
   const up = () => {
+    _activeDragEnd = null;
     onEnd && onEnd();
     window.removeEventListener('pointermove', move);
     window.removeEventListener('pointerup', up);
+    window.removeEventListener('pointercancel', up);
+    window.removeEventListener('blur', up);
   };
+  _activeDragEnd = up;
   window.addEventListener('pointermove', move);
   window.addEventListener('pointerup', up);
+  window.addEventListener('pointercancel', up);
+  window.addEventListener('blur', up);
 }
 
 /* ---- Knob ----
