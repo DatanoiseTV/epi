@@ -381,7 +381,7 @@ function VizCard() {
                     onClick={() => setInstIdx(i)}>{m}</button>
           ))}
         </div>
-        <span className="viz-note">{instIdx === 1 ? 'CP-70 · PIEZO BRIDGE' : instIdx === 2 ? 'WURLITZER · 64-STYLE REED BAR' : 'RHODES · 88 TINES'} · HAMMER ACTION</span>
+        <span className="viz-note">{instIdx === 1 ? 'E-GRAND · PIEZO BRIDGE' : instIdx === 2 ? 'REED · ELECTROSTATIC BAR' : 'TINE · MAGNETIC PICKUPS'} · HAMMER ACTION</span>
       </div>
       <div className="viz-hint">CLICK KEYS OR PLAY A – ; ON YOUR KEYBOARD</div>
       <PedalLamp />

@@ -184,7 +184,7 @@ std::vector<epicommon::PresetManager::Preset> makeFactoryPresets()
 
         // The soul-record setting: vibrato deep and classic, the drive a
         // touch past the circuit's own level, played on the onboard ovals.
-        { "Wurli Soul", base ({
+        { "Reed Soul", base ({
             { instrument, 2.0f },
             { preampDrive, 0.40f }, { coilSat, 0.5f },
             { pickupPos, 0.5f }, { pickupDist, 0.17f },
@@ -302,7 +302,7 @@ const std::array<float, 5>* factoryCabMods (const juce::String& name)
     // The 200A's own speakers: two 4x8 open-back ovals, breakup at 5.5 kHz,
     // short suspension -- the onboard grind (constants in WurliChain.h).
     static const std::array<float, 5> wurli { 0.62f, 0.90f, 0.60f, 0.35f, 0.35f };
-    if (name == "Two Hundred" || name == "Wurli Soul"
+    if (name == "Two Hundred" || name == "Reed Soul"
         || name == "Sagging Rail" || name == "Reed Grind")
         return &wurli;
     return nullptr;

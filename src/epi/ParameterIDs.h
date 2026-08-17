@@ -37,7 +37,7 @@ namespace epi::ids
     // Two real instruments now, so the selector returns. It was removed when
     // only one existed: a single-entry choice has the range [0, 0] and AU
     // validation reads back NaN from the normalisation divide.
-    inline const juce::StringArray instrumentNames { "Rhodes", "CP-70", "Wurlitzer" };
+    inline const juce::StringArray instrumentNames { "Tine", "E-Grand", "Reed" };
 
     // ---- Action: key, hammer, damper ---------------------------------------
     inline constexpr const char* velCurve    = "velCurve";    // 0..1
