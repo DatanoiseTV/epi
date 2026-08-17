@@ -1,5 +1,17 @@
 # CP-70 implementation plan
 
+> **Erratum (2026-08-17, after `docs/research/cp70-open-questions.md`):** the
+> preamp scoop's Q is **0.27**, not the 0.55 carried below — half as sharp,
+> re-fitted by digitising the response plot against its own grid (residual
+> 0.39 dB; centre 488 Hz, depth −13.4 dB). Wound-bass tension is **450–600 N**,
+> not ~800: the 679 mm figure is the CP-70's E1 (resolved geometrically by the
+> two case depths), which brings the bass modal masses down accordingly. The
+> full 88-key factory stretch table is now available and replaces the
+> interpolation. The damper gate at A6 is confirmed at the parts-list level.
+> The pickup bus is six blocks joined directly with two 4.7 k resistors at the
+> top, not the mixing-capacitor chain. Use the open-questions doc's numbers
+> where they differ from this plan.
+
 How the Yamaha CP-70 goes into this engine. Every number below is tagged the
 way `docs/research/cp70-measured.md` tags them — **[M]** measured there, **[C]**
 computed, **[R]** read in a primary document — or **[D]** a design decision this
