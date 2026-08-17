@@ -214,6 +214,18 @@ std::vector<epicommon::PresetManager::Preset> makeFactoryPresets()
             { cabMix, 0.8f }, { spaceMix, 0.05f },
         }) },
 
+        // Contributed from the bench: a hot-driven suitcase voicing with the
+        // coil peak pulled dark and the core saturation almost off -- the
+        // dirt comes from the preamp alone, which reads as breath rather
+        // than fuzz.
+        { "Sylwester", base ({
+            { pickupPos, -0.424f }, { pickupDist, 0.331f },
+            { coilFreq, 0.281f }, { coilSat, 0.037f },
+            { preampDrive, 0.802f }, { bass, 2.0f }, { treble, 1.0f },
+            { tremDepth, 0.35f }, { tremRate, 4.2f },
+            { cabMix, 0.55f }, { spaceMix, 0.12f },
+        }) },
+
         // ---- workshop presets ------------------------------------------------
         // These four re-cut the harp itself through the tine workshop. Loading
         // one paints its table; loading any other preset leaves the workshop
