@@ -79,6 +79,8 @@ void EpiEngine::prepare (double sampleRate, int)
     wurliTrem.prepare (sampleRate);
     cabinetBL.prepare (sampleRate);
     cabinetBR.prepare (sampleRate);
+    airL.set (0.0, sampleRate);
+    airR.set (0.0, sampleRate);
 
     coil.prepare (static_cast<float> (fsOs));
     preamp.prepare (fsOs);
@@ -423,6 +425,9 @@ void EpiEngine::process (float* outL, float* outR, int numSamples,
         sm.step (sm.bass, p.bassDb, k);
         sm.step (sm.treb, p.trebleDb, k);
         sm.step (sm.cabMix, p.cabMix, k);
+        sm.step (sm.air, p.clarityDb, k);
+        airL.set (sm.air, fs);
+        airR.set (sm.air, fs);
     }
     preamp.setTone (sm.bass, sm.treb, sm.drive);
     vibrato.setRate (p.tremRate);
@@ -597,6 +602,12 @@ void EpiEngine::process (float* outL, float* outR, int numSamples,
 
         // The phaser sits between the speaker and the room, which is where a
         // pedal in front of an amp effectively lands once the amp is modelled.
+        if (sm.air != 0.0f)
+        {
+            l = airL.process (l);
+            r = airR.process (r);
+        }
+
         if (p.phaserMix > 0.0f)
         {
             l = phaserL.process (l);
@@ -746,6 +757,9 @@ void EpiEngine::processCP70 (float* outL, float* outR, int numSamples,
         sm.step (sm.bass, p.bassDb, k);
         sm.step (sm.treb, p.trebleDb, k);
         sm.step (sm.cabMix, p.cabMix, k);
+        sm.step (sm.air, p.clarityDb, k);
+        airL.set (sm.air, fs);
+        airR.set (sm.air, fs);
     }
     cp70Preamp.setTone (sm.bass, sm.treb, sm.drive);
     vibrato.setRate (p.tremRate);
@@ -826,6 +840,12 @@ void EpiEngine::processCP70 (float* outL, float* outR, int numSamples,
 
         double l = cabinetBL.process (y * gainL);
         double r = cabinetBR.process (y * gainR);
+
+        if (sm.air != 0.0f)
+        {
+            l = airL.process (l);
+            r = airR.process (r);
+        }
 
         if (p.phaserMix > 0.0f)
         {
@@ -945,6 +965,9 @@ void EpiEngine::processWurli (float* outL, float* outR, int numSamples,
         sm.step (sm.treb, p.trebleDb, k);
         sm.step (sm.cabMix, p.cabMix, k);
         sm.step (sm.sat, p.coilSat, k);
+        sm.step (sm.air, p.clarityDb, k);
+        airL.set (sm.air, fs);
+        airR.set (sm.air, fs);
     }
     wurliBus.setBias (100.0 + 100.0 * std::clamp (sm.sat, 0.0f, 1.0f));
     wurliPre.setDrive (sm.drive);
@@ -1036,6 +1059,12 @@ void EpiEngine::processWurli (float* outL, float* outR, int numSamples,
 
         double l = cabinetBL.process (y * g);
         double r = cabinetBR.process (y * g);
+
+        if (sm.air != 0.0f)
+        {
+            l = airL.process (l);
+            r = airR.process (r);
+        }
 
         if (p.phaserMix > 0.0f)
         {

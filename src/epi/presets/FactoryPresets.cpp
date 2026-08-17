@@ -57,7 +57,7 @@ std::vector<epicommon::PresetManager::Preset> makeFactoryPresets()
             { bodyMix, 0.25f }, { nonlinAmt, 0.5f },
             { pickupPos, -0.35f }, { pickupDist, 0.35f },
             { coilFreq, 0.5f }, { coilQ, 0.5f }, { coilSat, 0.25f },
-            { preampDrive, 0.30f }, { bass, 0.0f }, { treble, 0.0f },
+            { preampDrive, 0.30f }, { bass, 0.0f }, { treble, 0.0f }, { clarity, 0.0f },
             { tremRate, 5.5f }, { tremDepth, 0.0f }, { tremStereo, 1.0f },
             { cabMix, 0.5f },
             { phaserMix, 0.0f }, { phaserRate, 0.40f },

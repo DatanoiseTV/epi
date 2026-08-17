@@ -105,6 +105,7 @@
     phaserFb:    { label: 'Ph Res',    map: M.unit,      def: 0.50, format: pct },
     cabMix:      { label: 'Cabinet',   map: M.unit,      def: 0.50, format: pct },
 
+    clarity:     { label: 'Clarity',   map: M.db12,      def: M.db12.from(0),     format: dbOf(M.db12), bipolar: true },
     spaceMix:    { label: 'Space',     map: M.unit,      def: 0.15, format: pct },
     spaceSize:   { label: 'Size',      map: M.unit,      def: 0.40, format: pct },
     outGain:     { label: 'Output',    map: M.outGain,   def: M.outGain.from(0),  format: dbOf(M.outGain), bipolar: true },

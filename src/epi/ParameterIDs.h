@@ -78,6 +78,7 @@ namespace epi::ids
     inline constexpr const char* treble      = "treble";      // dB
     inline constexpr const char* tremRate    = "tremRate";    // Hz
     inline constexpr const char* tremDepth   = "tremDepth";   // 0..1
+    inline constexpr const char* clarity     = "clarity";     // -12..+12 dB air
     inline constexpr const char* tremStereo  = "tremStereo";  // 0..1
     inline constexpr const char* cabMix      = "cabMix";      // 0..1
     inline constexpr const char* phaserMix   = "phaserMix";   // 0..1
@@ -219,6 +220,13 @@ namespace epi::ids
         // ---- Instrument, appended at the end per the rule above -------------
         add (std::make_unique<Pc> (juce::ParameterID { instrument, 1 }, "Instrument",
                                    instrumentNames, 0));
+
+        // Appended at the end for the same reason the instrument selector
+        // was: hosts index AU parameters by position.
+        // The third tone control: an air shelf above the treble's reach,
+        // where "clarity" actually lives.
+        add (std::make_unique<P> (juce::ParameterID { clarity, 1 }, "Clarity",
+                                   juce::NormalisableRange<float> { -12.0f, 12.0f, 0.0f }, 0.0f));
 
         return { params.begin(), params.end() };
     }

@@ -32,7 +32,7 @@ namespace
         "pickupPos", "pickupDist", "coilFreq", "coilQ", "coilSat",
         "preampDrive", "bass", "treble", "tremRate", "tremDepth", "tremStereo", "cabMix",
         "phaserMix", "phaserRate", "phaserDepth", "phaserFb",
-        "spaceMix", "spaceSize", "outGain",
+        "spaceMix", "spaceSize", "outGain", "clarity",
     };
     constexpr const char* kBoolIds[]   = { };
     constexpr const char* kChoiceIds[] = { "pickupSel", "instrument" };

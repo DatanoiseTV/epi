@@ -76,6 +76,7 @@ struct EngineParams
     float preampDrive = 0.3f;
     float bassDb      = 0.0f;
     float trebleDb    = 0.0f;
+    float clarityDb   = 0.0f;
     float tremRate    = 5.5f;
     float tremDepth   = 0.0f;
     float tremStereo  = 1.0f;   // 1 = the Rhodes panner, 0 = amplitude tremolo
@@ -327,6 +328,7 @@ private:
     struct SmoothedParams
     {
         float drive = -1.0f, bass = 0.0f, treb = 0.0f, cabMix = -1.0f, sat = -1.0f;
+        float air = 0.0f;
         float gain = -1.0f;
         void step (float& v, float target, float k)
         {
@@ -336,6 +338,39 @@ private:
         }
     };
     SmoothedParams sm;
+
+    // The clarity shelf: a textbook RBJ high shelf at 8.5 kHz. A one-pole
+    // blend was tried first and measured: at this corner the pole leaks so
+    // much passband that the blend phase-cancels its own boost -- three
+    // decibels of swing from a twenty-four decibel control. The biquad
+    // measures the full swing.
+    struct AirShelf
+    {
+        double b0 = 1, b1 = 0, b2 = 0, a1 = 0, a2 = 0, z1 = 0, z2 = 0;
+        void set (double dB, double fs)
+        {
+            const double A = std::pow (10.0, dB / 40.0);
+            const double w = 2.0 * kPiD * 8500.0 / fs;
+            const double c = std::cos (w);
+            const double al = std::sin (w) / 2.0 * std::sqrt ((A + 1.0 / A) * (1.0 / 0.9 - 1.0) + 2.0);
+            const double sq = 2.0 * std::sqrt (A) * al;
+            const double a0 = (A + 1.0) - (A - 1.0) * c + sq;
+            b0 = A * ((A + 1.0) + (A - 1.0) * c + sq) / a0;
+            b1 = -2.0 * A * ((A - 1.0) + (A + 1.0) * c) / a0;
+            b2 = A * ((A + 1.0) + (A - 1.0) * c - sq) / a0;
+            a1 = 2.0 * ((A - 1.0) - (A + 1.0) * c) / a0;
+            a2 = ((A + 1.0) - (A - 1.0) * c - sq) / a0;
+        }
+        double process (double x)
+        {
+            const double y = b0 * x + z1;
+            z1 = b1 * x - a1 * y + z2;
+            z2 = b2 * x - a2 * y;
+            return y;
+        }
+        void reset() { z1 = z2 = 0.0; }
+    };
+    AirShelf airL, airR;
     float smoothK (int numSamples) const
     {
         return 1.0f - std::exp (-static_cast<float> (numSamples) / (0.040f * static_cast<float> (fs)));   // ~40 ms

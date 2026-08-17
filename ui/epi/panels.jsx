@@ -173,6 +173,7 @@ function AmpPanel() {
         <PKnob id="preampDrive" label="DRIVE" />
         <PKnob id="bass" label="BASS" />
         <PKnob id="treble" label="TREBLE" />
+        <PKnob id="clarity" label="CLARITY" />
         <PKnob id="cabMix" label="CABINET" />
         {/* Called vibrato on the instrument, but nothing modulates pitch: it
             pans, by shining one oscillator through two photocells wired in
