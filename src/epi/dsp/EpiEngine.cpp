@@ -284,10 +284,16 @@ void EpiEngine::handleEvent (const NoteEvent& e, const EngineParams& p)
         }
 
         case NoteEvent::allNotesOff:
+            // The transport stopping is the classic sender. If the sustain
+            // pedal was down at that moment the host rarely follows with a
+            // CC64 release -- and all-notes-off with the pedal still engaged
+            // releases every key into a pedal that keeps them all ringing:
+            // the hanging-notes report, verbatim. Stop means stop.
             keyDown.fill (false);
-            for (auto& v : tines) v.noteOff();
-            for (auto& v : cp70) v.noteOff();
-            for (auto& v : wurli) v.noteOff();
+            pedalDown = false;
+            for (auto& v : tines) { v.setPedal (false); v.noteOff(); }
+            for (auto& v : cp70)  { v.setPedal (false); v.noteOff(); }
+            for (auto& v : wurli) { v.setPedal (false); v.noteOff(); }
             break;
 
         case NoteEvent::sustainOn:
