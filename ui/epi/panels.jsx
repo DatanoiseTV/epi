@@ -120,16 +120,18 @@ function PickupPanel({ inst }) {
   if (cp70) return (
     <div className="panel f-pickup">
       <PHead title="Bridge" meta="PIEZO" />
-      {/* The CP-70's pickup is one piezo element under each bridge, reading
-          the string's termination FORCE -- a +6 dB per octave tilt that is a
+      {/* The pickup is one piezo element under each bridge, reading the
+          string's termination FORCE -- a +6 dB per octave tilt that is a
           law of the transducer, not a tone control. There is nothing to
-          voice: no magnet, no gap, no coil, no resonance. What shapes the
-          sound instead is the hammer and the mid-scooped preamp. */}
-      <div className="krow">
-        <PKnob id="strikeNoise" label="STRIKE" />
-        <PKnob id="damperGrip" label="DAMPER" />
+          voice: no magnet, no gap, no coil, no resonance. This panel
+          earlier duplicated the ACTION panel's damper and strike knobs to
+          have something to show -- two knobs on one parameter mirror each
+          other, which reads as one control moving another. The honest
+          panel has no knobs, because the instrument has none here. */}
+      <div className="note">
+        force sensing · fixed by construction · the sound is voiced at the
+        hammer and the preamp
       </div>
-      <div className="note">force sensing · fixed by construction</div>
     </div>
   );
   return (
