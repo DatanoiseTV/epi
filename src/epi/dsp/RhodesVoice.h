@@ -245,9 +245,24 @@ public:
     void setNote (int midiNote, const Config& cfg)
     {
         note = midiNote;
-        noteHz = 440.0 * std::pow (2.0, (static_cast<double> (midiNote) - 69.0) / 12.0);
+        noteHz = 440.0 * std::pow (2.0, (static_cast<double> (midiNote) - 69.0) / 12.0)
+               / (geoLen * geoLen);
         traceDecim = std::max (1, static_cast<int> (fs / (noteHz * kTraceLen / 4.0)));
         configure (cfg);
+    }
+
+    // The workshop: this tine's own steel, as the two numbers a modder can
+    // change. The DIAMETER trim swaps the wire gauge -- the tine is then
+    // re-cut for its nominal note, so at any gauge the pitch stands and what
+    // moves is everything downstream of the geometry: modal mass, the shear
+    // that pulls the overtones flat, how hard the hammer can drive it. The
+    // LENGTH trim is applied after that cut, and pitch follows the beam
+    // equation's 1/L^2 -- a two-and-a-half-percent trim is a quarter tone.
+    // Both default to one, which is the instrument as shipped.
+    void setGeometryTrim (double lenScale, double diaScale)
+    {
+        geoLen = std::clamp (lenScale, 0.5, 2.0);
+        geoDia = std::clamp (diaScale, 0.4, 2.5);
     }
 
     // Strike it. The state is NEVER cleared: a hammer meeting a tine that is
@@ -698,7 +713,11 @@ private:
         // play, and keeping them apart is what makes a bend physical: the
         // steel does not change length, so the mass the hammer meets and the
         // point it strikes stay exactly where they were.
-        const double f0Nom = 440.0 * std::pow (2.0, (static_cast<double> (note) - 69.0) / 12.0);
+        const double f0Cut = 440.0 * std::pow (2.0, (static_cast<double> (note) - 69.0) / 12.0);
+        // The note the trimmed steel actually plays: length trim retunes as
+        // 1/L^2, the beam equation's own law. The gauge does not appear here
+        // because a regauged tine is re-cut for its nominal note below.
+        const double f0Nom = f0Cut / (geoLen * geoLen);
         const double f0 = f0Nom * std::pow (2.0, cfg.detuneCents / 1200.0);
         const double reg = registerPosition();
 
@@ -710,8 +729,8 @@ private:
         // Later Rhodes tines are ground to a taper toward the treble, but not
         // steeply: taking too much off makes the top octaves so light that the
         // hammer overwhelms them.
-        const double radius = (0.95 - 0.30 * reg) * 1.0e-3;
-        tineLength = CantileverModes::lengthForFrequency (f0Nom, radius, kSpringSteel);
+        const double radius = (0.95 - 0.30 * reg) * 1.0e-3 * geoDia;
+        tineLength = CantileverModes::lengthForFrequency (f0Cut, radius, kSpringSteel) * geoLen;
         const double area = kPiD * radius * radius;
         const double modalMass = std::max (1.0e-8, kSpringSteel.density * area * tineLength * 0.25);
 
@@ -725,7 +744,12 @@ private:
         // Shear matters more for the short thick treble tines than the long
         // bass ones, which is the physical reason the top of a Rhodes is less
         // clangy than plain beam theory predicts.
-        const double shearNumber = 0.0016 + 0.0090 * reg;
+        // The register fit holds for the nominal geometry; the workshop trims
+        // scale it as the physics does, with (r/L)^2. Re-cutting for a fatter
+        // gauge lengthens the tine by root-gauge, so the net factor is
+        // gauge / lengthTrim^2 -- a fat short tine pulls its overtones flat,
+        // which is most of what the DIAMETER control is for.
+        const double shearNumber = (0.0016 + 0.0090 * reg) * geoDia / (geoLen * geoLen);
 
         // Two constant-Q laws, not one ramp across the keyboard.
         //
@@ -1382,6 +1406,7 @@ private:
     bool   jointActive = false;
     double damperFactor = 1.0;
     double tineLength = 0.1;
+    double geoLen = 1.0, geoDia = 1.0;      // the workshop's trims
     double staticOffset = 0.0, staticGap = 1.5e-3, restFlux = 0.0;
     double staticOffsetT = 0.0, staticGapT = 1.5e-3;
 

@@ -152,6 +152,16 @@ public:
     void setPitchBend (float semitones) { bendSemis = semitones; }
     void setExpression (float scale)    { expression = scale; }
 
+    // The workshop: change one tine's steel. Message thread; the audio
+    // thread rebuilds that tine at its own pace through the priority loop.
+    void setTineMod (int i, float lenScale, float diaScale)
+    {
+        if (i < 0 || i >= kNumTines) return;
+        tineMod[static_cast<std::size_t> (i)].len.store (lenScale, std::memory_order_relaxed);
+        tineMod[static_cast<std::size_t> (i)].dia.store (diaScale, std::memory_order_relaxed);
+        tineMod[static_cast<std::size_t> (i)].dirty.store (true, std::memory_order_release);
+    }
+
     int activeVoices() const { return numActive.load (std::memory_order_relaxed); }
 
     // Metering for the UI: destructive read, so the peak resets per tick.
@@ -253,6 +263,15 @@ private:
     // every time is what pushed blocks past their deadline.
     std::uint32_t cfgVersion = 0;
     std::array<std::uint32_t, kNumTines> tineCfgVersion {};
+
+    // The workshop's per-tine steel, written from the message thread and read
+    // by the audio thread's rebuild. Atomics rather than a lock: a torn pair
+    // would only mistune one tine for one rebuild, but a formal race is a
+    // formal race, and lock-free floats cost nothing here.
+    struct TineMod { std::atomic<float> len { 1.0f }, dia { 1.0f };
+                     std::atomic<bool> dirty { false } ; };
+    std::array<TineMod, kNumTines> tineMod {};
+    void rebuildTine (int i, const RhodesVoice::Config& cfg);
     float lastCoilSat = -1.0f;
     // How many times the output chain had to be rebuilt. Reported by tests.
     std::atomic<int> recoveries { 0 };

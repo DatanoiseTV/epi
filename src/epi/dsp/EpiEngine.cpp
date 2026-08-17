@@ -180,9 +180,10 @@ void EpiEngine::handleEvent (const NoteEvent& e, const EngineParams& p)
 
             keyDown[i] = true;
             // A tine that has been waiting its turn is built before it is hit.
-            if (tineCfgVersion[i] != cfgVersion)
+            if (tineCfgVersion[i] != cfgVersion
+                || tineMod[static_cast<std::size_t> (i)].dirty.load (std::memory_order_acquire))
             {
-                tines[i].setNote (kLoNote + i, rhodesConfig (p));
+                rebuildTine (i, rhodesConfig (p));
                 tineCfgVersion[i] = cfgVersion;
             }
             tines[i].setPedal (pedalDown);
@@ -228,6 +229,19 @@ void EpiEngine::handleEvent (const NoteEvent& e, const EngineParams& p)
             for (auto& v : cp70) v.setPedal (false);
             break;
     }
+}
+
+// One tine, built to the current configuration AND its own steel. The trim
+// is applied first so the geometry solve inside setNote sees it; the dirty
+// flag clears after, so a workshop edit racing this rebuild is picked up
+// again next block rather than lost.
+void EpiEngine::rebuildTine (int i, const RhodesVoice::Config& cfg)
+{
+    auto& m = tineMod[static_cast<std::size_t> (i)];
+    tines[static_cast<std::size_t> (i)].setGeometryTrim (m.len.load (std::memory_order_relaxed),
+                                                         m.dia.load (std::memory_order_relaxed));
+    m.dirty.store (false, std::memory_order_release);
+    tines[static_cast<std::size_t> (i)].setNote (kLoNote + i, cfg);
 }
 
 void EpiEngine::process (float* outL, float* outR, int numSamples,
@@ -280,18 +294,23 @@ void EpiEngine::process (float* outL, float* outR, int numSamples,
     // whole job so no single block can be made late by it.
     {
         int budget = kRetuneBudget;
+        auto stale = [this] (int i)
+        {
+            return tineCfgVersion[i] != cfgVersion
+                || tineMod[static_cast<std::size_t> (i)].dirty.load (std::memory_order_acquire);
+        };
         for (int i = 0; i < kNumTines && budget > 0; ++i)
         {
-            if (tineCfgVersion[i] == cfgVersion) continue;
+            if (! stale (i)) continue;
             if (! (tines[i].isRinging() || pedalDown || keyDown[i])) continue;
-            tines[i].setNote (kLoNote + i, cfg);
+            rebuildTine (i, cfg);
             tineCfgVersion[i] = cfgVersion;
             --budget;
         }
         for (int i = 0; i < kNumTines && budget > 0; ++i)
         {
-            if (tineCfgVersion[i] == cfgVersion) continue;
-            tines[i].setNote (kLoNote + i, cfg);
+            if (! stale (i)) continue;
+            rebuildTine (i, cfg);
             tineCfgVersion[i] = cfgVersion;
             --budget;
         }

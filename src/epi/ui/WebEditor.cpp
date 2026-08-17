@@ -118,6 +118,26 @@ WebEditor::WebEditor (::EpiAudioProcessor& proc)
                 for (const auto& n : presets.getUserNames()) arr.add (juce::var (n));
                 complete (juce::var (arr));
             })
+        .withNativeFunction (juce::Identifier { "getTineMods" },
+            [&proc = epiProcessor] (const juce::Array<juce::var>&, auto complete)
+            {
+                juce::Array<juce::var> flat;
+                for (const auto& m : proc.getTineMods())
+                {
+                    flat.add (juce::var (static_cast<double> (m[0])));
+                    flat.add (juce::var (static_cast<double> (m[1])));
+                }
+                complete (juce::var (flat));
+            })
+        .withEventListener (juce::Identifier { "tine_mod" },
+            [&proc = epiProcessor] (juce::var payload)
+            {
+                proc.setTineMod (static_cast<int> (payload.getProperty ("index", -1)),
+                                 static_cast<float> (static_cast<double> (payload.getProperty ("len", 1.0))),
+                                 static_cast<float> (static_cast<double> (payload.getProperty ("dia", 1.0))));
+            })
+        .withEventListener (juce::Identifier { "tine_mod_reset" },
+            [&proc = epiProcessor] (juce::var) { proc.resetTineMods(); })
         .withEventListener (juce::Identifier { "ui_note" },
             [&proc = epiProcessor] (juce::var payload)
             {

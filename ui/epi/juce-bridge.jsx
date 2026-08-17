@@ -218,6 +218,8 @@
       getNativeFunction: (n) => () => Promise.resolve(
         n === 'listFactoryPresets'
           ? ['Suitcase', 'Bell', 'Mellow', 'Dirty Bass', 'Ballad', 'Funk', 'Glass Tine', 'Detuned Bar']
+          : n === 'getTineMods'
+          ? Array.from({ length: 176 }, () => 1)
           : []),
     };
   }

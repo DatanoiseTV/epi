@@ -34,7 +34,16 @@ EpiAudioProcessor::EpiAudioProcessor()
                      epi::makeFactoryPresets())
 {
     events.reserve (256);
-    presetManager.setPostLoadHook ([this] { snapshotCurrentParams(); });
+    presetManager.setPostLoadHook ([this]
+    {
+        snapshotCurrentParams();
+        // A workshop preset re-cuts the harp; any other preset leaves the
+        // player's own workshop alone.
+        if (const auto* mods = epi::factoryTineMods (presetManager.getCurrentName()))
+            for (int i = 0; i < epi::EpiEngine::kNumTines; ++i)
+                setTineMod (i, (*mods)[static_cast<std::size_t> (i)][0],
+                               (*mods)[static_cast<std::size_t> (i)][1]);
+    });
     snapshotCurrentParams();
 }
 
@@ -191,6 +200,28 @@ void EpiAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
     auto state = apvts.copyState();
     state.setProperty (kPresetNameProperty, presetManager.getCurrentName(), nullptr);
+
+    // The workshop's per-tine steel travels with the project, not with
+    // presets: a preset is a sound, the workshop is a modification to the
+    // instrument itself. Stored as two comma-joined lists, and only when
+    // anything differs from stock, so untouched sessions stay byte-identical.
+    bool modded = false;
+    for (const auto& m : tineMods)
+        if (m[0] != 1.0f || m[1] != 1.0f) { modded = true; break; }
+    if (modded)
+    {
+        juce::StringArray ls, ds;
+        for (const auto& m : tineMods)
+        {
+            ls.add (juce::String (m[0], 6));
+            ds.add (juce::String (m[1], 6));
+        }
+        auto mods = juce::ValueTree ("TineMods");
+        mods.setProperty ("len", ls.joinIntoString (","), nullptr);
+        mods.setProperty ("dia", ds.joinIntoString (","), nullptr);
+        state.appendChild (mods, nullptr);
+    }
+
     if (auto xml = state.createXml()) copyXmlToBinary (*xml, destData);
 }
 
@@ -204,6 +235,21 @@ void EpiAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
             snapshotCurrentParams();
             if (state.hasProperty (kPresetNameProperty))
                 presetManager.setCurrentName (state[kPresetNameProperty].toString());
+
+            // Restore the workshop -- or return the harp to stock when the
+            // incoming state has no modifications.
+            resetTineMods();
+            const auto mods = state.getChildWithName ("TineMods");
+            if (mods.isValid())
+            {
+                juce::StringArray ls, ds;
+                ls.addTokens (mods["len"].toString(), ",", "");
+                ds.addTokens (mods["dia"].toString(), ",", "");
+                for (int i = 0; i < epi::EpiEngine::kNumTines; ++i)
+                    setTineMod (i,
+                                i < ls.size() ? ls[i].getFloatValue() : 1.0f,
+                                i < ds.size() ? ds[i].getFloatValue() : 1.0f);
+            }
         }
 }
 

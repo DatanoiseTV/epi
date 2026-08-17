@@ -358,3 +358,27 @@ html, body {
 .mlist::-webkit-scrollbar { width: 8px; }
 .mlist::-webkit-scrollbar-thumb { background: #26221a; border-radius: 4px; }
 .mlist::-webkit-scrollbar-track { background: transparent; }
+
+/* ---- tine workshop ---- */
+.wsmodal { width: 1010px; max-height: none; }
+.wsactions { display: flex; align-items: center; gap: 10px; }
+.wsreset {
+  background: #17150f; border: 1px solid #3a3120; border-radius: 999px;
+  color: var(--gold); font-family: inherit; font-size: 8.5px;
+  letter-spacing: .18em; padding: 5px 12px; cursor: pointer;
+}
+.wsreset:hover { background: #211d13; }
+.wsbody { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 12px; }
+.wslane canvas { display: block; cursor: crosshair; touch-action: none;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--well2); }
+.wshead { display: flex; align-items: baseline; gap: 10px; margin-bottom: 5px; }
+.wstitle { font-size: 9.5px; letter-spacing: .24em; color: var(--gold); }
+.wsmeta  { font-size: 8.5px; letter-spacing: .1em; color: var(--faint); flex: 1; }
+.wsread  { font-size: 9px; color: var(--dim); font-variant-numeric: tabular-nums; min-width: 110px; text-align: right; }
+.wsnote  { text-align: center; font-size: 8px; letter-spacing: .14em; color: var(--mute); }
+.wsopen {
+  background: none; border: 1px solid #3a3120; border-radius: 999px;
+  color: var(--gold); font-family: inherit; font-size: 8px;
+  letter-spacing: .16em; padding: 3px 10px; cursor: pointer;
+}
+.wsopen:hover { background: #17150f; }

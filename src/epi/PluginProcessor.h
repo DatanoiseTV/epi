@@ -62,6 +62,24 @@ public:
     // the message thread; drained into the engine's event list at the top of
     // the next block. A fixed ring with atomic indices -- one producer, one
     // consumer -- so the audio thread never takes a lock for it.
+    // The workshop's per-tine steel: message-thread copy for state save and
+    // for the interface to read back; every write is forwarded to the engine.
+    void setTineMod (int index, float lenScale, float diaScale)
+    {
+        if (index < 0 || index >= epi::EpiEngine::kNumTines) return;
+        tineMods[static_cast<std::size_t> (index)] = { lenScale, diaScale };
+        engine.setTineMod (index, lenScale, diaScale);
+    }
+    void resetTineMods()
+    {
+        for (int i = 0; i < epi::EpiEngine::kNumTines; ++i)
+            setTineMod (i, 1.0f, 1.0f);
+    }
+    const std::array<std::array<float, 2>, epi::EpiEngine::kNumTines>& getTineMods() const
+    {
+        return tineMods;
+    }
+
     void pushUiNote (int note, float velocity, bool on)
     {
         const auto w = uiNoteWrite.load (std::memory_order_relaxed);
@@ -86,6 +104,12 @@ private:
     void collectEvents (juce::MidiBuffer& midi);
 
     juce::AudioProcessorValueTreeState apvts;
+
+    std::array<std::array<float, 2>, epi::EpiEngine::kNumTines> tineMods = [] {
+        std::array<std::array<float, 2>, epi::EpiEngine::kNumTines> a {};
+        for (auto& m : a) m = { 1.0f, 1.0f };
+        return a;
+    }();
 
     struct UiNote { int note; float velocity; bool on; };
     static constexpr unsigned kUiNoteCap = 64;

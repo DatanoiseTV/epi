@@ -13,6 +13,9 @@
 #include "FactoryPresets.h"
 #include "epi/ParameterIDs.h"
 
+#include <array>
+#include <cmath>
+
 
 
 namespace epi
@@ -163,7 +166,123 @@ std::vector<epicommon::PresetManager::Preset> makeFactoryPresets()
             { phaserDepth, 0.80f }, { phaserFb, 0.62f },
             { tremDepth, 0.0f }, { cabMix, 0.5f }, { spaceMix, 0.15f },
         }) },
+
+        // ---- workshop presets ------------------------------------------------
+        // These four re-cut the harp itself through the tine workshop. Loading
+        // one paints its table; loading any other preset leaves the workshop
+        // alone, so a hand-painted scale survives browsing the amp voicings.
+
+        // Five-limit just intonation in C on the ballad voicing. The point of
+        // just thirds on THIS instrument: held chords stop beating, so the
+        // bar coupling's long sustain and the bloom breathe instead of churn.
+        { "Just Ballad", base ({
+            { barCouple, 0.9f }, { hammerHard, 0.30f }, { velCurve, 0.38f },
+            { resDamp, 0.18f }, { pickupPos, -0.5f },
+            { preampDrive, 0.15f }, { bass, 2.0f },
+            { tremDepth, 0.25f }, { tremRate, 2.4f },
+            { spaceMix, 0.32f }, { spaceSize, 0.62f },
+        }) },
+
+        // The keyboard mapped onto a five-tone slendro: neighbouring keys
+        // collapse onto shared degrees, exactly what happens when a keyboard
+        // is mapped to a gamelan. The gauge lane goes fat through the middle,
+        // which drags the overtones flat the way a thick bar's shear does --
+        // the gong colour is the geometry, not an effect.
+        { "Slendro Bells", base ({
+            { hammerHard, 0.68f }, { hammerMass, 0.58f },
+            { barCouple, 0.75f }, { resDamp, 0.22f },
+            { coilFreq, 0.60f }, { coilQ, 0.60f },
+            { preampDrive, 0.20f }, { treble, 1.5f },
+            { spaceMix, 0.28f }, { spaceSize, 0.55f }, { cabMix, 0.35f },
+        }) },
+
+        // The black keys raised a quarter tone: the whites play as ever, and
+        // the blacks become neutral seconds and thirds -- maqam-flavoured
+        // inflections on an otherwise familiar keyboard.
+        { "Quarter Keys", base ({
+            { cabMix, 0.30f }, { treble, 2.0f },
+            { preampDrive, 0.30f }, { spaceMix, 0.10f },
+        }) },
+
+        // Every tine a few cents its own way, deterministic per note: the
+        // barroom upright's chorus, from mistuning rather than modulation.
+        { "Barroom", base ({
+            { hammerHard, 0.62f }, { strikeNoise, 0.35f },
+            { preampDrive, 0.38f }, { treble, 2.0f }, { bass, 1.5f },
+            { cabMix, 0.55f }, { spaceMix, 0.14f },
+        }) },
     };
+}
+
+// ---------------------------------------------------------------------------
+// The workshop tables behind the presets above. Length trims are stored as
+// scale factors; pitch follows the beam equation's 1/L^2, so
+// scale = 2^(-cents/2400).
+// ---------------------------------------------------------------------------
+namespace
+{
+    using ModTable = std::array<std::array<float, 2>, 88>;
+
+    float lenForCents (double cents) { return static_cast<float> (std::pow (2.0, -cents / 2400.0)); }
+
+    ModTable buildFromCents (const double (&pcCents)[12], double gaugeMid = 1.0)
+    {
+        ModTable t {};
+        for (int i = 0; i < 88; ++i)
+        {
+            const int note = 21 + i;
+            double dia = 1.0;
+            if (gaugeMid != 1.0)
+            {
+                // Fat through the middle of the compass, easing off at both
+                // ends: the bass is already massive and the top octave would
+                // be overwhelmed by its own hammer.
+                const double reg = (note - 21) / 87.0;
+                const double bell = std::exp (-std::pow ((reg - 0.45) / 0.30, 2.0));
+                dia = 1.0 + (gaugeMid - 1.0) * bell;
+            }
+            t[static_cast<std::size_t> (i)] = { lenForCents (pcCents[note % 12]),
+                                                static_cast<float> (dia) };
+        }
+        return t;
+    }
+}
+
+const std::array<std::array<float, 2>, 88>* factoryTineMods (const juce::String& name)
+{
+    // Five-limit just major on C: thirds at 5/4 and 6/5, the fifth at 3/2.
+    static const double kJust[12] = { 0.0, +11.7, +3.9, +15.6, -13.7, -2.0,
+                                      -9.8, +2.0, +13.7, -15.6, -3.9, -11.7 };
+    // Twelve keys onto five equal slendro degrees of 240 cents: each key
+    // snaps to its nearest degree, so neighbouring keys share a pitch.
+    static const double kSlendro[12] = { 0.0, -100.0, +40.0, -60.0, +80.0, -20.0,
+                                         -120.0, +20.0, -80.0, +60.0, -40.0, +100.0 };
+    // The black keys a quarter tone sharp.
+    static const double kQuarter[12] = { 0.0, +50.0, 0.0, +50.0, 0.0, 0.0,
+                                         +50.0, 0.0, +50.0, 0.0, +50.0, 0.0 };
+
+    static const ModTable just    = buildFromCents (kJust);
+    static const ModTable slendro = buildFromCents (kSlendro, 1.45);
+    static const ModTable quarter = buildFromCents (kQuarter);
+    static const ModTable barroom = [] {
+        ModTable t {};
+        for (int i = 0; i < 88; ++i)
+        {
+            // Deterministic per-note scatter, +/- eight cents: the same tine
+            // is always the same amount out, which is what a real neglected
+            // instrument does and what makes repeated notes sit still.
+            const unsigned h = (static_cast<unsigned> (i) * 2654435761u) & 1023u;
+            const double cents = (h / 1023.0 - 0.5) * 16.0;
+            t[static_cast<std::size_t> (i)] = { lenForCents (cents), 1.0f };
+        }
+        return t;
+    }();
+
+    if (name == "Just Ballad")    return &just;
+    if (name == "Slendro Bells")  return &slendro;
+    if (name == "Quarter Keys")   return &quarter;
+    if (name == "Barroom")        return &barroom;
+    return nullptr;
 }
 
 } // namespace epi

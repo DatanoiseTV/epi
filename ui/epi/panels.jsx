@@ -32,6 +32,7 @@ function ActionPanel() {
    knobs would be showing dead controls. */
 function TinePanel({ cp70 }) {
   const [tune] = useJuceSlider('tune');
+  const [shop, setShop] = useState(false);
   const a4 = (440 * Math.pow(2, JuceBridge.PARAMS.tune.map.to(tune) / 1200)).toFixed(1) + ' Hz';
   if (cp70) return (
     <div className="panel f-tine">
@@ -48,7 +49,12 @@ function TinePanel({ cp70 }) {
   );
   return (
     <div className="panel f-tine">
-      <PHead title="Tine" meta={a4} />
+      <div className="phead">
+        <h2>Tine</h2>
+        <span className="hrule" />
+        <button className="wsopen" onClick={() => setShop(true)} title="Per-tine length and gauge">WORKSHOP</button>
+        <span className="hmeta">{a4}</span>
+      </div>
       <div className="krow">
         <PKnob id="tipMass" label="SPRING" />
         <PKnob id="resDamp" label="DAMPING" />
@@ -62,6 +68,7 @@ function TinePanel({ cp70 }) {
           different fraction of every mode's shape, so it re-voices the
           overtones on the way. */}
       <div className="note">spring position · tone bar · bloom</div>
+      {shop && <TineWorkshop onClose={() => setShop(false)} />}
     </div>
   );
 }

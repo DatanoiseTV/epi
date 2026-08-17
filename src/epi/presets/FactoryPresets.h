@@ -21,4 +21,11 @@ namespace epi
     // The shipped bank. Values are in real parameter units; anything a preset
     // does not name resets to its default first, so presets are self-contained.
     std::vector<epicommon::PresetManager::Preset> makeFactoryPresets();
+
+    // A factory preset may re-cut the harp itself: 88 pairs of
+    // { length trim, gauge trim } for the tine workshop. Returns null for
+    // presets that leave the player's own workshop alone -- which is the
+    // deliberate default, so browsing amp voicings never destroys a scale
+    // someone has painted.
+    const std::array<std::array<float, 2>, 88>* factoryTineMods (const juce::String& name);
 }
