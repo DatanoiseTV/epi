@@ -288,7 +288,12 @@ private:
 };
 
 // ---------------------------------------------------------------------------
-// Cabinet. Four twelve-inch speakers in a wooden box: a bandpass with a bump
+// Cabinet. The Suitcase's speaker complement is dual-channel, 50 watts a
+// side, per the service manual's schematic titles; the often-repeated "four
+// twelve-inch speakers" could not be verified against a primary source
+// (docs/research/transducers-and-chassis.md, item 8), so this comment no
+// longer asserts it. Acoustically it is a wooden box either way: a bandpass
+// with a bump
 // where the cone breaks up, and a cone that stops moving linearly when pushed.
 // ---------------------------------------------------------------------------
 class Cabinet
