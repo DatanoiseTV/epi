@@ -33,9 +33,10 @@ function wsNoteName(i) {
   return WS_NAMES[n % 12] + (Math.floor(n / 12) - 1);
 }
 
-/* lenScale <-> cents through f = 1/L^2. */
-const wsScaleToCents = (s) => -2400 * Math.log2(s);
-const wsCentsToScale = (c) => Math.pow(2, -c / 2400);
+/* lenScale <-> cents. A cantilever's pitch follows 1/L^2, a string's 1/L,
+   so the same trim is twice the cents on a tine that it is on a string. */
+const wsScaleToCents = (s, strings) => (strings ? -1200 : -2400) * Math.log2(s);
+const wsCentsToScale = (c, strings) => Math.pow(2, -c / (strings ? 1200 : 2400));
 
 /* Deterministic per-note scatter in [-1, 1]; `ch` decorrelates channels. */
 function wsHash(i, ch) {
@@ -192,15 +193,16 @@ function WsModal({ title, onReset, onClose, children }) {
 /* ============================================================
    The tine workshop
    ============================================================ */
-function TineWorkshop({ onClose }) {
+function TineWorkshop({ onClose, strings }) {
   const [mods, setMods] = useState(null);
   const [range, setRange] = useState(100);      // length lane zoom, in cents
   const [root, setRoot] = useState(0);          // template root, 0 = C
+  const evName = strings ? 'string_mod' : 'tine_mod';
 
   useEffect(() => {
     let alive = true;
     try {
-      Juce.getNativeFunction('getTineMods')().then((a) => {
+      Juce.getNativeFunction(strings ? 'getStringMods' : 'getTineMods')().then((a) => {
         if (!alive) return;
         const flat = a ? Array.from(a) : [];
         const m = [];
@@ -217,22 +219,22 @@ function TineWorkshop({ onClose }) {
   if (!mods) return null;
 
   const push = (i, len, dia) => {
-    JuceBridge.emitNative('tine_mod', { index: i, len, dia });
+    JuceBridge.emitNative(evName, { index: i, len, dia });
     setMods((m) => { const c = m.slice(); c[i] = { len, dia }; return c; });
   };
   const pushAll = (fnLenCents, fnDia) => {
     setMods((m) => {
       const c = m.map((e, i) => ({
-        len: fnLenCents ? wsCentsToScale(fnLenCents(i)) : e.len,
+        len: fnLenCents ? wsCentsToScale(fnLenCents(i), strings) : e.len,
         dia: fnDia ? fnDia(i) : e.dia,
       }));
-      c.forEach((e, i) => JuceBridge.emitNative('tine_mod', { index: i, len: e.len, dia: e.dia }));
+      c.forEach((e, i) => JuceBridge.emitNative(evName, { index: i, len: e.len, dia: e.dia }));
       return c;
     });
   };
 
   const fmtCents = (i) => {
-    const c = wsScaleToCents(mods[i].len);
+    const c = wsScaleToCents(mods[i].len, strings);
     return (c >= 0 ? '+' : '') + (Math.abs(c) < 20 ? c.toFixed(1) : Math.round(c)) + ' cents';
   };
   const fmtDia = (i) => Math.round(mods[i].dia * 100) + '% gauge';
@@ -240,8 +242,8 @@ function TineWorkshop({ onClose }) {
   /* Shift narrows the stroke to a fifth -- the knobs' fine gesture. */
   const setLen = (i, v, fine) => {
     const target = v * range;
-    const cur = wsScaleToCents(mods[i].len);
-    push(i, wsCentsToScale(fine ? cur + (target - cur) * 0.2 : target), mods[i].dia);
+    const cur = wsScaleToCents(mods[i].len, strings);
+    push(i, wsCentsToScale(fine ? cur + (target - cur) * 0.2 : target, strings), mods[i].dia);
   };
   const setDia = (i, v, fine) => {
     const target = Math.pow(2, v);
@@ -263,13 +265,13 @@ function TineWorkshop({ onClose }) {
   ];
   const diaTemplates = [
     ['STOCK WIRE', () => pushAll(null, () => 1)],
-    ['GONG', () => pushAll(null, wsGaugeGong)],
-    ['THIN TOP', () => pushAll(null, wsGaugeThin)],
+    [strings ? 'BELL' : 'GONG', () => pushAll(null, wsGaugeGong)],
+    [strings ? 'LIGHT WIRE' : 'THIN TOP', () => pushAll(null, wsGaugeThin)],
   ];
 
   return (
-    <WsModal title="Tine Workshop" onClose={onClose}
-             onReset={() => { JuceBridge.emitNative('tine_mod_reset'); setMods(Array.from({ length: WS_N }, () => ({ len: 1, dia: 1 }))); }}>
+    <WsModal title={strings ? 'String Workshop' : 'Tine Workshop'} onClose={onClose}
+             onReset={() => { JuceBridge.emitNative(evName + '_reset'); setMods(Array.from({ length: WS_N }, () => ({ len: 1, dia: 1 }))); }}>
       <div className="wstools">
         <span className="wstoollabel">TEMPLATES</span>
         {lenTemplates.map(([n, fn]) => (
@@ -297,13 +299,14 @@ function TineWorkshop({ onClose }) {
         ))}
       </div>
       <WsLane title="LENGTH" height={172}
-              meta={'re-cut the steel · pitch follows 1/L² · lane spans ±' + (range >= 1200 ? 'one octave' : range + ' cents') + ' · shift paints fine'}
-              get={(i) => wsScaleToCents(mods[i].len) / range}
+              meta={'re-cut the steel · pitch follows ' + (strings ? '1/L' : '1/L²') + ' · lane spans ±' + (range >= 1200 ? 'one octave' : range + ' cents') + ' · shift paints fine'}
+              get={(i) => wsScaleToCents(mods[i].len, strings) / range}
               set={setLen}
               resetOne={(i) => push(i, 1, mods[i].dia)}
               format={fmtCents} />
       <WsLane title="GAUGE" height={88}
-              meta="swap the wire · pitch stands, the overtones move"
+              meta={strings ? 're-tensioned to pitch · inharmonicity follows d² · fat wire rings bell-like'
+                            : 'swap the wire · pitch stands, the overtones move'}
               get={(i) => Math.log2(mods[i].dia)}
               set={setDia}
               resetOne={(i) => push(i, mods[i].len, 1)}

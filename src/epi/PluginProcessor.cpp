@@ -210,6 +210,8 @@ void EpiAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
         if (m[0] != 1.0f || m[1] != 1.0f) { modded = true; break; }
     for (const auto& m : pickupMods)
         if (m[0] != 0.0f || m[1] != 0.0f || m[2] != 1.0f) { modded = true; break; }
+    for (const auto& m : stringMods)
+        if (m[0] != 1.0f || m[1] != 1.0f) { modded = true; break; }
     if (cabMods != kCabDefaults) modded = true;
     if (modded)
     {
@@ -231,6 +233,14 @@ void EpiAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
         mods.setProperty ("pkh", hs.joinIntoString (","), nullptr);
         mods.setProperty ("pkg", gs.joinIntoString (","), nullptr);
         mods.setProperty ("pkw", ws.joinIntoString (","), nullptr);
+        juce::StringArray sl, sd;
+        for (const auto& m : stringMods)
+        {
+            sl.add (juce::String (m[0], 6));
+            sd.add (juce::String (m[1], 6));
+        }
+        mods.setProperty ("slen", sl.joinIntoString (","), nullptr);
+        mods.setProperty ("sdia", sd.joinIntoString (","), nullptr);
         juce::StringArray cs;
         for (float v : cabMods) cs.add (juce::String (v, 6));
         mods.setProperty ("cab", cs.joinIntoString (","), nullptr);
@@ -255,6 +265,7 @@ void EpiAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
             // incoming state has no modifications.
             resetTineMods();
             resetPickupMods();
+            resetStringMods();
             resetCabMods();
             const auto mods = state.getChildWithName ("TineMods");
             if (mods.isValid())
@@ -275,6 +286,13 @@ void EpiAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
                                   i < gs.size() ? gs[i].getFloatValue() : 0.0f,
                                   i < ws.size() ? ws[i].getFloatValue() : 1.0f);
                 }
+                juce::StringArray sl, sd;
+                sl.addTokens (mods["slen"].toString(), ",", "");
+                sd.addTokens (mods["sdia"].toString(), ",", "");
+                for (int i = 0; i < epi::EpiEngine::kNumTines; ++i)
+                    setStringMod (i,
+                                  i < sl.size() ? sl[i].getFloatValue() : 1.0f,
+                                  i < sd.size() ? sd[i].getFloatValue() : 1.0f);
                 juce::StringArray cs;
                 cs.addTokens (mods["cab"].toString(), ",", "");
                 if (cs.size() == 5)

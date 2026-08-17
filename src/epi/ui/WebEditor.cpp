@@ -160,6 +160,26 @@ WebEditor::WebEditor (::EpiAudioProcessor& proc)
             })
         .withEventListener (juce::Identifier { "pickup_mod_reset" },
             [&proc = epiProcessor] (juce::var) { proc.resetPickupMods(); })
+        .withNativeFunction (juce::Identifier { "getStringMods" },
+            [&proc = epiProcessor] (const juce::Array<juce::var>&, auto complete)
+            {
+                juce::Array<juce::var> flat;
+                for (const auto& m : proc.getStringMods())
+                {
+                    flat.add (juce::var (static_cast<double> (m[0])));
+                    flat.add (juce::var (static_cast<double> (m[1])));
+                }
+                complete (juce::var (flat));
+            })
+        .withEventListener (juce::Identifier { "string_mod" },
+            [&proc = epiProcessor] (juce::var payload)
+            {
+                proc.setStringMod (static_cast<int> (payload.getProperty ("index", -1)),
+                                   static_cast<float> (static_cast<double> (payload.getProperty ("len", 1.0))),
+                                   static_cast<float> (static_cast<double> (payload.getProperty ("dia", 1.0))));
+            })
+        .withEventListener (juce::Identifier { "string_mod_reset" },
+            [&proc = epiProcessor] (juce::var) { proc.resetStringMods(); })
         .withNativeFunction (juce::Identifier { "getCabMods" },
             [&proc = epiProcessor] (const juce::Array<juce::var>&, auto complete)
             {

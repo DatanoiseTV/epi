@@ -80,6 +80,23 @@ public:
         return tineMods;
     }
 
+    // The string workshop: the CP-70's per-course steel.
+    void setStringMod (int index, float lenScale, float diaScale)
+    {
+        if (index < 0 || index >= epi::EpiEngine::kNumTines) return;
+        stringMods[static_cast<std::size_t> (index)] = { lenScale, diaScale };
+        engine.setStringMod (index, lenScale, diaScale);
+    }
+    void resetStringMods()
+    {
+        for (int i = 0; i < epi::EpiEngine::kNumTines; ++i)
+            setStringMod (i, 1.0f, 1.0f);
+    }
+    const std::array<std::array<float, 2>, epi::EpiEngine::kNumTines>& getStringMods() const
+    {
+        return stringMods;
+    }
+
     // The pickup workshop's per-pickup errors: height offset, gap offset,
     // winding scale.
     void setPickupMod (int index, float heightOff, float gapOff, float sens)
@@ -134,6 +151,11 @@ private:
     juce::AudioProcessorValueTreeState apvts;
 
     std::array<std::array<float, 2>, epi::EpiEngine::kNumTines> tineMods = [] {
+        std::array<std::array<float, 2>, epi::EpiEngine::kNumTines> a {};
+        for (auto& m : a) m = { 1.0f, 1.0f };
+        return a;
+    }();
+    std::array<std::array<float, 2>, epi::EpiEngine::kNumTines> stringMods = [] {
         std::array<std::array<float, 2>, epi::EpiEngine::kNumTines> a {};
         for (auto& m : a) m = { 1.0f, 1.0f };
         return a;

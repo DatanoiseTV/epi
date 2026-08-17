@@ -158,6 +158,19 @@ public:
         configure (cfg);
     }
 
+    // The string workshop: this course's own steel. LENGTH re-cuts at the
+    // same tension, so pitch follows a string's 1/L and the inharmonicity
+    // rises as 1/L^2. GAUGE swaps the wire and re-tensions to pitch, as a
+    // tech would: the pitch stands, the tension grows with the cross
+    // section, and what moves is B -- proportional to d^2 at constant pitch
+    // -- and the mass the hammer meets. Length is the microtonality lane,
+    // gauge is the bell-or-thud lane.
+    void setGeometryTrim (double lenScale, double diaScale)
+    {
+        geoLen = std::clamp (lenScale, 0.5, 2.0);
+        geoDia = std::clamp (diaScale, 0.4, 2.5);
+    }
+
     void noteOn (int midiNote, double velocity, const Config& cfg, std::uint32_t seed)
     {
         if (! configured || midiNote != note) setNote (midiNote, cfg);
@@ -292,10 +305,14 @@ private:
 
     void configure (const Config& cfg)
     {
-        const double f0Nom = 440.0 * std::pow (2.0, (note - 69.0) / 12.0);
+        const double f0Nom = 440.0 * std::pow (2.0, (note - 69.0) / 12.0)
+                           / geoLen;   // a string's pitch follows 1/L
         const double stretch = cp70StretchCents (note);
         const double f0 = f0Nom * std::pow (2.0, (stretch + cfg.detuneCents) / 1200.0);
-        const double B = CP70Inharmonicity::at (note);
+        // The workshop's trims move B as the string physics says: B is
+        // proportional to d^2 at constant pitch (the re-tension carries the
+        // rest) and to 1/L^2 through the re-cut.
+        const double B = CP70Inharmonicity::at (note) * (geoDia * geoDia) / (geoLen * geoLen);
 
         // ---- geometry, from the measurements --------------------------------
         // Plain wire from D#4 up: the closed length form (R^2 > 0.999) and the
@@ -306,16 +323,18 @@ private:
         double L, mu;
         if (note >= 63)
         {
-            L = 0.6652 * std::pow (2.0, -(note - 60.0) / 13.16);
-            const double d = wireDiameter (note);
+            L = 0.6652 * std::pow (2.0, -(note - 60.0) / 13.16) * geoLen;
+            const double d = wireDiameter (note) * geoDia;
             mu = 7850.0 * kPiD * d * d / 4.0;
         }
         else
         {
             const double t = std::clamp ((63.0 - note) / (63.0 - 28.0), 0.0, 1.2);
-            L = 0.5686 * std::pow (0.679 / 0.5686, t);
+            L = 0.5686 * std::pow (0.679 / 0.5686, t) * geoLen;
             const double T = 525.0;               // wound-bass band 450-600 N
-            mu = T / (4.0 * f0 * f0 * L * L);
+            // The gauge trim thickens the winding: mass per length grows with
+            // the cross section, and the re-tension below carries the pitch.
+            mu = T / (4.0 * f0 * f0 * L * L) * geoDia * geoDia;
         }
         const double T = 4.0 * f0 * f0 * L * L * mu;
         const double modalMass = 0.5 * mu * L;    // pinned-pinned, every mode
@@ -508,6 +527,7 @@ private:
     static constexpr double kContactHz = 1500.0;   // tip compliance corner, calibrated on the launch spectra
 
     double fs = 48000.0;
+    double geoLen = 1.0, geoDia = 1.0;      // the workshop's trims
     int note = 60;
     int numStrings = 1;
     Str str[2];

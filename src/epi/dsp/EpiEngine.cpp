@@ -189,7 +189,15 @@ void EpiEngine::handleEvent (const NoteEvent& e, const EngineParams& p)
             tines[i].setPedal (pedalDown);
             cp70[i].setPedal (pedalDown);
             if (p.instrument == 1)
+            {
+                if (cp70CfgVersion[i] != cfgVersion
+                    || stringMod[static_cast<std::size_t> (i)].dirty.load (std::memory_order_acquire))
+                {
+                    rebuildString (i, cp70Config (p));
+                    cp70CfgVersion[i] = cfgVersion;
+                }
                 cp70[i].noteOn (e.note, vel, cp70Config (p), seed);
+            }
             else
                 tines[i].noteOn (e.note, vel, rhodesConfig (p), seed);
             // The mechanism knocks whether or not the tine is heard. It goes
@@ -592,6 +600,16 @@ void EpiEngine::process (float* outL, float* outR, int numSamples,
     vVibR.store (lastVibR, std::memory_order_relaxed);
 }
 
+// One CP-70 course, built to the configuration and its own steel.
+void EpiEngine::rebuildString (int i, const CP70Voice::Config& cfg)
+{
+    auto& m = stringMod[static_cast<std::size_t> (i)];
+    cp70[static_cast<std::size_t> (i)].setGeometryTrim (m.len.load (std::memory_order_relaxed),
+                                                        m.dia.load (std::memory_order_relaxed));
+    m.dirty.store (false, std::memory_order_release);
+    cp70[static_cast<std::size_t> (i)].setNote (kLoNote + i, cfg);
+}
+
 // ---------------------------------------------------------------------------
 // The CP-70 path. Base rate throughout: the voice is a linear functional of
 // the modal state (the measured -42 dB beat nulls forbid anything else), and
@@ -613,18 +631,23 @@ void EpiEngine::processCP70 (float* outL, float* outR, int numSamples,
     {
         // Same priority rebuild as the Rhodes: sounding first, bounded.
         int budget = 12;   // a CP string rebuild is ~40 modes of setMode
+        auto stale = [this] (int i)
+        {
+            return cp70CfgVersion[i] != cfgVersion
+                || stringMod[static_cast<std::size_t> (i)].dirty.load (std::memory_order_acquire);
+        };
         for (int i = 0; i < kNumTines && budget > 0; ++i)
         {
-            if (cp70CfgVersion[i] == cfgVersion) continue;
+            if (! stale (i)) continue;
             if (! (cp70[i].isRinging() || pedalDown || keyDown[i])) continue;
-            cp70[i].setNote (kLoNote + i, cfg);
+            rebuildString (i, cfg);
             cp70CfgVersion[i] = cfgVersion;
             --budget;
         }
         for (int i = 0; i < kNumTines && budget > 0; ++i)
         {
-            if (cp70CfgVersion[i] == cfgVersion) continue;
-            cp70[i].setNote (kLoNote + i, cfg);
+            if (! stale (i)) continue;
+            rebuildString (i, cfg);
             cp70CfgVersion[i] = cfgVersion;
             --budget;
         }

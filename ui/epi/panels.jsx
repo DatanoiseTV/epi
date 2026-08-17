@@ -36,7 +36,12 @@ function TinePanel({ cp70 }) {
   const a4 = (440 * Math.pow(2, JuceBridge.PARAMS.tune.map.to(tune) / 1200)).toFixed(1) + ' Hz';
   if (cp70) return (
     <div className="panel f-tine">
-      <PHead title="Strings" meta={a4} />
+      <div className="phead">
+        <h2>Strings</h2>
+        <span className="hrule" />
+        <button className="wsopen" onClick={() => setShop(true)} title="Per-course length and gauge">WORKSHOP</button>
+        <span className="hmeta">{a4}</span>
+      </div>
       <div className="krow">
         <PKnob id="tipMass" label="UNISON" />
         <PKnob id="resDamp" label="DECAY" />
@@ -45,6 +50,7 @@ function TinePanel({ cp70 }) {
       {/* One or two strings per note on a rigid bridge; the unison pair is
           deliberately uncoupled, because the measurements forbid coupling. */}
       <div className="note">unison spread · decay trim · stretch-tuned</div>
+      {shop && <TineWorkshop strings onClose={() => setShop(false)} />}
     </div>
   );
   return (
