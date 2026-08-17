@@ -96,7 +96,8 @@ clap_juce_extensions_plugin(TARGET Epi
     CLAP_MANUAL_URL      "https://github.com/DatanoiseTV/epi"
     CLAP_SUPPORT_URL     "https://github.com/DatanoiseTV/epi/issues")
 
-file(GLOB EPI_UI_SRC CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/ui/epi/*")
+file(GLOB EPI_UI_SRC    CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/ui/epi/*")
+file(GLOB EPI_UI_VENDOR CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/ui/vendor/*")
 juce_add_binary_data(EpiUI
     SOURCES     ${EPI_UI_SRC} ${EPI_UI_VENDOR}
     NAMESPACE   EpiUIData
