@@ -55,6 +55,22 @@ public:
     // Lets the processor clear its "dirty since last load" tracking.
     void setPostLoadHook (std::function<void()> fn) { postLoadHook = std::move (fn); }
 
+    // Product-specific state that belongs INSIDE a user preset alongside the
+    // parameters -- the workshop benches, in Epi's case. The provider
+    // returns a subtree stored verbatim in the saved file; the applier is
+    // called on load with that subtree, AFTER the parameters and the post
+    // load hook, so what the player saved wins over anything a name-matched
+    // factory table would have painted. Presets saved before the provider
+    // existed have no such child and the applier is simply not called.
+    void setExtraState (juce::Identifier tag,
+                        std::function<juce::ValueTree()> provider,
+                        std::function<void (const juce::ValueTree&)> applier)
+    {
+        extraTag = tag;
+        extraProvider = std::move (provider);
+        extraApplier = std::move (applier);
+    }
+
     juce::StringArray getFactoryNames() const;
     juce::StringArray getUserNames() const;
 
@@ -90,6 +106,9 @@ private:
     std::vector<Preset> factory;
     juce::String currentName;
     std::function<void()> postLoadHook;
+    juce::Identifier extraTag { "Extras" };
+    std::function<juce::ValueTree()> extraProvider;
+    std::function<void (const juce::ValueTree&)> extraApplier;
 };
 
 } // namespace epicommon

@@ -142,6 +142,8 @@ public:
     bool isCurrentPresetDirty() const { return ! currentMatchesSnapshot(); }
 
 private:
+    juce::ValueTree buildModsTree (bool always) const;
+    void applyModsTree (const juce::ValueTree& mods);
     void snapshotCurrentParams();
     bool currentMatchesSnapshot() const;
 

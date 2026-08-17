@@ -131,6 +131,14 @@ void PresetManager::loadByName (const juce::String& name)
                     p.values.emplace_back (child["id"].toString(), (float) child["value"]);
             }
             applyPreset (p);
+
+            // The saved benches, after the parameters and the hook: what the
+            // player saved wins.
+            if (extraApplier)
+            {
+                const auto extra = tree.getChildWithName (extraTag);
+                if (extra.isValid()) extraApplier (extra);
+            }
         }
     }
 }
@@ -150,6 +158,15 @@ void PresetManager::saveUser (const juce::String& name)
             param.setProperty ("value", rp->convertFrom0to1 (rp->getValue()), nullptr);
             tree.addChild (param, -1, nullptr);
         }
+
+    // The product's extra state -- always embedded, even at stock values,
+    // so a saved preset is a COMPLETE snapshot: loading it reproduces the
+    // sound whatever the benches held beforehand.
+    if (extraProvider)
+    {
+        auto extra = extraProvider();
+        if (extra.isValid()) tree.addChild (extra, -1, nullptr);
+    }
 
     const auto safe = toFileName (name);
     if (auto xml = tree.createXml())

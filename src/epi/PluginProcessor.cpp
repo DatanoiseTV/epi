@@ -34,6 +34,9 @@ EpiAudioProcessor::EpiAudioProcessor()
                      epi::makeFactoryPresets())
 {
     events.reserve (256);
+    presetManager.setExtraState (juce::Identifier { "TineMods" },
+        [this] { return buildModsTree (true); },
+        [this] (const juce::ValueTree& t) { applyModsTree (t); });
     presetManager.setPostLoadHook ([this]
     {
         snapshotCurrentParams();
@@ -203,51 +206,10 @@ void EpiAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
     auto state = apvts.copyState();
     state.setProperty (kPresetNameProperty, presetManager.getCurrentName(), nullptr);
 
-    // The workshop's per-tine steel travels with the project, not with
-    // presets: a preset is a sound, the workshop is a modification to the
-    // instrument itself. Stored as two comma-joined lists, and only when
+    // The workshop benches travel with the project. Stored only when
     // anything differs from stock, so untouched sessions stay byte-identical.
-    bool modded = false;
-    for (const auto& m : tineMods)
-        if (m[0] != 1.0f || m[1] != 1.0f) { modded = true; break; }
-    for (const auto& m : pickupMods)
-        if (m[0] != 0.0f || m[1] != 0.0f || m[2] != 1.0f) { modded = true; break; }
-    for (const auto& m : stringMods)
-        if (m[0] != 1.0f || m[1] != 1.0f) { modded = true; break; }
-    if (cabMods != kCabDefaults) modded = true;
-    if (modded)
-    {
-        juce::StringArray ls, ds, hs, gs, ws;
-        for (const auto& m : tineMods)
-        {
-            ls.add (juce::String (m[0], 6));
-            ds.add (juce::String (m[1], 6));
-        }
-        for (const auto& m : pickupMods)
-        {
-            hs.add (juce::String (m[0], 6));
-            gs.add (juce::String (m[1], 6));
-            ws.add (juce::String (m[2], 6));
-        }
-        auto mods = juce::ValueTree ("TineMods");
-        mods.setProperty ("len", ls.joinIntoString (","), nullptr);
-        mods.setProperty ("dia", ds.joinIntoString (","), nullptr);
-        mods.setProperty ("pkh", hs.joinIntoString (","), nullptr);
-        mods.setProperty ("pkg", gs.joinIntoString (","), nullptr);
-        mods.setProperty ("pkw", ws.joinIntoString (","), nullptr);
-        juce::StringArray sl, sd;
-        for (const auto& m : stringMods)
-        {
-            sl.add (juce::String (m[0], 6));
-            sd.add (juce::String (m[1], 6));
-        }
-        mods.setProperty ("slen", sl.joinIntoString (","), nullptr);
-        mods.setProperty ("sdia", sd.joinIntoString (","), nullptr);
-        juce::StringArray cs;
-        for (float v : cabMods) cs.add (juce::String (v, 6));
-        mods.setProperty ("cab", cs.joinIntoString (","), nullptr);
-        state.appendChild (mods, nullptr);
-    }
+    const auto mods = buildModsTree (false);
+    if (mods.isValid()) state.appendChild (mods, nullptr);
 
     if (auto xml = state.createXml()) copyXmlToBinary (*xml, destData);
 }
@@ -263,46 +225,97 @@ void EpiAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
             if (state.hasProperty (kPresetNameProperty))
                 presetManager.setCurrentName (state[kPresetNameProperty].toString());
 
-            // Restore the workshop -- or return the harp to stock when the
-            // incoming state has no modifications.
-            resetTineMods();
-            resetPickupMods();
-            resetStringMods();
-            resetCabMods();
-            const auto mods = state.getChildWithName ("TineMods");
-            if (mods.isValid())
-            {
-                juce::StringArray ls, ds, hs, gs, ws;
-                ls.addTokens (mods["len"].toString(), ",", "");
-                ds.addTokens (mods["dia"].toString(), ",", "");
-                hs.addTokens (mods["pkh"].toString(), ",", "");
-                gs.addTokens (mods["pkg"].toString(), ",", "");
-                ws.addTokens (mods["pkw"].toString(), ",", "");
-                for (int i = 0; i < epi::EpiEngine::kNumTines; ++i)
-                {
-                    setTineMod (i,
-                                i < ls.size() ? ls[i].getFloatValue() : 1.0f,
-                                i < ds.size() ? ds[i].getFloatValue() : 1.0f);
-                    setPickupMod (i,
-                                  i < hs.size() ? hs[i].getFloatValue() : 0.0f,
-                                  i < gs.size() ? gs[i].getFloatValue() : 0.0f,
-                                  i < ws.size() ? ws[i].getFloatValue() : 1.0f);
-                }
-                juce::StringArray sl, sd;
-                sl.addTokens (mods["slen"].toString(), ",", "");
-                sd.addTokens (mods["sdia"].toString(), ",", "");
-                for (int i = 0; i < epi::EpiEngine::kNumTines; ++i)
-                    setStringMod (i,
-                                  i < sl.size() ? sl[i].getFloatValue() : 1.0f,
-                                  i < sd.size() ? sd[i].getFloatValue() : 1.0f);
-                juce::StringArray cs;
-                cs.addTokens (mods["cab"].toString(), ",", "");
-                if (cs.size() == 5)
-                    setCabMod ({ cs[0].getFloatValue(), cs[1].getFloatValue(),
-                                 cs[2].getFloatValue(), cs[3].getFloatValue(),
-                                 cs[4].getFloatValue() });
-            }
+            // Restore the benches -- or return everything to stock when the
+            // incoming state carries no modifications.
+            applyModsTree (state.getChildWithName ("TineMods"));
         }
+}
+
+// The workshop benches as one subtree: the tine and string tables, the
+// pickup errors, the cabinet. `always` false returns an invalid tree when
+// everything is stock, so the project state can stay byte-identical for
+// untouched sessions; the preset path passes true, because a saved preset
+// is a complete snapshot by contract.
+juce::ValueTree EpiAudioProcessor::buildModsTree (bool always) const
+{
+    bool modded = false;
+    for (const auto& m : tineMods)
+        if (m[0] != 1.0f || m[1] != 1.0f) { modded = true; break; }
+    for (const auto& m : pickupMods)
+        if (m[0] != 0.0f || m[1] != 0.0f || m[2] != 1.0f) { modded = true; break; }
+    for (const auto& m : stringMods)
+        if (m[0] != 1.0f || m[1] != 1.0f) { modded = true; break; }
+    if (cabMods != kCabDefaults) modded = true;
+    if (! modded && ! always) return {};
+
+    juce::StringArray ls, ds, hs, gs, ws, sl, sd, cs;
+    for (const auto& m : tineMods)
+    {
+        ls.add (juce::String (m[0], 6));
+        ds.add (juce::String (m[1], 6));
+    }
+    for (const auto& m : pickupMods)
+    {
+        hs.add (juce::String (m[0], 6));
+        gs.add (juce::String (m[1], 6));
+        ws.add (juce::String (m[2], 6));
+    }
+    for (const auto& m : stringMods)
+    {
+        sl.add (juce::String (m[0], 6));
+        sd.add (juce::String (m[1], 6));
+    }
+    for (float v : cabMods) cs.add (juce::String (v, 6));
+
+    juce::ValueTree mods ("TineMods");
+    mods.setProperty ("len",  ls.joinIntoString (","), nullptr);
+    mods.setProperty ("dia",  ds.joinIntoString (","), nullptr);
+    mods.setProperty ("pkh",  hs.joinIntoString (","), nullptr);
+    mods.setProperty ("pkg",  gs.joinIntoString (","), nullptr);
+    mods.setProperty ("pkw",  ws.joinIntoString (","), nullptr);
+    mods.setProperty ("slen", sl.joinIntoString (","), nullptr);
+    mods.setProperty ("sdia", sd.joinIntoString (","), nullptr);
+    mods.setProperty ("cab",  cs.joinIntoString (","), nullptr);
+    return mods;
+}
+
+// Reset every bench to stock, then apply whatever the tree carries. An
+// invalid tree therefore means "stock instrument", and a tree missing one
+// list leaves that bench at stock -- both are what an older save means.
+void EpiAudioProcessor::applyModsTree (const juce::ValueTree& mods)
+{
+    resetTineMods();
+    resetPickupMods();
+    resetStringMods();
+    resetCabMods();
+    if (! mods.isValid()) return;
+
+    juce::StringArray ls, ds, hs, gs, ws, sl, sd, cs;
+    ls.addTokens (mods["len"].toString(), ",", "");
+    ds.addTokens (mods["dia"].toString(), ",", "");
+    hs.addTokens (mods["pkh"].toString(), ",", "");
+    gs.addTokens (mods["pkg"].toString(), ",", "");
+    ws.addTokens (mods["pkw"].toString(), ",", "");
+    sl.addTokens (mods["slen"].toString(), ",", "");
+    sd.addTokens (mods["sdia"].toString(), ",", "");
+    cs.addTokens (mods["cab"].toString(), ",", "");
+    for (int i = 0; i < epi::EpiEngine::kNumTines; ++i)
+    {
+        setTineMod (i,
+                    i < ls.size() ? ls[i].getFloatValue() : 1.0f,
+                    i < ds.size() ? ds[i].getFloatValue() : 1.0f);
+        setPickupMod (i,
+                      i < hs.size() ? hs[i].getFloatValue() : 0.0f,
+                      i < gs.size() ? gs[i].getFloatValue() : 0.0f,
+                      i < ws.size() ? ws[i].getFloatValue() : 1.0f);
+        setStringMod (i,
+                      i < sl.size() ? sl[i].getFloatValue() : 1.0f,
+                      i < sd.size() ? sd[i].getFloatValue() : 1.0f);
+    }
+    if (cs.size() == 5)
+        setCabMod ({ cs[0].getFloatValue(), cs[1].getFloatValue(),
+                     cs[2].getFloatValue(), cs[3].getFloatValue(),
+                     cs[4].getFloatValue() });
 }
 
 void EpiAudioProcessor::snapshotCurrentParams()
