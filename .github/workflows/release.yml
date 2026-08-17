@@ -1,9 +1,11 @@
-# Release builds: installable macOS and Windows packages.
+# Release builds: installable macOS, Windows and Linux packages for Epi and
+# Didge.
 #
 # Separate from ci.yml, which only proves the tree compiles and the suites
 # pass. This one builds what a user actually downloads: a universal macOS
-# binary and a Windows x64 build of every format, zipped with a short install
-# note. Runs on a version tag, or on demand from the Actions tab.
+# binary, a Windows x64 build and a Linux x64 build of every format, zipped
+# with a short install note. Runs on a version tag, or on demand from the
+# Actions tab.
 
 name: release
 
@@ -26,10 +28,13 @@ jobs:
         include:
           - os: macos-14
             label: macOS (universal)
-            package: didge-macos
+            package: macos
           - os: windows-2022
             label: Windows (x64)
-            package: didge-windows
+            package: windows
+          - os: ubuntu-22.04
+            label: Linux (x64)
+            package: linux
 
     steps:
       - uses: actions/checkout@v4
@@ -40,6 +45,17 @@ jobs:
       - name: install macos deps
         if: runner.os == 'macOS'
         run: brew install ninja
+
+      - name: install linux deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libjack-jackd2-dev \
+            libfreetype6-dev libx11-dev libxcomposite-dev libxcursor-dev \
+            libxext-dev libxinerama-dev libxrandr-dev libxrender-dev \
+            libwebkit2gtk-4.1-dev libsoup-3.0-dev libwebkit2gtk-4.0-dev \
+            libsoup2.4-dev libglu1-mesa-dev mesa-common-dev libgtk-3-dev \
+            ninja-build
 
       - name: set up msvc environment
         if: runner.os == 'Windows'
@@ -66,7 +82,7 @@ jobs:
         run: |
           ARGS=(-S . -B build -G Ninja
                 -DCMAKE_BUILD_TYPE=Release
-                -DDIDGE_INSTALL_LOCAL=OFF)
+                -DPLUGIN_INSTALL_LOCAL=OFF)
           if [[ "${{ runner.os }}" == "macOS" ]]; then
             ARGS+=("-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64")
           fi
@@ -77,52 +93,63 @@ jobs:
 
       - name: build
         shell: bash
-        run: cmake --build build --target Didge_All Didge_CLAP didge_dsp_tests didge_state_tests -j
+        run: |
+          EPI_TESTS="epi_dsp_tests epi_reference_tests epi_grand_tests epi_wurli_tests"
+          if [[ "${{ runner.os }}" == "Linux" ]]; then
+            cmake --build build --target Didge_All Didge_CLAP Epi_All Epi_CLAP didge_dsp_tests $EPI_TESTS -j
+          else
+            cmake --build build --target Didge_All Didge_CLAP Epi_All Epi_CLAP didge_dsp_tests didge_state_tests $EPI_TESTS -j
+          fi
 
       # A release that does not play in tune is not a release.
       - name: tests
         shell: bash
         run: ctest --test-dir build --output-on-failure
 
-      - name: verify macos binary is universal
+      - name: verify macos binaries are universal
         if: runner.os == 'macOS'
         shell: bash
         run: |
-          BIN=build/Didge_artefacts/Release/VST3/Didge.vst3/Contents/MacOS/Didge
-          lipo -info "$BIN"
-          lipo -info "$BIN" | grep -q "arm64" || { echo "missing arm64 slice"; exit 1; }
-          lipo -info "$BIN" | grep -q "x86_64" || { echo "missing x86_64 slice"; exit 1; }
+          for BIN in build/Didge_artefacts/Release/VST3/Didge.vst3/Contents/MacOS/Didge \
+                     build/Epi_artefacts/Release/VST3/Epi.vst3/Contents/MacOS/Epi; do
+            lipo -info "$BIN"
+            lipo -info "$BIN" | grep -q "arm64" || { echo "missing arm64 slice"; exit 1; }
+            lipo -info "$BIN" | grep -q "x86_64" || { echo "missing x86_64 slice"; exit 1; }
+          done
 
       - name: package
         shell: bash
         run: |
           set -euo pipefail
-          ART=build/Didge_artefacts/Release
-          STAGE="stage/Didge"
-          mkdir -p "$STAGE"
-
-          if [[ "${{ runner.os }}" == "macOS" ]]; then
-            cp -R "$ART/VST3/Didge.vst3"            "$STAGE/"
-            cp -R "$ART/AU/Didge.component"         "$STAGE/"
-            cp -R "$ART/CLAP/Didge.clap"            "$STAGE/"
-            cp -R "$ART/Standalone/Didge.app"       "$STAGE/"
-          else
-            cp -R "$ART/VST3/Didge.vst3"            "$STAGE/"
-            cp -R "$ART/CLAP/Didge.clap"            "$STAGE/"
-            cp -R "$ART/Standalone/Didge.exe"       "$STAGE/"
-          fi
-
-          cp README.md CHANGELOG.md LICENSE "$STAGE/"
-          cp .github/INSTALL-${{ runner.os }}.txt "$STAGE/INSTALL.txt"
-
-          # ditto preserves bundle structure and resource forks; plain zip on
-          # macOS can mangle a .component or .app.
           mkdir -p dist
-          if [[ "${{ runner.os }}" == "macOS" ]]; then
-            ditto -c -k --sequesterRsrc --keepParent "$STAGE" "dist/${{ matrix.package }}.zip"
-          else
-            7z a -tzip "dist/${{ matrix.package }}.zip" "$STAGE" > /dev/null
-          fi
+          for PLUGIN in Epi Didge; do
+            ART="build/${PLUGIN}_artefacts/Release"
+            STAGE="stage/$PLUGIN"
+            mkdir -p "$STAGE"
+
+            cp -R "$ART/VST3/$PLUGIN.vst3"          "$STAGE/"
+            cp -R "$ART/CLAP/$PLUGIN.clap"          "$STAGE/"
+            if [[ "${{ runner.os }}" == "macOS" ]]; then
+              cp -R "$ART/AU/$PLUGIN.component"     "$STAGE/"
+              cp -R "$ART/Standalone/$PLUGIN.app"   "$STAGE/"
+            elif [[ "${{ runner.os }}" == "Windows" ]]; then
+              cp -R "$ART/Standalone/$PLUGIN.exe"   "$STAGE/"
+            else
+              cp -R "$ART/Standalone/$PLUGIN"       "$STAGE/"
+            fi
+
+            cp README.md CHANGELOG.md LICENSE "$STAGE/"
+            cp .github/INSTALL-${{ runner.os }}.txt "$STAGE/INSTALL.txt"
+
+            # ditto preserves bundle structure and resource forks; plain zip
+            # on macOS can mangle a .component or .app.
+            LOWER=$(echo "$PLUGIN" | tr 'A-Z' 'a-z')
+            if [[ "${{ runner.os }}" == "macOS" ]]; then
+              ditto -c -k --sequesterRsrc --keepParent "$STAGE" "dist/$LOWER-${{ matrix.package }}.zip"
+            else
+              7z a -tzip "dist/$LOWER-${{ matrix.package }}.zip" "$STAGE" > /dev/null
+            fi
+          done
 
       - uses: actions/upload-artifact@v4
         with:
@@ -150,6 +177,6 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           gh release create "${GITHUB_REF_NAME}" dist/*.zip \
-            --title "Didge ${GITHUB_REF_NAME}" \
+            --title "Epi ${GITHUB_REF_NAME}" \
             --generate-notes \
             --notes "Unsigned builds. See INSTALL.txt inside the archive for how to open them on macOS and Windows."

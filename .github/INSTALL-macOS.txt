@@ -1,39 +1,22 @@
-Didge — installing on macOS
-===========================
+Epi and Didge — installing on macOS
+===================================
 
 Copy each format you want into its folder. These are user folders, so no
-administrator password is needed.
+administrator password is needed. The same paths apply to both plugins.
 
-  Didge.vst3       ->  ~/Library/Audio/Plug-Ins/VST3/
-  Didge.component  ->  ~/Library/Audio/Plug-Ins/Components/
-  Didge.clap       ->  ~/Library/Audio/Plug-Ins/CLAP/
-  Didge.app        ->  /Applications/   (or anywhere; it needs no host)
+  Epi.vst3        ->  ~/Library/Audio/Plug-Ins/VST3/
+  Epi.component   ->  ~/Library/Audio/Plug-Ins/Components/
+  Epi.clap        ->  ~/Library/Audio/Plug-Ins/CLAP/
+  Epi.app         ->  /Applications/   (or anywhere; it needs no host)
 
 Then restart your host so it rescans.
 
+These builds are not signed or notarized. macOS will quarantine them on
+first download; clear that with either of:
 
-These builds are not signed or notarised
+  - right-click the app, choose Open, and confirm — once; or
+  - in Terminal:  xattr -cr ~/Library/Audio/Plug-Ins/VST3/Epi.vst3
+    (repeat for each bundle you copied)
 
-macOS will refuse to open them on the first attempt and say the developer
-cannot be verified. That message means the download carries a quarantine flag,
-not that anything is wrong with the files. To clear it, run this once in
-Terminal after copying:
-
-  xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/VST3/Didge.vst3
-  xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/Components/Didge.component
-  xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/CLAP/Didge.clap
-  xattr -dr com.apple.quarantine /Applications/Didge.app
-
-For the standalone app you can instead right-click it, choose Open, and
-confirm once.
-
-If Logic or GarageBand still will not load the Audio Unit, check that it
-passed validation:
-
-  auval -v aumu Ddge Dtnv
-
-Both Apple silicon and Intel are in the same binary, so there is one download
-for either machine.
-
-Building from source avoids all of the above, and is four commands. See
-README.md.
+If the AU does not appear in Logic, run once:
+  auval -v aumu Epi1 Dnse

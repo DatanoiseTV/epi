@@ -1,34 +1,12 @@
-Didge — installing on Windows
-=============================
+Epi and Didge — installing on Windows
+=====================================
 
-Copy each format you want into its folder.
+Copy each format you want into its folder. The same paths apply to both
+plugins.
 
-  Didge.vst3  ->  C:\Program Files\Common Files\VST3\
-  Didge.clap  ->  C:\Program Files\Common Files\CLAP\
-  Didge.exe   ->  anywhere; it needs no host
+  Epi.vst3   ->  C:\Program Files\Common Files\VST3\
+  Epi.clap   ->  C:\Program Files\Common Files\CLAP\
+  Epi.exe    ->  anywhere; it runs on its own, no host needed
 
-Both plug-in folders are outside your user profile, so Windows will ask for
-administrator confirmation when you copy into them. If you would rather not
-grant that, most hosts can also scan a folder of your own choosing -- add one
-in the host's plug-in settings and copy there instead.
-
-Then restart your host so it rescans.
-
-
-These builds are not signed
-
-SmartScreen will interrupt the first launch of the standalone with "Windows
-protected your PC". Choose More info, then Run anyway. That warning is about
-the missing signature, not about the contents.
-
-
-Requirements
-
-  - 64-bit Windows 10 or later.
-  - The Microsoft Edge WebView2 runtime, which draws the interface. It ships
-    with Windows 11 and with current Windows 10. If the plug-in loads but its
-    window stays blank, install it from:
-    https://developer.microsoft.com/microsoft-edge/webview2/
-
-Building from source avoids the signing warnings, and is four commands. See
-README.md.
+Then restart your host so it rescans. The builds are unsigned; SmartScreen
+may ask once before the standalone first runs.
