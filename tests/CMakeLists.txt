@@ -63,3 +63,15 @@ target_include_directories(epi_reference_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_features(epi_reference_tests PRIVATE cxx_std_20)
 add_test(NAME epi_reference COMMAND epi_reference_tests)
 set_tests_properties(epi_reference PROPERTIES TIMEOUT 900)
+
+# ---------------------------------------------------------------------------
+# Epi grand reference rows. The acoustic grand's string + bridge + board
+# stage, measured against the plan's own Salamander C5 numbers. Framework-
+# free and engine-free: it drives GrandVoice and GrandBoard directly, so it
+# builds with no JUCE and runs before the engine integration exists.
+# ---------------------------------------------------------------------------
+add_executable(epi_grand_tests test_epi_grand.cpp)
+target_include_directories(epi_grand_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_features(epi_grand_tests PRIVATE cxx_std_20)
+add_test(NAME epi_grand COMMAND epi_grand_tests)
+set_tests_properties(epi_grand PROPERTIES TIMEOUT 900)
