@@ -365,7 +365,17 @@ private:
                 // per octave tilt as an exact modal weight. The strike shape
                 // is the pinned-string sine at beta with the fixed 12 mm
                 // urethane patch folded in.
-                S.outShape[k - 1] = T * k * kPiD / L * kOutScale;
+                // The bridge foot has width. The piezo reads the force
+                // integrated over the foot's contact length, not at a point,
+                // so partials whose half-wavelength approaches the footprint
+                // self-cancel across it -- a physical taper on exactly the
+                // high components that otherwise arrive phase-aligned at the
+                // strike and stack into an attack spike the real recordings
+                // do not show.
+                const double footArg = k * kPiD * (kBridgeFoot / 2.0) / L;
+                const double foot = std::abs (footArg) < 1e-9 ? 1.0
+                                  : std::sin (footArg) / footArg;
+                S.outShape[k - 1] = T * k * kPiD / L * foot * kOutScale;
                 const double beta = strikeBeta();
                 const double patch = std::min (0.45, 0.006 / L);
                 const double z = k * kPiD * patch;
@@ -459,6 +469,7 @@ private:
     // and the preamp input into a number that lands the output near the
     // Rhodes' level. Calibrated by the level test row.
     static constexpr double kOutScale = 2.7e-3;
+    static constexpr double kBridgeFoot = 0.040;   // m, the piezo's integration length
 
     double fs = 48000.0;
     int note = 60;
