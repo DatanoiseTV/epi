@@ -187,6 +187,9 @@ public:
         m.dirty.store (true, std::memory_order_release);
     }
 
+    // Test access: one tine's modal energy.
+    double tineEnergy (int i) const { return tines[static_cast<std::size_t> (i)].energy(); }
+
     int activeVoices() const { return numActive.load (std::memory_order_relaxed); }
 
     // Metering for the UI: destructive read, so the peak resets per tick.

@@ -412,6 +412,72 @@ public:
             }
         }
 
+        // -- the dormant tier -------------------------------------------------
+        // A tine the harp is holding barely awake -- reduced to its
+        // fundamental, energy below the reduction threshold, no hammer --
+        // does not need the full transduction. Its swing is nanometres, so
+        // the flux is exactly rest plus slope times displacement, and the
+        // slope needs refreshing only at control rate as the pickup glides.
+        // What is NOT skipped: the modal step (it is one mode), the damper,
+        // the glide, retirement, and promotion back to the full path the
+        // moment the energy grows. Before this tier existed, eighty
+        // sympathetic tines at minus a hundred and forty decibels paid four
+        // field evaluations a sample each to render silence -- at ninety-six
+        // kilohertz that was most of the pedal's cost.
+        if (reduced && ! hammer.isActive())
+        {
+            glidePickup();
+            sys.tick();
+            if (! held && ! pedal && sys.displacement (kV0) != 0.0)
+                sys.scaleMode (kV0, damperFactor);
+
+            const double vNow = sys.displacement (kV0) * shapeTipV[kV0];
+            if (! std::isfinite (vNow)) { recover (fluxOut); return; }
+
+            if (++controlCounter >= kControlDecim)
+            {
+                controlCounter = 0;
+                // Slope of the (saturated) flux about the current rest point.
+                const double d = 0.25 * linearSwing;
+                const double f0r = field != nullptr ? field->flux (staticOffset, staticGap) : 0.0;
+                const double f1r = field != nullptr ? field->flux (staticOffset + d, staticGap) : 0.0;
+                dormantSlope = (f1r - f0r) / d * (satOn ? satRestSlope : 1.0);
+
+                const double e = sys.energy();
+                if (e >= kReducedEnergy)
+                {
+                    // Promoted: wake the full mode set and hand the
+                    // interpolation history a clean start.
+                    sys.setNumModes (kNumModes);
+                    reduced = false;
+                    vHist[0] = vHist[1] = vHist[2] = vNow;
+                    hHist[0] = hHist[1] = hHist[2] = 0.0;
+                }
+                if (! std::isfinite (e)) { recover (fluxOut); return; }
+                if (e < quietEnergy * 0.1) sounding = false;
+            }
+
+            // Linear interpolation across the oversampled frame: the content
+            // is one sine far below Nyquist, and a held value would print the
+            // staircase comb this file has met before.
+            for (int k = 0; k < kOver; ++k)
+            {
+                const double t = static_cast<double> (k + 1) / kOver;
+                const double vv = dormantV + (vNow - dormantV) * t;
+                fluxOut[k] = satRestVal + dormantSlope * vv;
+            }
+            dormantV = vNow;
+            lastTipV = vNow;
+            lastTipH = 0.0;
+            if (--traceCount <= 0)
+            {
+                traceCount = traceDecim;
+                traceIdx = (traceIdx + 1) & (kTraceLen - 1);
+                trace[traceIdx] = static_cast<float> (vNow);
+            }
+            return;
+        }
+
         glidePickup();      EPI_CHK ("glidePickup");
         updateStretchTerm(); EPI_CHK ("updateStretchTerm");
         sys.tick();         EPI_CHK ("sys.tick");
@@ -468,7 +534,19 @@ public:
             // strike pick them straight back up.
             if (! hammer.isActive() && e < kReducedEnergy)
             {
-                if (! reduced) { sys.setNumModes (1); reduced = true; }
+                if (! reduced)
+                {
+                    sys.setNumModes (1);
+                    reduced = true;
+                    // The dormant tier owns the flux from here; give its
+                    // interpolator a continuous starting point and take the
+                    // quadratised terms down -- at these energies they carry
+                    // nothing, and the resync discipline re-enables them on
+                    // the way back up.
+                    dormantV = lastTipV;
+                    sys.disableTerm (kTermStretch);
+                    sys.disableTerm (kTermJoint);
+                }
             }
             else if (reduced)
             {
@@ -661,7 +739,10 @@ public:
 
     void addClampForce (double f)
     {
-        for (int m = 0; m < kTineModes; ++m) sys.addForce (kV0 + m, f * shapeClamp[kV0 + m]);
+        // A dormant tine carries one live mode; pushing force into parked
+        // modes is work the integrator will never read.
+        const int m1 = std::min (kTineModes, sys.numModes());
+        for (int m = 0; m < m1; ++m) sys.addForce (kV0 + m, f * shapeClamp[kV0 + m]);
     }
 
     // Worth integrating at all? A tine with no energy and no hammer on it
@@ -1510,6 +1591,7 @@ private:
     bool lockedOut = false;
     static constexpr double kReducedEnergy = 1.0e-10;
     double swingEnv = 0.0;
+    double dormantV = 0.0, dormantSlope = 0.0;
     double linearSwing = 1.0e-4, quietEnergy = 1.0e-13;
     bool   reduced = false;
 

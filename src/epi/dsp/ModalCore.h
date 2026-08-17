@@ -253,12 +253,36 @@ public:
         // with alpha_p = (k/2) Minv g_p and beta_p = (k/2) g_p. Damping enters
         // as the leapfrog's (1-a)/(1+a) on the qPrev term, which is what makes
         // the poles exact.
+        //
+        // Written as fused single passes: the earlier form materialised
+        // alpha[][] and beta[][] scratch arrays each tick and re-read them
+        // four times, and at ninety-six kilohertz that memory traffic was the
+        // single largest line in the profile. Every use of alpha and beta is
+        // a dot product with g, so the scalars are folded in and the arrays
+        // never exist. The Woodbury matrix is symmetric -- beta_r . alpha_c
+        // is the cAl-weighted product of two gradients, indifferent to their
+        // order -- so only its upper triangle is computed.
+        // A dormant voice is one mode and no terms, and there are often
+        // eighty of them a sample: worth its own three lines ahead of the
+        // scratch array and the term scan.
+        bool anyTerm = false;
+        for (int p = 0; p < MaxP; ++p) anyTerm |= termActive[p];
+        if (n == 1 && ! anyTerm)
+        {
+            const double b0 = cAK[0] * q[0] - cB[0] * qPrev[0] + cD[0] * drive[0];
+            qPrev[0] = q[0];
+            q[0] = b0;
+            drive[0] = 0.0;
+            return;
+        }
+
         double b[MaxN];
 
         // Branch-free: a dead mode has zero coefficients, so it contributes
-        // nothing and does not need testing for.
+        // nothing and does not need testing for. cAK is (cA - cK), folded at
+        // coefficient time.
         for (int i = 0; i < n; ++i)
-            b[i] = (cA[i] - cK[i]) * q[i] - cB[i] * qPrev[i] + cD[i] * drive[i];
+            b[i] = cAK[i] * q[i] - cB[i] * qPrev[i] + cD[i] * drive[i];
 
         // Collect the active terms.
         int act[MaxP], na = 0;
@@ -266,48 +290,57 @@ public:
 
         if (na == 0)
         {
-            for (int i = 0; i < n; ++i) { qPrev[i] = q[i]; q[i] = b[i]; }
-            for (int i = 0; i < n; ++i) drive[i] = 0.0;
+            // One pass: swap the history, place the step, clear the drive.
+            for (int i = 0; i < n; ++i)
+            {
+                qPrev[i] = q[i];
+                q[i] = b[i];
+                drive[i] = 0.0;
+            }
             return;
         }
 
-        // alpha_p = (k/2) Minv g_p / (1+a),  beta_p = (k/2) g_p
-        double alpha[MaxP][MaxN], beta[MaxP][MaxN];
+        const double hk = 0.5 * k;
+
+        // alpha_p = cAl * g_p, materialised once per term because it is read
+        // three times and a contiguous row is what the vector unit wants.
+        // beta_p = (k/2) g_p never needs to exist: every use is a dot with
+        // g_p and the scalar folds into the sum.
+        double alpha[MaxP][MaxN];
         for (int j = 0; j < na; ++j)
         {
-            const int p = act[j];
-            for (int i = 0; i < n; ++i)
-            {
-                alpha[j][i] = cAl[i] * g[p][i];
-                beta[j][i]  = 0.5 * k * g[p][i];
-            }
+            const double* gj = g[act[j]];
+            for (int i = 0; i < n; ++i) alpha[j][i] = cAl[i] * gj[i];
         }
 
         // b gets the explicit part of the nonlinear force:
-        //   -2k alpha psi[n-1/2]  +  alpha (beta^T qPrev)
+        //   alpha_j (beta_j^T qPrev - 2k psi_j)
         for (int j = 0; j < na; ++j)
         {
-            const int p = act[j];
+            const double* gj = g[act[j]];
             double bt = 0.0;
-            for (int i = 0; i < n; ++i) bt += beta[j][i] * qPrev[i];
-            const double coef = 2.0 * k * psi[p];
-            for (int i = 0; i < n; ++i)
-                b[i] += alpha[j][i] * (bt - coef);
+            for (int i = 0; i < n; ++i) bt += gj[i] * qPrev[i];
+            const double wj = hk * bt - 2.0 * k * psi[act[j]];
+            for (int i = 0; i < n; ++i) b[i] += alpha[j][i] * wj;
         }
 
         // Solve (I + sum_j alpha_j beta_j^T) x = b by Woodbury on the na x na
-        // system. na is at most a handful, so this is a tiny dense solve.
+        // system. S is symmetric -- beta_r . alpha_c is the cAl-weighted
+        // product of two gradients, indifferent to order -- so only the upper
+        // triangle is summed.
         double S[MaxP][MaxP], rhs[MaxP];
         for (int r = 0; r < na; ++r)
         {
+            const double* gr = g[act[r]];
             double br = 0.0;
-            for (int i = 0; i < n; ++i) br += beta[r][i] * b[i];
-            rhs[r] = br;
-            for (int c = 0; c < na; ++c)
+            for (int i = 0; i < n; ++i) br += gr[i] * b[i];
+            rhs[r] = hk * br;
+            for (int c = r; c < na; ++c)
             {
                 double v = 0.0;
-                for (int i = 0; i < n; ++i) v += beta[r][i] * alpha[c][i];
-                S[r][c] = v + (r == c ? 1.0 : 0.0);
+                for (int i = 0; i < n; ++i) v += gr[i] * alpha[c][i];
+                S[r][c] = hk * v + (r == c ? 1.0 : 0.0);
+                S[c][r] = S[r][c];
             }
         }
 
@@ -341,24 +374,23 @@ public:
             y[r] = (std::abs (S[r][r]) > 1.0e-300) ? s / S[r][r] : 0.0;
         }
 
-        double qNext[MaxN];
-        for (int i = 0; i < n; ++i)
+        // x lands in b in place, one contiguous pass per term.
+        for (int j = 0; j < na; ++j)
         {
-            double s = b[i];
-            for (int j = 0; j < na; ++j) s -= alpha[j][i] * y[j];
-            qNext[i] = s;
+            const double yj = y[j];
+            for (int i = 0; i < n; ++i) b[i] -= alpha[j][i] * yj;
         }
 
         // psi[n+1/2] = psi[n-1/2] + (1/2) g^T (q[n+1] - q[n-1])
         for (int j = 0; j < na; ++j)
         {
-            const int p = act[j];
+            const double* gj = g[act[j]];
             double d = 0.0;
-            for (int i = 0; i < n; ++i) d += g[p][i] * (qNext[i] - qPrev[i]);
-            psi[p] += 0.5 * d;
+            for (int i = 0; i < n; ++i) d += gj[i] * (b[i] - qPrev[i]);
+            psi[act[j]] += 0.5 * d;
         }
 
-        for (int i = 0; i < n; ++i) { qPrev[i] = q[i]; q[i] = qNext[i]; drive[i] = 0.0; }
+        for (int i = 0; i < n; ++i) { qPrev[i] = q[i]; q[i] = b[i]; drive[i] = 0.0; }
     }
 
     // ---- readout ---------------------------------------------------------
@@ -428,7 +460,7 @@ private:
     // inner loop, which is what was stopping it vectorising.
     void cacheStep (int i)
     {
-        if (! live[i]) { cA[i] = cB[i] = cK[i] = cD[i] = cAl[i] = 0.0; return; }
+        if (! live[i]) { cA[i] = cB[i] = cK[i] = cD[i] = cAl[i] = cAK[i] = 0.0; return; }
         const double a  = damp[i];
         const double r  = 1.0 / (1.0 + a);
         cA[i]  = 2.0 * r;
@@ -436,6 +468,7 @@ private:
         cK[i]  = k * k * invM[i] * stiff[i] * r;
         cD[i]  = k * k * invM[i] * r;
         cAl[i] = 0.5 * k * invM[i] * r;
+        cAK[i] = cA[i] - cK[i];
     }
 
     void setModeKeepingState (int i, double freqHz, double t60Sec)
@@ -454,7 +487,7 @@ private:
     int    n  = 0;
 
     double q[MaxN] {}, qPrev[MaxN] {}, drive[MaxN] {};
-    double cA[MaxN] {}, cB[MaxN] {}, cK[MaxN] {}, cD[MaxN] {}, cAl[MaxN] {};
+    double cA[MaxN] {}, cB[MaxN] {}, cK[MaxN] {}, cD[MaxN] {}, cAl[MaxN] {}, cAK[MaxN] {};
     double invM[MaxN] {}, mass[MaxN] {}, stiff[MaxN] {}, damp[MaxN] {};
     double freq[MaxN] {}, baseFreq[MaxN] {}, t60[MaxN] {};
     bool   live[MaxN] {};
