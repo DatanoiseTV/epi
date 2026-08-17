@@ -316,7 +316,24 @@ public:
         air.reset();
     }
 
-    void setMix (double m) { mix = std::clamp (m, 0.0, 1.0); }
+    // The blend is a MORPH, not a parallel mix. Blending dry against the
+    // filtered path looked harmless with the old one-pole caricature, but a
+    // real filter chain rotates phase, and summing half-dry against it
+    // partially cancels exactly the character being dialled in -- measured,
+    // a cabinet swap that moves the bass 3 dB at full mix left two tenths
+    // at half. So the control now slides every dimension toward transparent
+    // instead: the resonance walks down to the subsonic, the breakup out
+    // past the audio band, the microphone backs off, the limiter opens up.
+    // One path, no cancellation, and full mix is exactly the voiced box.
+    void setMix (double m)
+    {
+        m = std::clamp (m, 0.0, 1.0);
+        if (m != mix)
+        {
+            mix = m;
+            setVoicing (voxBox, voxCone, voxDist, voxAngle, voxSusp);
+        }
+    }
 
     // The cabinet workshop's five dimensions, all normalised 0..1 and each a
     // physical thing:
@@ -341,27 +358,35 @@ public:
         voxSusp = std::clamp (susp, 0.0, 1.0);
 
         // Sealed-box alignment: fc 140 down to 60 Hz as the box grows, Qtc
-        // falling with it -- the compliance ratio moves both together.
+        // falling with it -- the compliance ratio moves both together. The
+        // mix morph walks the corner down to the subsonic and the Q to
+        // critically damped, which is what "less cabinet" physically is:
+        // a bigger, better-behaved box.
         const double fc = 140.0 * std::pow (60.0 / 140.0, voxBox);
         const double qc = 1.40 - 0.80 * voxBox;
-        setHighpass (boxHp, fc, qc);
+        setHighpass (boxHp, 18.0 * std::pow (fc / 18.0, mix),
+                     0.71 + (qc - 0.71) * mix);
 
         // Cone breakup, and the edge resonance riding below it.
         const double fb = 2500.0 * std::pow (6000.0 / 2500.0, voxCone);
-        setLowpass (coneLp, fb, 0.80);
-        setPeakEq (edge, 0.55 * fb, 3.0, 1.2);
+        setLowpass (coneLp, 20000.0 * std::pow (fb / 20000.0, mix), 0.80);
+        setPeakEq (edge, 0.55 * fb, 3.0 * mix, 1.2);
 
         // Proximity: up to +5 dB below 150 Hz right on the grille.
-        setLowShelf (prox, 150.0, 5.0 * (1.0 - voxDist));
+        setLowShelf (prox, 150.0, 5.0 * (1.0 - voxDist) * mix);
         // And the air: a long mic placement shaves the extreme top.
-        air.setCutoff (16000.0 * std::pow (9000.0 / 16000.0, voxDist), fs);
+        const double fAir = 16000.0 * std::pow (9000.0 / 16000.0, voxDist);
+        air.setCutoff (20000.0 * std::pow (fAir / 20000.0, mix), fs);
 
         // Beaming: on-axis keeps 14 kHz, the surround keeps two.
-        beam.setCutoff (14000.0 * std::pow (2200.0 / 14000.0, voxAngle), fs);
+        const double fBeam = 14000.0 * std::pow (2200.0 / 14000.0, voxAngle);
+        beam.setCutoff (20000.0 * std::pow (fBeam / 20000.0, mix), fs);
 
-        // Excursion: the default half-travel setting reproduces the
-        // long-standing 1.4 drive into the limiter.
-        excursion = 1.4 / (0.35 + 1.30 * voxSusp);
+        // Excursion: at full mix the voiced travel (the default half-travel
+        // reproduces the long-standing 1.4 drive); backed off, the limiter
+        // opens toward linear.
+        const double kFull = 1.4 / (0.35 + 1.30 * voxSusp);
+        excursion = 0.25 * std::pow (kFull / 0.25, mix);
     }
 
     double process (double x)
@@ -374,8 +399,7 @@ public:
         y = beam.lowpass (y);
         y = air.lowpass (y);
         // Excursion limit: a cone cannot travel further than its suspension.
-        y = std::tanh (y * excursion) / excursion;
-        return x + mix * (y - x);
+        return std::tanh (y * excursion) / excursion;
     }
 
 private:
