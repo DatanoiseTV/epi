@@ -146,6 +146,9 @@ function AmpPanel() {
         <LiveBar field="vibL" full={1} label="Left" digits={2} />
         <LiveBar field="vibR" full={1} label="Right" digits={2} />
       </div>
+      {/* Fender's label, kept because it is on the instrument -- but the
+          note below tells the truth: it is a tremolo. Nothing bends pitch. */}
+      <div className="note">"vibrato" is fender's word · a photocell panner, no pitch bend · width 0 = true tremolo</div>
       {shop && <CabinetWorkshop onClose={() => setShop(false)} />}
     </div>
   );
