@@ -25,7 +25,12 @@ const VZ_W = 1128, VZ_H = 300, VZ_PAD = 16, VZ_KH = 54;
 const VZ_N = 88, VZ_LO = 21;
 const VZ_BLACK_PC = [1, 3, 6, 8, 10];
 const VZ_TILT = 0.55, VZ_GLOW = 0.6;
-const VZ_RANGE = 52;                       // dB range for colour and glow only
+const VZ_RANGE = 62;                       // dB range for colour and glow only
+// The physical magnifier is honest until the drawing collides: a bass
+// fortissimo would swing a rod across its neighbours, so the excursion
+// soft-limits at just under half the rod spacing. tanh keeps every ratio
+// intact below the cap and only the last pixels compress.
+const VZ_SWING_CAP = 5.4;
 
 /* The drawing is a scaled instrument, so the swing can be physical: the
    engine reports every tip's peak displacement in microns, each note's rod
@@ -216,7 +221,8 @@ function VizCard() {
         /* Physical swing: microns to millimetres, millimetres to pixels
            through this rod's own drawn-to-real scale, times the uniform
            magnifier. */
-        const A = (env[i] * 1e-3) * (Lm / vzLenMm(i, mode)) * VZ_MAG;
+        const rawA = (env[i] * 1e-3) * (Lm / vzLenMm(i, mode)) * VZ_MAG;
+        const A = VZ_SWING_CAP * Math.tanh(rawA / VZ_SWING_CAP);
 
         /* Physical frequency: this note's fundamental, with the master
            tune and (for the strings) the factory stretch. Sampled once
@@ -245,19 +251,24 @@ function VizCard() {
         ctx.fill();
 
         /* vibration envelope band: what the eye actually sees of a fast tine */
-        if (A > 0.15) {
+        // A sympathetically shaken rod moves microns -- physically invisible.
+        // The BAND is the one deliberately non-physical stroke: it floors at
+        // a sliver whenever the colour mapping says the rod is alive, so the
+        // pedal wash reads on screen the way it reads in the room.
+        const bandA = Math.max(A, sym || down ? a * 1.6 : 0);
+        if (bandA > 0.15) {
           ctx.beginPath();
           for (let s = 0; s <= segs; s++) {
-            const u = s / segs, ee = A * m1(u) + A2 * Math.abs(m2(u));
+            const u = s / segs, ee = bandA * m1(u) + A2 * Math.abs(m2(u));
             const px = x + (tipX - x) * u + ee, py = baseY + (tipY - baseY) * u;
             s === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
           }
           for (let s = segs; s >= 0; s--) {
-            const u = s / segs, ee = A * m1(u) + A2 * Math.abs(m2(u));
+            const u = s / segs, ee = bandA * m1(u) + A2 * Math.abs(m2(u));
             ctx.lineTo(x + (tipX - x) * u - ee, baseY + (tipY - baseY) * u);
           }
           ctx.closePath();
-          ctx.fillStyle = 'rgba(' + (sym ? '150,143,125' : '202,164,94') + ',' + Math.min(0.3, A * 0.045).toFixed(3) + ')';
+          ctx.fillStyle = 'rgba(' + (sym ? '150,143,125' : '202,164,94') + ',' + Math.min(0.3, 0.06 + bandA * 0.045).toFixed(3) + ')';
           ctx.fill();
         }
 
