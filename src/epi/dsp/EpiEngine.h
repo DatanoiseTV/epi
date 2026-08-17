@@ -237,7 +237,7 @@ public:
 
     // For tests: which tine holds what, so a blow-up can be located rather
     // than guessed at.
-    const RhodesVoice& tine (int i) const { return tines[i]; }
+    const RhodesVoice& tine (int i) const { return tines[static_cast<std::size_t> (i)]; }
     double harpEnergy() const { return harp.energy(); }
     int    recoveryCount() const { return recoveries.load (std::memory_order_relaxed); }
 
@@ -267,7 +267,11 @@ private:
     double fs = 48000.0;
 
     MagneticPickup field;
-    std::array<RhodesVoice, kNumTines> tines;
+    // Heap, not std::array: eighty-eight voices weigh megabytes, and tests
+    // build engines as locals. macOS grants eight megabytes of stack and
+    // forgave it; Windows grants one and delivered an instant segfault --
+    // the CP-70 vector learned this first, the Rhodes bank follows.
+    std::vector<RhodesVoice> tines;
     // The CP-70's strings, permanently present exactly as the tines are. Two
     // arrays, one active: the process loop dispatches once per block on the
     // instrument, and each path keeps its own shape -- the Rhodes needs the

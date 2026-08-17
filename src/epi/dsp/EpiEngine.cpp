@@ -47,6 +47,8 @@ void EpiEngine::prepare (double sampleRate, int)
     // Cut every tine for its own note, once. Nothing is reconfigured per
     // strike after this unless a parameter that changes the geometry moves.
     const auto cfg = RhodesVoice::Config{};
+    if (tines.size() != static_cast<std::size_t> (kNumTines))
+        tines.resize (static_cast<std::size_t> (kNumTines));
     for (int i = 0; i < kNumTines; ++i)
     {
         tines[i].prepare (sampleRate, &field);
