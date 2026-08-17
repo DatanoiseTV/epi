@@ -208,17 +208,28 @@ void EpiAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
     bool modded = false;
     for (const auto& m : tineMods)
         if (m[0] != 1.0f || m[1] != 1.0f) { modded = true; break; }
+    for (const auto& m : pickupMods)
+        if (m[0] != 0.0f || m[1] != 0.0f || m[2] != 1.0f) { modded = true; break; }
     if (modded)
     {
-        juce::StringArray ls, ds;
+        juce::StringArray ls, ds, hs, gs, ws;
         for (const auto& m : tineMods)
         {
             ls.add (juce::String (m[0], 6));
             ds.add (juce::String (m[1], 6));
         }
+        for (const auto& m : pickupMods)
+        {
+            hs.add (juce::String (m[0], 6));
+            gs.add (juce::String (m[1], 6));
+            ws.add (juce::String (m[2], 6));
+        }
         auto mods = juce::ValueTree ("TineMods");
         mods.setProperty ("len", ls.joinIntoString (","), nullptr);
         mods.setProperty ("dia", ds.joinIntoString (","), nullptr);
+        mods.setProperty ("pkh", hs.joinIntoString (","), nullptr);
+        mods.setProperty ("pkg", gs.joinIntoString (","), nullptr);
+        mods.setProperty ("pkw", ws.joinIntoString (","), nullptr);
         state.appendChild (mods, nullptr);
     }
 
@@ -239,16 +250,26 @@ void EpiAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
             // Restore the workshop -- or return the harp to stock when the
             // incoming state has no modifications.
             resetTineMods();
+            resetPickupMods();
             const auto mods = state.getChildWithName ("TineMods");
             if (mods.isValid())
             {
-                juce::StringArray ls, ds;
+                juce::StringArray ls, ds, hs, gs, ws;
                 ls.addTokens (mods["len"].toString(), ",", "");
                 ds.addTokens (mods["dia"].toString(), ",", "");
+                hs.addTokens (mods["pkh"].toString(), ",", "");
+                gs.addTokens (mods["pkg"].toString(), ",", "");
+                ws.addTokens (mods["pkw"].toString(), ",", "");
                 for (int i = 0; i < epi::EpiEngine::kNumTines; ++i)
+                {
                     setTineMod (i,
                                 i < ls.size() ? ls[i].getFloatValue() : 1.0f,
                                 i < ds.size() ? ds[i].getFloatValue() : 1.0f);
+                    setPickupMod (i,
+                                  i < hs.size() ? hs[i].getFloatValue() : 0.0f,
+                                  i < gs.size() ? gs[i].getFloatValue() : 0.0f,
+                                  i < ws.size() ? ws[i].getFloatValue() : 1.0f);
+                }
             }
         }
 }

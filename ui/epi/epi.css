@@ -382,3 +382,13 @@ html, body {
   letter-spacing: .16em; padding: 3px 10px; cursor: pointer;
 }
 .wsopen:hover { background: #17150f; }
+
+.wstools { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.wstoollabel { font-size: 8px; letter-spacing: .2em; color: var(--ghost); margin-right: 2px; }
+.wsrootlbl { margin-left: 8px; }
+.wschip {
+  background: var(--well2); border: 1px solid var(--line); border-radius: 5px;
+  color: var(--dim); font-family: inherit; font-size: 8px; letter-spacing: .12em;
+  padding: 4px 8px; cursor: pointer;
+}
+.wschip:hover { color: var(--gold); border-color: #3a3120; }

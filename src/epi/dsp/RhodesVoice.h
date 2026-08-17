@@ -265,6 +265,16 @@ public:
         geoDia = std::clamp (diaScale, 0.4, 2.5);
     }
 
+    // The pickup workshop: this pickup's own voicing-screw errors, riding as
+    // offsets on the panel's height and gap in the panel's normalised units.
+    // The winding scale is applied by the engine at the flux sum -- turns on
+    // a coil scale what it contributes, not what the magnet sees.
+    void setPickupTrim (double heightOffset, double gapOffset)
+    {
+        pkHOff = std::clamp (heightOffset, -0.75, 0.75);
+        pkGOff = std::clamp (gapOffset, -0.5, 0.5);
+    }
+
     // Strike it. The state is NEVER cleared: a hammer meeting a tine that is
     // already moving is what happens when a player repeats a note, and it is
     // why a repeated note reinforces or fights the one before it depending on
@@ -1124,7 +1134,7 @@ private:
         // change put an 18 dB spike on top of a sounding note -- which is the
         // click heard when changing presets.
         const double halfWidth = field != nullptr ? field->halfWidth() : 3.0e-3;
-        staticOffsetT = std::clamp (cfg.pickupOffset, -1.0, 1.0) * halfWidth;
+        staticOffsetT = std::clamp (cfg.pickupOffset + pkHOff, -1.0, 1.0) * halfWidth;
         // The gap. Its scale was questioned and then measured, because the
         // reasoning against it was good: what decides whether the instrument
         // growls is the gap against the pole's own features -- a flat 0.28 mm
@@ -1146,7 +1156,7 @@ private:
         // as it was. What the sweep is really saying is that the bass tine
         // swings too far for the pole it is crossing, which is upstream of the
         // pickup entirely.
-        staticGapT   = 0.6e-3 + 4.4e-3 * std::clamp (cfg.pickupGapNorm, 0.0, 1.0);
+        staticGapT   = 0.6e-3 + 4.4e-3 * std::clamp (cfg.pickupGapNorm + pkGOff, 0.0, 1.0);
         // The first time round there is nothing to glide from, so it snaps.
         if (! configured) { staticOffset = staticOffsetT; staticGap = staticGapT; }
         refreshPickup();
@@ -1407,6 +1417,7 @@ private:
     double damperFactor = 1.0;
     double tineLength = 0.1;
     double geoLen = 1.0, geoDia = 1.0;      // the workshop's trims
+    double pkHOff = 0.0, pkGOff = 0.0;      // the pickup workshop's offsets
     double staticOffset = 0.0, staticGap = 1.5e-3, restFlux = 0.0;
     double staticOffsetT = 0.0, staticGapT = 1.5e-3;
 

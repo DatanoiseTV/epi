@@ -138,6 +138,28 @@ WebEditor::WebEditor (::EpiAudioProcessor& proc)
             })
         .withEventListener (juce::Identifier { "tine_mod_reset" },
             [&proc = epiProcessor] (juce::var) { proc.resetTineMods(); })
+        .withNativeFunction (juce::Identifier { "getPickupMods" },
+            [&proc = epiProcessor] (const juce::Array<juce::var>&, auto complete)
+            {
+                juce::Array<juce::var> flat;
+                for (const auto& m : proc.getPickupMods())
+                {
+                    flat.add (juce::var (static_cast<double> (m[0])));
+                    flat.add (juce::var (static_cast<double> (m[1])));
+                    flat.add (juce::var (static_cast<double> (m[2])));
+                }
+                complete (juce::var (flat));
+            })
+        .withEventListener (juce::Identifier { "pickup_mod" },
+            [&proc = epiProcessor] (juce::var payload)
+            {
+                proc.setPickupMod (static_cast<int> (payload.getProperty ("index", -1)),
+                                   static_cast<float> (static_cast<double> (payload.getProperty ("h", 0.0))),
+                                   static_cast<float> (static_cast<double> (payload.getProperty ("g", 0.0))),
+                                   static_cast<float> (static_cast<double> (payload.getProperty ("s", 1.0))));
+            })
+        .withEventListener (juce::Identifier { "pickup_mod_reset" },
+            [&proc = epiProcessor] (juce::var) { proc.resetPickupMods(); })
         .withEventListener (juce::Identifier { "ui_note" },
             [&proc = epiProcessor] (juce::var payload)
             {

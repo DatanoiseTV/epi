@@ -220,6 +220,8 @@
           ? ['Suitcase', 'Bell', 'Mellow', 'Dirty Bass', 'Ballad', 'Funk', 'Glass Tine', 'Detuned Bar']
           : n === 'getTineMods'
           ? Array.from({ length: 176 }, () => 1)
+          : n === 'getPickupMods'
+          ? Array.from({ length: 264 }, (_, k) => (k % 3 === 2 ? 1 : 0))
           : []),
     };
   }

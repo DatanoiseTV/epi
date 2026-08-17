@@ -240,6 +240,8 @@ void EpiEngine::rebuildTine (int i, const RhodesVoice::Config& cfg)
     auto& m = tineMod[static_cast<std::size_t> (i)];
     tines[static_cast<std::size_t> (i)].setGeometryTrim (m.len.load (std::memory_order_relaxed),
                                                          m.dia.load (std::memory_order_relaxed));
+    tines[static_cast<std::size_t> (i)].setPickupTrim (m.pkH.load (std::memory_order_relaxed),
+                                                       m.pkG.load (std::memory_order_relaxed));
     m.dirty.store (false, std::memory_order_release);
     tines[static_cast<std::size_t> (i)].setNote (kLoNote + i, cfg);
 }
@@ -430,7 +432,11 @@ void EpiEngine::process (float* outL, float* outR, int numSamples,
 
             t.process (cfg, voiceFlux);
             const double rest = t.restingFlux();
-            for (int k = 0; k < Decimator::kOver; ++k) os[k] += voiceFlux[k] - rest;
+            // The winding scale: turns on this pickup's coil scale what it
+            // contributes to the summed flux, applied about the rest point so
+            // a mis-wound pickup never shifts anyone's operating point.
+            const double sens = tineMod[static_cast<std::size_t> (i)].pkS.load (std::memory_order_relaxed);
+            for (int k = 0; k < Decimator::kOver; ++k) os[k] += (voiceFlux[k] - rest) * sens;
             ++active;
 
             const float amp = static_cast<float> (std::abs (t.tipDisplacement()));

@@ -1,24 +1,31 @@
 /* ============================================================
-   Epi · the tine workshop
+   Epi · the workshops
    ============================================================
-   Eighty-eight tines, two numbers each: how long the steel is
-   cut, and what gauge of wire it is. Length retunes as 1/L^2 --
-   the beam equation's own law, so the lane is drawn in the cents
-   that result. Gauge holds the nominal pitch (a regauged tine is
-   re-cut for its note) and instead moves everything downstream
-   of the geometry: modal mass, the shear that pulls the high
-   overtones flat, how hard the hammer can drive the steel.
-   Length is the microtonality lane; gauge is the weird-harmonies
-   lane.
+   Two benches behind the panel. The TINE workshop re-cuts the
+   steel: length retunes as 1/L^2, gauge holds the nominal pitch
+   (a regauged tine is re-cut for its note) and instead moves the
+   modal mass and the shear that pulls the overtones flat. The
+   PICKUP workshop mis-adjusts the transducers: each pickup's
+   height and gap ride as offsets on the panel knobs, and the
+   winding scales that pickup's contribution the way a coil with
+   more or fewer turns does.
 
-   Paint across a lane to draw a curve, double-click a bar to
-   reset it, and the engine re-cuts each edited tine through the
-   same bounded priority rebuild the knobs use -- editing while a
-   chord rings is fine.
+   The length lane zooms -- at +/-50 cents the full lane height
+   is a third of a semitone, which is what painting a temperament
+   actually needs -- and the templates row paints proven tunings,
+   rotatable to any root. The pickup bench's templates paint
+   manufacturing tolerance: deterministic per-pickup scatter at
+   three severities, from a well-kept instrument to one that has
+   been on the road for a decade. Everything a template paints
+   lands in the lanes, visible and editable, never hidden state.
+
+   Paint across a lane to draw, shift narrows the stroke for fine
+   work, double-click a bar resets it. The engine applies edits
+   through the same bounded priority rebuild the knobs use --
+   editing while a chord rings is fine.
    ============================================================ */
 
 const WS_N = 88, WS_LO = 21;
-const WS_CENTS_MAX = 1200;                  // length lane: +/- one octave
 const WS_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
 function wsNoteName(i) {
@@ -30,10 +37,58 @@ function wsNoteName(i) {
 const wsScaleToCents = (s) => -2400 * Math.log2(s);
 const wsCentsToScale = (c) => Math.pow(2, -c / 2400);
 
-/* One paintable lane of 88 bars. `value(i)` in [-1, 1] bipolar around 0. */
-function WsLane({ title, meta, get, set, resetOne, format }) {
+/* Deterministic per-note scatter in [-1, 1]; `ch` decorrelates channels. */
+function wsHash(i, ch) {
+  const h = (((i + 131 * ch) * 2654435761) >>> 0) & 65535;
+  return h / 32767.5 - 1;
+}
+
+/* ---- proven tunings, cents offsets from equal temperament at root C ---- */
+const WS_TUNINGS = {
+  JUST:         [0, 11.7, 3.9, 15.6, -13.7, -2.0, -9.8, 2.0, 13.7, -15.6, -3.9, -11.7],
+  PYTHAGOREAN:  [0, 13.7, 3.9, -5.9, 7.8, -2.0, 11.7, 2.0, 15.6, 5.9, -3.9, 9.8],
+  MEANTONE:     [0, -24.0, -6.8, 10.3, -13.7, 3.4, -20.5, -3.4, -27.4, -10.3, 6.8, -17.1],
+  WERCKMEISTER: [0, -9.8, -7.8, -5.9, -9.8, -2.0, -11.7, -3.9, -7.8, -11.7, -3.9, -7.8],
+  QUARTERBLACK: [0, 50, 0, 50, 0, 0, 50, 0, 50, 0, 50, 0],
+  SLENDRO:      [0, -100, 40, -60, 80, -20, -120, 20, -80, 60, -40, 100],
+};
+
+/* Pelog: keys snapped to the nearest degree of a measured seven-tone
+   octave; neighbouring keys share a degree, as a keyboard mapped to a
+   gamelan does. */
+const WS_PELOG = [0, 137, 446, 575, 687, 820, 1098, 1200];
+function wsPelogCents(pc) {
+  const et = pc * 100;
+  let best = 0, bd = 1e9;
+  for (const d of WS_PELOG) {
+    if (Math.abs(d - et) < bd) { bd = Math.abs(d - et); best = d - et; }
+  }
+  return best;
+}
+
+/* Per-NOTE length templates. */
+function wsStretchCents(i) {
+  // Railsback-like octave stretch: flat at middle C, bass eased down and
+  // treble up, as tuners actually lay a piano.
+  const d = (WS_LO + i - 60) / 48;
+  return 32 * d * d * d;
+}
+const wsScatterCents = (i) => wsHash(i, 0) * 8;
+
+/* Gauge templates. */
+function wsGaugeGong(i) {
+  const reg = i / 87;
+  return 1 + 0.45 * Math.exp(-Math.pow((reg - 0.45) / 0.3, 2));
+}
+function wsGaugeThin(i) {
+  const reg = i / 87;
+  return 1 - 0.25 * Math.max(0, (reg - 0.3) / 0.7);
+}
+
+/* ---- one paintable lane of 88 bars; get/set speak in lane units [-1,1] ---- */
+function WsLane({ title, meta, height, get, set, resetOne, format }) {
   const cvsRef = useRef(null);
-  const W = 968, H = 96, PAD = 6;
+  const W = 968, H = height || 96, PAD = 6;
   const bw = (W - 2 * PAD) / WS_N;
 
   const draw = () => {
@@ -41,7 +96,7 @@ function WsLane({ title, meta, get, set, resetOne, format }) {
     if (!cv) return;
     const ctx = cv.getContext('2d');
     const dpr = window.devicePixelRatio || 1;
-    if (cv.width !== W * dpr) { cv.width = W * dpr; cv.height = H * dpr; }
+    if (cv.width !== W * dpr || cv.height !== H * dpr) { cv.width = W * dpr; cv.height = H * dpr; }
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, W, H);
     const mid = H / 2;
@@ -54,9 +109,11 @@ function WsLane({ title, meta, get, set, resetOne, format }) {
       const black = [1, 3, 6, 8, 10].includes(n % 12);
       ctx.fillStyle = black ? '#121109' : '#1a1810';
       ctx.fillRect(x + 0.5, 4, bw - 1, H - 8);
-      if (Math.abs(v) > 0.004) {
+      if (Math.abs(v) > 0.002) {
+        // A brighter bar means the value sits beyond this zoom.
+        const clipped = Math.abs(v) > 1;
         const h = Math.min(1, Math.abs(v)) * (mid - 6);
-        ctx.fillStyle = '#caa45e';
+        ctx.fillStyle = clipped ? '#e6cf8e' : '#caa45e';
         ctx.fillRect(x + 1, v > 0 ? mid - h : mid, bw - 2, h);
       }
       if (n % 12 === 0) {
@@ -83,13 +140,13 @@ function WsLane({ title, meta, get, set, resetOne, format }) {
     e.preventDefault();
     painting.current = true;
     const { i, v } = barAt(e);
-    set(i, v);
+    set(i, v, e.shiftKey);
     try { e.target.setPointerCapture(e.pointerId); } catch (_) {}
   };
   const onMove = (e) => {
     if (!painting.current) return;
     const { i, v } = barAt(e);
-    set(i, v);
+    set(i, v, e.shiftKey);
   };
   const onUp = () => { painting.current = false; };
   const onDbl = (e) => { const { i } = barAt(e); resetOne(i); };
@@ -97,7 +154,7 @@ function WsLane({ title, meta, get, set, resetOne, format }) {
   const hover = useRef(null);
   const onHover = (e) => {
     const { i } = barAt(e);
-    if (hover.current) hover.current.textContent = wsNoteName(i) + ' · ' + format(get(i));
+    if (hover.current) hover.current.textContent = wsNoteName(i) + ' · ' + format(i);
   };
 
   return (
@@ -114,9 +171,31 @@ function WsLane({ title, meta, get, set, resetOne, format }) {
   );
 }
 
+/* ---- shared modal scaffolding ---- */
+function WsModal({ title, onReset, onClose, children }) {
+  return (
+    <div className="modal-back" onClick={onClose}>
+      <div className="modal wsmodal" onClick={(e) => e.stopPropagation()}>
+        <div className="mhead">
+          <h3>{title}</h3>
+          <div className="wsactions">
+            <button className="wsreset" onClick={onReset}>RESET ALL</button>
+            <button onClick={onClose}>✕</button>
+          </div>
+        </div>
+        <div className="wsbody">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
+   The tine workshop
+   ============================================================ */
 function TineWorkshop({ onClose }) {
-  /* Local mirrors of the 88 x 2 trims, loaded from the plugin once. */
   const [mods, setMods] = useState(null);
+  const [range, setRange] = useState(100);      // length lane zoom, in cents
+  const [root, setRoot] = useState(0);          // template root, 0 = C
 
   useEffect(() => {
     let alive = true;
@@ -139,54 +218,207 @@ function TineWorkshop({ onClose }) {
 
   const push = (i, len, dia) => {
     JuceBridge.emitNative('tine_mod', { index: i, len, dia });
+    setMods((m) => { const c = m.slice(); c[i] = { len, dia }; return c; });
+  };
+  const pushAll = (fnLenCents, fnDia) => {
     setMods((m) => {
-      const c = m.slice();
-      c[i] = { len, dia };
+      const c = m.map((e, i) => ({
+        len: fnLenCents ? wsCentsToScale(fnLenCents(i)) : e.len,
+        dia: fnDia ? fnDia(i) : e.dia,
+      }));
+      c.forEach((e, i) => JuceBridge.emitNative('tine_mod', { index: i, len: e.len, dia: e.dia }));
       return c;
     });
   };
 
-  const fmtCents = (v) => {
-    const c = Math.round(v * WS_CENTS_MAX);
-    return (c > 0 ? '+' : '') + c + ' cents';
+  const fmtCents = (i) => {
+    const c = wsScaleToCents(mods[i].len);
+    return (c >= 0 ? '+' : '') + (Math.abs(c) < 20 ? c.toFixed(1) : Math.round(c)) + ' cents';
   };
-  const fmtDia = (v) => {
-    const g = Math.pow(2, v);
-    return Math.round(g * 100) + '% gauge';
+  const fmtDia = (i) => Math.round(mods[i].dia * 100) + '% gauge';
+
+  /* Shift narrows the stroke to a fifth -- the knobs' fine gesture. */
+  const setLen = (i, v, fine) => {
+    const target = v * range;
+    const cur = wsScaleToCents(mods[i].len);
+    push(i, wsCentsToScale(fine ? cur + (target - cur) * 0.2 : target), mods[i].dia);
+  };
+  const setDia = (i, v, fine) => {
+    const target = Math.pow(2, v);
+    push(i, mods[i].len, fine ? mods[i].dia + (target - mods[i].dia) * 0.2 : target);
   };
 
+  const pc = (i) => ((((WS_LO + i) % 12) - root) + 12) % 12;
+  const lenTemplates = [
+    ['EQUAL', () => pushAll(() => 0, null)],
+    ['JUST', () => pushAll((i) => WS_TUNINGS.JUST[pc(i)], null)],
+    ['PYTHAGOREAN', () => pushAll((i) => WS_TUNINGS.PYTHAGOREAN[pc(i)], null)],
+    ['MEANTONE ¼', () => pushAll((i) => WS_TUNINGS.MEANTONE[pc(i)], null)],
+    ['WERCKMEISTER', () => pushAll((i) => WS_TUNINGS.WERCKMEISTER[pc(i)], null)],
+    ['¼-TONE BLACKS', () => pushAll((i) => WS_TUNINGS.QUARTERBLACK[pc(i)], null)],
+    ['SLENDRO', () => pushAll((i) => WS_TUNINGS.SLENDRO[pc(i)], null)],
+    ['PELOG', () => pushAll((i) => wsPelogCents(pc(i)), null)],
+    ['STRETCH', () => pushAll(wsStretchCents, null)],
+    ['SCATTER', () => pushAll(wsScatterCents, null)],
+  ];
+  const diaTemplates = [
+    ['STOCK WIRE', () => pushAll(null, () => 1)],
+    ['GONG', () => pushAll(null, wsGaugeGong)],
+    ['THIN TOP', () => pushAll(null, wsGaugeThin)],
+  ];
+
   return (
-    <div className="modal-back" onClick={onClose}>
-      <div className="modal wsmodal" onClick={(e) => e.stopPropagation()}>
-        <div className="mhead">
-          <h3>Tine Workshop</h3>
-          <div className="wsactions">
-            <button className="wsreset"
-                    onClick={() => { JuceBridge.emitNative('tine_mod_reset'); setMods(Array.from({ length: WS_N }, () => ({ len: 1, dia: 1 }))); }}>
-              RESET ALL
-            </button>
-            <button onClick={onClose}>✕</button>
-          </div>
-        </div>
-        <div className="wsbody">
-          <WsLane title="LENGTH" meta="re-cut the steel · pitch follows 1/L² · ± one octave"
-                  get={(i) => wsScaleToCents(mods[i].len) / WS_CENTS_MAX}
-                  set={(i, v) => push(i, wsCentsToScale(v * WS_CENTS_MAX), mods[i].dia)}
-                  resetOne={(i) => push(i, 1, mods[i].dia)}
-                  format={fmtCents} />
-          <WsLane title="GAUGE" meta="swap the wire · pitch stands, the overtones move"
-                  get={(i) => Math.log2(mods[i].dia)}
-                  set={(i, v) => push(i, mods[i].len, Math.pow(2, Math.max(-1, Math.min(1, v))))}
-                  resetOne={(i) => push(i, mods[i].len, 1)}
-                  format={fmtDia} />
-          <div className="wsnote">
-            PAINT ACROSS A LANE · DOUBLE-CLICK A BAR RESETS IT · SAVED WITH THE PROJECT ·
-            WORKSHOP PRESETS PAINT THESE LANES, OTHER PRESETS LEAVE THEM ALONE
-          </div>
-        </div>
+    <WsModal title="Tine Workshop" onClose={onClose}
+             onReset={() => { JuceBridge.emitNative('tine_mod_reset'); setMods(Array.from({ length: WS_N }, () => ({ len: 1, dia: 1 }))); }}>
+      <div className="wstools">
+        <span className="wstoollabel">TEMPLATES</span>
+        {lenTemplates.map(([n, fn]) => (
+          <button key={n} className="wschip" onClick={fn}>{n}</button>
+        ))}
       </div>
-    </div>
+      <div className="wstools">
+        <span className="wstoollabel">ROOT</span>
+        <div className="seg">
+          {WS_NAMES.map((n, i) => (
+            <button key={n} className={i === root ? 'on' : ''} onClick={() => setRoot(i)}>{n}</button>
+          ))}
+        </div>
+        <span className="wstoollabel">RANGE</span>
+        <div className="seg">
+          {[50, 100, 400, 1200].map((r) => (
+            <button key={r} className={r === range ? 'on' : ''} onClick={() => setRange(r)}>
+              ±{r >= 1200 ? '8ve' : r + 'c'}
+            </button>
+          ))}
+        </div>
+        <span className="wstoollabel">GAUGE</span>
+        {diaTemplates.map(([n, fn]) => (
+          <button key={n} className="wschip" onClick={fn}>{n}</button>
+        ))}
+      </div>
+      <WsLane title="LENGTH" height={172}
+              meta={'re-cut the steel · pitch follows 1/L² · lane spans ±' + (range >= 1200 ? 'one octave' : range + ' cents') + ' · shift paints fine'}
+              get={(i) => wsScaleToCents(mods[i].len) / range}
+              set={setLen}
+              resetOne={(i) => push(i, 1, mods[i].dia)}
+              format={fmtCents} />
+      <WsLane title="GAUGE" height={88}
+              meta="swap the wire · pitch stands, the overtones move"
+              get={(i) => Math.log2(mods[i].dia)}
+              set={setDia}
+              resetOne={(i) => push(i, mods[i].len, 1)}
+              format={fmtDia} />
+      <div className="wsnote">
+        PAINT ACROSS A LANE · SHIFT FOR FINE · DOUBLE-CLICK RESETS A BAR · TEMPLATES ROTATE TO
+        THE CHOSEN ROOT · A BRIGHT BAR TOP SITS BEYOND THIS ZOOM · SAVED WITH THE PROJECT
+      </div>
+    </WsModal>
   );
 }
 
-Object.assign(window, { TineWorkshop });
+/* ============================================================
+   The pickup workshop
+   ============================================================
+   Height and gap ride as per-pickup offsets on the panel knobs;
+   winding scales that pickup's flux contribution as turns do.
+   Lane units: height +/-1 mm, gap +/-1 mm, winding 2^(+/-0.5)
+   which is about 70 to 140 percent.
+   ============================================================ */
+const WSP_HMM = 1.0;                 // lane full-scale, mm of height offset
+const WSP_GMM = 1.0;                 // mm of gap offset
+const WSP_HNORM = WSP_HMM / 2.0;     // pickupPos: 1 unit = 2 mm
+const WSP_GNORM = WSP_GMM / 4.4;     // pickupDist: 1 unit = 4.4 mm
+
+/* Manufacturing tolerance: per-pickup scatter, three severities. The
+   numbers are the kind of spread a stack of real pickups measures:
+   winding count a few percent, the voicing screws a fraction of a
+   millimetre -- and "rough" is an instrument nobody has voiced in years. */
+const WSP_TOL = [
+  ['WELL KEPT', 0.05, 0.05, 0.03],
+  ['WORN',      0.15, 0.15, 0.07],
+  ['NEGLECTED', 0.40, 0.35, 0.15],
+];
+
+function PickupWorkshop({ onClose }) {
+  const [mods, setMods] = useState(null);
+
+  useEffect(() => {
+    let alive = true;
+    try {
+      Juce.getNativeFunction('getPickupMods')().then((a) => {
+        if (!alive) return;
+        const flat = a ? Array.from(a) : [];
+        const m = [];
+        for (let i = 0; i < WS_N; i++)
+          m.push({ h: Number(flat[3 * i]) || 0, g: Number(flat[3 * i + 1]) || 0,
+                   s: Number(flat[3 * i + 2]) || 1 });
+        setMods(m);
+      });
+    } catch (_) {
+      setMods(Array.from({ length: WS_N }, () => ({ h: 0, g: 0, s: 1 })));
+    }
+    return () => { alive = false; };
+  }, []);
+
+  if (!mods) return null;
+
+  const push = (i, h, g, s) => {
+    JuceBridge.emitNative('pickup_mod', { index: i, h, g, s });
+    setMods((m) => { const c = m.slice(); c[i] = { h, g, s }; return c; });
+  };
+  const pushAll = (fn) => {
+    setMods((m) => {
+      const c = m.map((e, i) => fn(i, e));
+      c.forEach((e, i) => JuceBridge.emitNative('pickup_mod', { index: i, h: e.h, g: e.g, s: e.s }));
+      return c;
+    });
+  };
+
+  const applyTol = ([, hMm, gMm, sPct]) => pushAll((i) => ({
+    h: wsHash(i, 1) * hMm / 2.0,
+    g: wsHash(i, 2) * gMm / 4.4,
+    s: Math.pow(2, wsHash(i, 3) * Math.log2(1 + sPct)),
+  }));
+
+  const fine = (cur, target, isFine) => (isFine ? cur + (target - cur) * 0.2 : target);
+
+  return (
+    <WsModal title="Pickup Workshop" onClose={onClose}
+             onReset={() => { JuceBridge.emitNative('pickup_mod_reset'); setMods(Array.from({ length: WS_N }, () => ({ h: 0, g: 0, s: 1 }))); }}>
+      <div className="wstools">
+        <span className="wstoollabel">TOLERANCE</span>
+        {WSP_TOL.map((t) => (
+          <button key={t[0]} className="wschip" onClick={() => applyTol(t)}>{t[0]}</button>
+        ))}
+        <button className="wschip" onClick={() => pushAll(() => ({ h: 0, g: 0, s: 1 }))}>FACTORY</button>
+        <span className="wsmeta" style={{ flex: 1, textAlign: 'right' }}>
+          deterministic per pickup · the same instrument every session
+        </span>
+      </div>
+      <WsLane title="HEIGHT" height={104}
+              meta="per-pickup voicing screw · offset on the panel knob · ±1 mm"
+              get={(i) => mods[i].h / WSP_HNORM}
+              set={(i, v, f) => push(i, fine(mods[i].h, v * WSP_HNORM, f), mods[i].g, mods[i].s)}
+              resetOne={(i) => push(i, 0, mods[i].g, mods[i].s)}
+              format={(i) => (mods[i].h >= 0 ? '+' : '') + (mods[i].h * 2).toFixed(2) + ' mm'} />
+      <WsLane title="GAP" height={104}
+              meta="per-pickup distance · offset on the panel knob · ±1 mm"
+              get={(i) => mods[i].g / WSP_GNORM}
+              set={(i, v, f) => push(i, mods[i].h, fine(mods[i].g, v * WSP_GNORM, f), mods[i].s)}
+              resetOne={(i) => push(i, mods[i].h, 0, mods[i].s)}
+              format={(i) => (mods[i].g >= 0 ? '+' : '') + (mods[i].g * 4.4).toFixed(2) + ' mm'} />
+      <WsLane title="WINDING" height={104}
+              meta="turns on the coil · scales this pickup's contribution · 70–140%"
+              get={(i) => Math.log2(mods[i].s) / 0.5}
+              set={(i, v, f) => push(i, mods[i].h, mods[i].g, fine(mods[i].s, Math.pow(2, v * 0.5), f))}
+              resetOne={(i) => push(i, mods[i].h, mods[i].g, 1)}
+              format={(i) => Math.round(mods[i].s * 100) + '%'} />
+      <div className="wsnote">
+        TOLERANCE PAINTS ALL THREE LANES WITH PER-PICKUP MANUFACTURING SCATTER · EVERYTHING
+        STAYS VISIBLE AND EDITABLE · SAVED WITH THE PROJECT
+      </div>
+    </WsModal>
+  );
+}
+
+Object.assign(window, { TineWorkshop, PickupWorkshop });

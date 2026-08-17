@@ -80,6 +80,24 @@ public:
         return tineMods;
     }
 
+    // The pickup workshop's per-pickup errors: height offset, gap offset,
+    // winding scale.
+    void setPickupMod (int index, float heightOff, float gapOff, float sens)
+    {
+        if (index < 0 || index >= epi::EpiEngine::kNumTines) return;
+        pickupMods[static_cast<std::size_t> (index)] = { heightOff, gapOff, sens };
+        engine.setPickupMod (index, heightOff, gapOff, sens);
+    }
+    void resetPickupMods()
+    {
+        for (int i = 0; i < epi::EpiEngine::kNumTines; ++i)
+            setPickupMod (i, 0.0f, 0.0f, 1.0f);
+    }
+    const std::array<std::array<float, 3>, epi::EpiEngine::kNumTines>& getPickupMods() const
+    {
+        return pickupMods;
+    }
+
     void pushUiNote (int note, float velocity, bool on)
     {
         const auto w = uiNoteWrite.load (std::memory_order_relaxed);
@@ -108,6 +126,11 @@ private:
     std::array<std::array<float, 2>, epi::EpiEngine::kNumTines> tineMods = [] {
         std::array<std::array<float, 2>, epi::EpiEngine::kNumTines> a {};
         for (auto& m : a) m = { 1.0f, 1.0f };
+        return a;
+    }();
+    std::array<std::array<float, 3>, epi::EpiEngine::kNumTines> pickupMods = [] {
+        std::array<std::array<float, 3>, epi::EpiEngine::kNumTines> a {};
+        for (auto& m : a) m = { 0.0f, 0.0f, 1.0f };
         return a;
     }();
 

@@ -76,6 +76,7 @@ function TinePanel({ cp70 }) {
 /* ---- PICKUP: where the sound is actually made ---- */
 function PickupPanel({ cp70 }) {
   const [pos] = useJuceSlider('pickupPos');
+  const [shop, setShop] = useState(false);
   const mm = (JuceBridge.PARAMS.pickupPos.map.to(pos) * 2).toFixed(2) + ' mm';
   if (cp70) return (
     <div className="panel f-pickup">
@@ -94,7 +95,12 @@ function PickupPanel({ cp70 }) {
   );
   return (
     <div className="panel f-pickup">
-      <PHead title="Pickup" meta={mm} />
+      <div className="phead">
+        <h2>Pickup</h2>
+        <span className="hrule" />
+        <button className="wsopen" onClick={() => setShop(true)} title="Per-pickup voicing and tolerance">WORKSHOP</button>
+        <span className="hmeta">{mm}</span>
+      </div>
       {/* Height is the voicing screw. On the pole centreline the field is
           symmetric, the tine crosses its peak twice a cycle, and the note
           comes out an octave up with almost no fundamental. Off-centre the
@@ -107,6 +113,7 @@ function PickupPanel({ cp70 }) {
         <PKnob id="coilSat" label="CORE SAT" />
       </div>
       <div className="note">the voicing screw, in millimetres</div>
+      {shop && <PickupWorkshop onClose={() => setShop(false)} />}
     </div>
   );
 }

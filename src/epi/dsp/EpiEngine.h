@@ -162,6 +162,19 @@ public:
         tineMod[static_cast<std::size_t> (i)].dirty.store (true, std::memory_order_release);
     }
 
+    // The pickup workshop: height and gap offsets need a rebuild (they move
+    // the operating point the voice glides to); the winding scale is read
+    // live at the flux sum and needs none.
+    void setPickupMod (int i, float heightOff, float gapOff, float sens)
+    {
+        if (i < 0 || i >= kNumTines) return;
+        auto& m = tineMod[static_cast<std::size_t> (i)];
+        m.pkH.store (heightOff, std::memory_order_relaxed);
+        m.pkG.store (gapOff, std::memory_order_relaxed);
+        m.pkS.store (sens, std::memory_order_relaxed);
+        m.dirty.store (true, std::memory_order_release);
+    }
+
     int activeVoices() const { return numActive.load (std::memory_order_relaxed); }
 
     // Metering for the UI: destructive read, so the peak resets per tick.
@@ -269,6 +282,7 @@ private:
     // would only mistune one tine for one rebuild, but a formal race is a
     // formal race, and lock-free floats cost nothing here.
     struct TineMod { std::atomic<float> len { 1.0f }, dia { 1.0f };
+                     std::atomic<float> pkH { 0.0f }, pkG { 0.0f }, pkS { 1.0f };
                      std::atomic<bool> dirty { false } ; };
     std::array<TineMod, kNumTines> tineMod {};
     void rebuildTine (int i, const RhodesVoice::Config& cfg);
