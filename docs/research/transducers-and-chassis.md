@@ -504,3 +504,63 @@ modal data (§6.1); Suitcase speaker complement from a factory document
 (§6.2); any quantitative Pianet source (§5.4); Zollner ch. 5; Pfeifle &
 Muenster Springer 2017 chapter (closed access — likely holds the Wurlitzer
 pickup gap and reed FEM shapes).
+
+
+---
+
+## Addendum: primary measurements landed (2026-08-17)
+
+Four sources supplied by the project owner, fetched and mined. The top-ranked
+open question -- the Rhodes pickup's electrical values -- is now half closed.
+
+### Measured values
+
+| Quantity | Value | Source |
+| --- | --- | --- |
+| Whole-harp inductance, 1973 Stage 88 | **854 mH** | Morrin, measured on his own unit |
+| Whole-harp DC resistance, same unit | **2.1 kohm** | Morrin |
+| Single pickup DCR (approximate) | ~180 ohm | Sean, ep-forum, stated as approximation |
+| 73-key harp, groups-of-three | ~1425 ohm calculated | Sean, consistent with the above |
+| Output impedance after the 70s rewiring | ~2500 ohm | Service manual ch. 10 |
+| Early Stage tone network | 10k audio pot + 1 uF, 172 Hz LP | Morrin, calculated from his schematic trace |
+| Later Stage bass-boost network | 47 nF, 338 Hz HP; 5k parallel | Morrin |
+| Treble section coupling | last 13 pickups behind a 4.7 nF series cap | Morrin |
+| Humbucking | adjacent pickups wired in opposite polarity | Sean |
+| Groups-of-nine experiment | "significantly quieter than groups-of-three" | Sean, measured by rewiring |
+
+### What the 854 mH implies, derived
+
+With realistic load capacitance the resonance lands at 9.9 kHz (300 pF short
+cable), 6.5 kHz (700 pF typical), 4.4 kHz (1.5 nF long cable plus self-C).
+Our coilFreq control spans 900-6500 Hz: it covers the typical and long-cable
+cases and stops just short of the short-cable one. Acceptable; noted.
+
+The Q is the finding. At resonance X_L is about 35 kohm, so the Stage's 10k
+volume pot loads the pickup to **Q ~ 0.3 -- the resonant peak does not exist
+on a stock Stage**, which is also what Rob A reports hearing against a 1 Mohm
+input. Into the Suitcase's high-impedance preamp the series DCR limits Q to
+about 16 and the combined load to roughly 10. Our coilQ control tops out at
+5.55: modest shortfall at the bright end, noted. The Stage-vs-Suitcase tone
+difference is therefore substantially THE LOAD, with numbers behind it -- a
+future "output load" dimension for the Stage DI preset, sourced rather than
+voiced.
+
+The humbucking pairing has a modelling consequence beyond noise: whatever
+mutual-inductance crosstalk exists between neighbouring pickups is partially
+phase-cancelled by construction, which weakens the case for modelling
+crosstalk at all.
+
+### Still open
+
+Per-pickup inductance and self-capacitance (Morrin's figure is the whole
+harp; the group topology is known so per-unit values could be back-derived,
+but a direct LCR reading of a single pickup at 120 Hz -- the guitarnuts2
+thread documents why 120 Hz and not 1 kHz, eddy losses in the steel core
+suppress high-frequency readings -- remains the clean measurement). The harp
+frame tap test remains entirely open.
+
+Sources:
+- https://sites.google.com/site/davidmorrinoldsite/home/trouble/trouble-keyboards/rhodes
+- https://ep-forum.com/smf/index.php?topic=6237.0
+- https://www.fenderrhodes.com/org/manual/ch10.html
+- https://guitarnuts2.proboards.com/thread/8072/measuring-pickups-lcr-meters
