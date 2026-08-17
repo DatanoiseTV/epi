@@ -95,7 +95,7 @@
     bass:        { label: 'Bass',      map: M.db12,      def: M.db12.from(0),     format: dbOf(M.db12), bipolar: true },
     treble:      { label: 'Treble',    map: M.db12,      def: M.db12.from(0),     format: dbOf(M.db12), bipolar: true },
     tremRate:    { label: 'Rate',      map: M.tremRate,  def: M.tremRate.from(5.5), format: hzOf(M.tremRate) },
-    tremDepth:   { label: 'Vibrato',   map: M.unit,      def: 0.00, format: pct },
+    tremDepth:   { label: 'Tremolo',   map: M.unit,      def: 0.00, format: pct },
     tremStereo:  { label: 'Width',     map: M.unit,      def: 1.00,
                    format: (n) => (n > 0.99 ? 'Pan' : n < 0.01 ? 'Amp' : Math.round(n * 100) + '% pan') },
     phaserMix:   { label: 'Phaser',    map: M.unit,      def: 0.00, format: pct },
