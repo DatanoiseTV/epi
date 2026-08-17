@@ -484,7 +484,18 @@ public:
         // This is a statement about where the field is linear, not a shortcut
         // around the nonlinearity. The threshold is checked against the pole
         // geometry, so it moves with it.
-        if (std::abs (vNow) < linearSwing)
+        // Gated on the SWING, not the instantaneous position. Gating on
+        // |vNow| looks equivalent and is a bug that was heard before it was
+        // found: a ringing note passes through zero twice every cycle, so the
+        // voice toggled between this linearised path and the full one at
+        // twice the fundamental, and the approximation mismatch at each
+        // toggle is a signal-correlated crackle -- reported as a rustling
+        // that got worse as the gap closed, which is exactly where the field
+        // curves hardest and the mismatch is largest. The envelope decays
+        // slowly enough that a note leaves quiet mode once, near silence,
+        // and not twice per cycle.
+        swingEnv = std::max (std::abs (vNow), swingEnv * 0.9995);
+        if (swingEnv < linearSwing)
         {
             // What is skipped here is the field lookup, NOT the geometry. The
             // tip's path still has to be interpolated across the oversampled
@@ -1462,6 +1473,7 @@ private:
     int diverged = 0;
     bool lockedOut = false;
     static constexpr double kReducedEnergy = 1.0e-10;
+    double swingEnv = 0.0;
     double linearSwing = 1.0e-4, quietEnergy = 1.0e-13;
     bool   reduced = false;
 

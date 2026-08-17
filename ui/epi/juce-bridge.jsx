@@ -68,7 +68,7 @@
     hammerHard:  { label: 'Hammer',    map: M.unit,      def: 0.50, format: pct },
     hammerMass:  { label: 'Tip Mass',  map: M.unit,      def: 0.50, format: pct },
     escapement:  { label: 'Escapement',map: M.unit,      def: 0.40, format: pct },
-    strikeNoise: { label: 'Action',    map: M.unit,      def: 0.30, format: pct },
+    strikeNoise: { label: 'Key Noise', map: M.unit,      def: 0.22, format: pct },
     damperGrip:  { label: 'Damper',    map: M.unit,      def: 0.60, format: pct },
 
     tipMass:     { label: 'Spring',    map: M.unit,      def: 0.50, format: pct },

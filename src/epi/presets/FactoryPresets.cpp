@@ -13,119 +13,145 @@
 #include "FactoryPresets.h"
 #include "epi/ParameterIDs.h"
 
+
+
 namespace epi
 {
 
-// A note on judging these against tests/test_epi_reference.cpp: that suite
-// measures how closely the model matches a well-maintained 1977 Mark I, so it
-// only applies in full to "Suitcase", which is that instrument and passes every
-// row. The others are deliberately somewhere else -- "Bell" is voiced on the
-// pole centreline, which is a real setting and a badly voiced one -- and are
-// expected to miss the rows that describe a correctly voiced instrument.
+// The factory bank, re-engineered from the measurements rather than inherited
+// from guesses -- every earlier bank predated the pole geometry, the
+// sensitivity, the sustain law, the saturation and the effects, so its stored
+// numbers no longer meant what they meant when they were chosen.
 //
-// What the suite is still good for here is telling a deliberate voicing apart
-// from a broken one. Three of these were the latter: their pickup gaps sat
-// close enough that the tine left the pole face twice a cycle, which does not
-// sound like a hard-driven Rhodes, it sounds like a clipper.
+// Ground rules, learned the hard way and enforced here:
+//
+//  - "Suitcase" IS the reference: the voicing the suite verifies against a
+//    real 1977 Mark I, every row passing. Other presets are deliberate
+//    departures and say from what.
+//  - The pickup gap stays at or above about 1.4 mm (knob 0.20). Below that
+//    the tine leaves the pole face twice a cycle, and measurement showed what
+//    that does: the inharmonic floor up 45 dB, the fundamental beating
+//    against itself, the attack collapsed to a click. Dirt comes from the
+//    DRIVE and the core saturation, which is where the instrument gets it.
+//  - Every parameter the engine has is set explicitly, so a preset is a
+//    complete voicing and not a diff against whatever was loaded before.
+
 std::vector<epicommon::PresetManager::Preset> makeFactoryPresets()
 {
     using namespace epi::ids;
-    return {
-        // The instrument as a well-maintained one leaves the shop: voiced a
-        // little off the pole centreline, which is where the fundamental lives.
-        { "Suitcase", {
+
+    // The parameters shared by every preset unless it says otherwise: the
+    // reference instrument, effects off.
+    auto base = [] (std::initializer_list<std::pair<const char*, float>> diff)
+    {
+        std::vector<std::pair<juce::String, float>> p = {
+            { tune, 0.0f },
+            { velCurve, 0.5f }, { hammerHard, 0.5f }, { hammerMass, 0.5f },
+            { escapement, 0.4f }, { strikeNoise, 0.22f }, { damperGrip, 0.6f },
+            { tipMass, 0.5f }, { resDamp, 0.35f },
+            { barCouple, 0.6f }, { barTune, 0.0f },
+            { bodyMix, 0.25f }, { nonlinAmt, 0.5f },
             { pickupPos, -0.35f }, { pickupDist, 0.35f },
-            { coilFreq, 0.50f }, { coilQ, 0.50f }, { coilSat, 0.25f },
-            { hammerHard, 0.50f }, { resDamp, 0.32f }, { barCouple, 0.60f },
-            { preampDrive, 0.30f }, { bass, 2.0f }, { treble, 1.0f },
-            { tremRate, 4.2f }, { tremDepth, 0.35f }, { cabMix, 0.55f },
-        } },
+            { coilFreq, 0.5f }, { coilQ, 0.5f }, { coilSat, 0.25f },
+            { preampDrive, 0.30f }, { bass, 0.0f }, { treble, 0.0f },
+            { tremRate, 5.5f }, { tremDepth, 0.0f }, { tremStereo, 1.0f },
+            { cabMix, 0.5f },
+            { phaserMix, 0.0f }, { phaserRate, 0.40f },
+            { phaserDepth, 0.70f }, { phaserFb, 0.50f },
+            { spaceMix, 0.12f }, { spaceSize, 0.40f },
+            { outGain, 0.0f },
+        };
+        for (auto& d : diff)
+            for (auto& e : p)
+                if (e.first == juce::String (d.first)) { e.second = d.second; break; }
+        return p;
+    };
 
-        // Voiced hard against the centreline. The tine crosses the field's peak
-        // twice a cycle, so the note comes out an octave up with almost no
-        // fundamental. A real setting, and the reason a badly voiced Rhodes
-        // sounds thin rather than quiet.
-        { "Bell", {
-            { pickupPos, -0.04f }, { pickupDist, 0.30f },
-            { hammerHard, 0.68f }, { resDamp, 0.18f }, { barCouple, 0.85f },
-            { coilFreq, 0.70f }, { coilQ, 0.65f },
-            { preampDrive, 0.18f }, { treble, 3.5f },
-            { tremDepth, 0.0f }, { cabMix, 0.40f },
-        } },
+    return {
+        // The instrument the suite verifies: a well-maintained Mark I into its
+        // own Suitcase amplifier, panner running gently. Change nothing here
+        // without re-running the suite -- this preset is its baseline.
+        { "Suitcase", base ({
+            { tremDepth, 0.35f }, { tremRate, 4.2f },
+            { bass, 2.0f }, { treble, 1.0f }, { cabMix, 0.55f },
+        }) },
 
-        // Toward the edge of the pole, where the swing is most asymmetric.
-        { "Mellow", {
-            { pickupPos, -0.80f }, { pickupDist, 0.42f },
-            { hammerHard, 0.28f }, { resDamp, 0.40f }, { barCouple, 0.45f },
-            { coilFreq, 0.30f }, { coilQ, 0.35f },
-            { preampDrive, 0.15f }, { bass, 4.0f }, { treble, -2.0f },
-            { tremRate, 3.2f }, { tremDepth, 0.25f }, { cabMix, 0.65f },
-        } },
+        // The same harp DI'd through a bright amp: no panner, less cabinet,
+        // a little more edge. What most records of a Stage actually are.
+        { "Stage DI", base ({
+            { cabMix, 0.30f }, { treble, 2.5f },
+            { preampDrive, 0.35f }, { spaceMix, 0.08f },
+        }) },
 
-        // Close to the magnet and played into it: the tine runs out toward the
-        // ends of the pole face, where the field starts to collapse. That is
-        // the growl -- but only up to a point. Measured, a gap under about
-        // 1.2 mm puts the tine right off the pole twice a cycle, and what that
-        // makes is not growl: the inharmonic floor comes up 45 dB, the
-        // fundamental starts beating against itself and the attack collapses
-        // into a click. This sat at 0.95 mm and failed ten reference rows; at
-        // 1.5 mm it fails three, and the extra dirt comes from the drive
-        // instead, where it belongs.
-        { "Dirty Bass", {
-            { pickupPos, -0.45f }, { pickupDist, 0.20f },
-            { hammerHard, 0.72f }, { hammerMass, 0.70f },
-            { resDamp, 0.25f }, { nonlinAmt, 0.85f },
-            { coilFreq, 0.42f }, { coilQ, 0.55f }, { coilSat, 0.60f },
-            { preampDrive, 0.72f }, { bass, 5.0f },
-            { cabMix, 0.80f },
-        } },
+        // Voiced dark: pickup low and far, soft tip, felt loose. The gap
+        // stays legal -- the softness comes from where the softness comes
+        // from on the instrument, the voicing screw and the hammer.
+        { "Mellow", base ({
+            { pickupPos, -0.70f }, { pickupDist, 0.45f },
+            { hammerHard, 0.28f }, { resDamp, 0.42f },
+            { coilFreq, 0.32f }, { coilQ, 0.38f },
+            { preampDrive, 0.18f }, { bass, 3.0f }, { treble, -2.0f },
+            { tremDepth, 0.25f }, { tremRate, 3.2f }, { cabMix, 0.6f },
+        }) },
 
-        // Long sustain, gentle touch, the pedal-down sound.
-        { "Ballad", {
-            { pickupPos, -0.55f }, { pickupDist, 0.40f },
-            { hammerHard, 0.32f }, { velCurve, 0.34f },
-            { resDamp, 0.12f }, { damperGrip, 0.42f }, { barCouple, 0.70f },
-            { coilFreq, 0.44f }, { coilQ, 0.42f },
-            { preampDrive, 0.12f }, { bass, 3.0f },
-            { tremRate, 2.6f }, { tremDepth, 0.30f }, { cabMix, 0.55f },
-            { spaceMix, 0.30f }, { spaceSize, 0.55f },
-        } },
+        // The ballad setting: long sustain (bar fully coupled -- that is what
+        // the coupling control now honestly does), soft touch, wide slow pan,
+        // a real room.
+        { "Ballad", base ({
+            { barCouple, 0.9f }, { hammerHard, 0.32f }, { velCurve, 0.38f },
+            { resDamp, 0.18f }, { pickupPos, -0.5f },
+            { preampDrive, 0.15f }, { bass, 2.0f },
+            { tremDepth, 0.30f }, { tremRate, 2.6f },
+            { spaceMix, 0.30f }, { spaceSize, 0.60f },
+        }) },
 
-        // Hard tip, tight damper, no vibrato: the percussive setting.
-        { "Funk", {
-            { pickupPos, -0.30f }, { pickupDist, 0.25f },
-            { hammerHard, 0.82f }, { hammerMass, 0.35f }, { velCurve, 0.68f },
-            { resDamp, 0.55f }, { damperGrip, 0.85f }, { barCouple, 0.35f },
-            { coilFreq, 0.62f }, { coilQ, 0.70f },
-            { preampDrive, 0.45f }, { treble, 4.0f },
-            { tremDepth, 0.0f }, { cabMix, 0.50f },
-        } },
+        // Percussive: hard tip, tight damper, bar coupling backed off so the
+        // notes get out of each other's way, no modulation.
+        { "Funk", base ({
+            { hammerHard, 0.80f }, { velCurve, 0.65f },
+            { damperGrip, 0.85f }, { barCouple, 0.42f }, { resDamp, 0.5f },
+            { coilFreq, 0.62f }, { coilQ, 0.66f },
+            { preampDrive, 0.45f }, { treble, 3.5f },
+            { cabMix, 0.45f }, { spaceMix, 0.06f },
+        }) },
 
-        // A pole piece narrower than Rhodes ever built, and a coil that peaks
-        // high. Not a filter setting -- a different magnet. Its gap was 0.86 mm,
-        // which is past the point where the tine leaves the field entirely and
-        // the sound stops being a pickup and starts being a clipper.
-        { "Glass Tine", {
-            { pickupPos, -0.18f }, { pickupDist, 0.20f },
-            { hammerHard, 0.55f }, { tipMass, 0.80f },
-            { resDamp, 0.20f }, { barCouple, 0.90f }, { barTune, 7.0f },
-            { coilFreq, 0.88f }, { coilQ, 0.85f }, { coilSat, 0.10f },
-            { preampDrive, 0.22f }, { treble, 5.0f },
-            { tremRate, 6.5f }, { tremDepth, 0.20f }, { cabMix, 0.30f },
-            { spaceMix, 0.25f },
-        } },
+        // Driven hard, the honest way: the gap is LEGAL, and the dirt is the
+        // preamp run into its knee plus the cores into saturation -- which is
+        // what an overdriven Rhodes is.
+        { "Bark", base ({
+            { pickupDist, 0.25f }, { pickupPos, -0.30f },
+            { hammerHard, 0.70f }, { hammerMass, 0.62f },
+            { coilSat, 0.55f }, { preampDrive, 0.78f },
+            { bass, 3.0f }, { treble, 1.5f }, { cabMix, 0.7f },
+            { spaceMix, 0.05f },
+        }) },
 
-        // The tuning spring slid a long way down the tine, which does not just
-        // retune it -- it sits at a different fraction of every mode's shape and
-        // re-voices the overtones with it.
-        { "Detuned Bar", {
-            { pickupPos, -0.50f }, { pickupDist, 0.30f },
-            { tipMass, 0.08f }, { barTune, -9.0f }, { barCouple, 0.95f },
-            { resDamp, 0.22f }, { nonlinAmt, 0.70f },
-            { coilFreq, 0.38f }, { coilQ, 0.48f },
-            { preampDrive, 0.30f }, { bass, 2.0f },
-            { tremRate, 5.5f }, { tremDepth, 0.45f }, { cabMix, 0.60f },
-        } },
+        // Voiced on the pole centreline: the tine crosses the field peak
+        // twice a cycle and the note comes out an octave up with almost no
+        // fundamental. A real setting -- the reason a badly voiced Rhodes
+        // sounds thin -- kept because it teaches what the voicing screw does.
+        { "Bell", base ({
+            { pickupPos, -0.05f }, { pickupDist, 0.32f },
+            { hammerHard, 0.6f }, { barCouple, 0.8f },
+            { coilFreq, 0.7f }, { coilQ, 0.6f },
+            { preampDrive, 0.2f }, { treble, 3.0f },
+            { cabMix, 0.35f }, { spaceMix, 0.18f },
+        }) },
+
+        // The Wurlitzer's kind of tremolo on the Rhodes' tone: photocells
+        // wired TOGETHER, so it pulses instead of panning.
+        { "Amp Tremolo", base ({
+            { tremDepth, 0.55f }, { tremRate, 5.8f }, { tremStereo, 0.0f },
+            { preampDrive, 0.35f }, { cabMix, 0.6f },
+        }) },
+
+        // A Rhodes through a slow phaser, which is one of the two or three
+        // sounds the instrument is known for.
+        { "Phase 90", base ({
+            { phaserMix, 0.55f }, { phaserRate, 0.35f },
+            { phaserDepth, 0.80f }, { phaserFb, 0.62f },
+            { tremDepth, 0.0f }, { cabMix, 0.5f }, { spaceMix, 0.15f },
+        }) },
     };
 }
 

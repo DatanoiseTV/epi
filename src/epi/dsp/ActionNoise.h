@@ -72,12 +72,19 @@ public:
         Voice& v = alloc();
         v.tine = tine;
 
-        // The knock: the hammer's pivot and the escapement letting go. Faster
-        // strikes rattle brighter as well as louder, and the smaller treble
-        // mechanism rings higher.
-        v.knockEnv = vel * vel * (0.9 + 0.5 * r);
-        v.knockCut = (700.0 + 2400.0 * vel) * (1.0 + 1.1 * r);
-        v.knockDecay = std::exp (-1.0 / ((0.0030 - 0.0016 * r) * fs));
+        // The knock: the hammer's pivot and the escapement letting go. A
+        // RESONANT tick, not filtered noise -- broadband noise for three
+        // milliseconds per strike reads as rustling paper, and was heard as
+        // exactly that. A small wooden part struck once rings briefly at its
+        // own frequency; the randomness belongs in WHICH frequency, since no
+        // two keys' parts are identical, not in the waveform. The scatter is
+        // seeded from the key index, so key forty's tick is always key
+        // forty's.
+        const double scatter = 1.0 + 0.12 * ((((unsigned) tine * 2654435761u & 1023u) / 1023.0) - 0.5);
+        v.knockEnv = vel * vel * (0.16 + 0.10 * r);
+        v.knockFreq = (1400.0 + 900.0 * vel) * (1.0 + 0.9 * r) * scatter;
+        v.knockDecay = std::exp (-1.0 / ((0.0025 - 0.0012 * r) * fs));
+        v.knockPhase = 0.0;
 
         // The thud: the key bottoming out on its front rail felt. Heavier and
         // deeper toward the bass, where the lever and hammer are largest --
@@ -134,9 +141,12 @@ public:
             if (v.knockEnv <= 1.0e-7 && v.thudEnv <= 1.0e-7) continue;
 
             double out = 0.0;
-            v.knockState += (v.knockCut / fs) * (n - v.knockState);
-            out += v.knockState * v.knockEnv;
-            v.knockEnv *= v.knockDecay;
+            if (v.knockEnv > 1.0e-7)
+            {
+                v.knockPhase += v.knockFreq / fs;
+                out += std::sin (2.0 * kPiD * v.knockPhase) * v.knockEnv;
+                v.knockEnv *= v.knockDecay;
+            }
 
             // The thud is a BAND, not a lowpass: lowpassed noise reaches DC.
             v.thudState += (v.thudCut / fs) * (n - v.thudState);
@@ -161,7 +171,7 @@ private:
     {
         double knockEnv = 0.0, thudEnv = 0.0;
         double knockState = 0.0, thudState = 0.0, thudFloor = 0.0;
-        double knockCut = 2000.0, thudCut = 220.0;
+        double knockFreq = 2000.0, knockPhase = 0.0, thudCut = 220.0;
         double knockDecay = 0.0, thudDecay = 0.0;
         int tine = -1;
     };

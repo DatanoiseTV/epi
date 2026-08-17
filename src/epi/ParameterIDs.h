@@ -126,7 +126,7 @@ namespace epi::ids
         unit (hammerHard,  "Hammer",         0.5f);
         unit (hammerMass,  "Hammer Mass",    0.5f);
         unit (escapement,  "Escapement",     0.4f);
-        unit (strikeNoise, "Action Noise",   0.3f);
+        unit (strikeNoise, "Key Noise",   0.22f);
         unit (damperGrip,  "Damper",         0.6f);
 
         // ---- Resonator ------------------------------------------------------

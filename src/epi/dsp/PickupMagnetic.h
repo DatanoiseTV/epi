@@ -97,7 +97,12 @@ public:
     };
 
     static constexpr int kNv = 257;   // across the wedge
-    static constexpr int kNg = 33;    // along the gap
+    // Dense along the gap, because the gap MOVES: the tip's arc modulates it
+    // at twice the fundamental every cycle, and with linear interpolation
+    // between gap rows every grid line the arc crosses is a corner in the
+    // first derivative -- a signal-correlated crackle. At 33 rows the steps
+    // were 148 microns and the arc crossed one most cycles.
+    static constexpr int kNg = 129;   // along the gap
 
     // Table span. The tine's swing is allowed to run well past the pole face,
     // because on a hard bass note it does.
@@ -108,7 +113,16 @@ public:
     // eight half-widths the field is already three orders of magnitude down,
     // so the clamp is on a value indistinguishable from zero.
     static constexpr float kVSpan = 8.0f;   // in units of halfWidth
-    static constexpr float kGMin  = 0.35f;  // in units of nominalGap
+    // The table must reach BELOW anything the voice can ask for. Its floor
+    // used to sit at 0.35 of the nominal gap -- 0.53 mm -- while the gap
+    // control reaches 0.6 mm and the arc modulation dips a further tenth of
+    // a millimetre below that: the lookup then clamps at the table edge every
+    // half cycle, and a clamp engaging at twice the fundamental is a corner
+    // in the flux that reads as rustling, louder the closer the gap. Which is
+    // exactly how it was reported: "the Rascheln gets more intense as the gap
+    // closes". The voice's own hard floor is 0.25 mm; the table now reaches
+    // 0.225.
+    static constexpr float kGMin  = 0.15f;  // in units of nominalGap
     static constexpr float kGMax  = 3.5f;
 
     void prepare (const Geometry& geo)
