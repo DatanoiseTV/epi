@@ -121,9 +121,15 @@ function PickupPanel({ cp70 }) {
 /* ---- AMP: preamp, tone stack, and the panner ---- */
 function AmpPanel() {
   const [depth] = useJuceSlider('tremDepth');
+  const [shop, setShop] = useState(false);
   return (
     <div className="panel f-amp">
-      <PHead title="Amp" meta={depth > 0.01 ? 'VIBRATO' : ''} />
+      <div className="phead">
+        <h2>Amp</h2>
+        <span className="hrule" />
+        <button className="wsopen" onClick={() => setShop(true)} title="Cabinet dimensions and microphone">WORKSHOP</button>
+        <span className="hmeta">{depth > 0.01 ? 'VIBRATO' : ''}</span>
+      </div>
       <div className="krow">
         <PKnob id="preampDrive" label="DRIVE" />
         <PKnob id="bass" label="BASS" />
@@ -140,6 +146,7 @@ function AmpPanel() {
         <LiveBar field="vibL" full={1} label="Left" digits={2} />
         <LiveBar field="vibR" full={1} label="Right" digits={2} />
       </div>
+      {shop && <CabinetWorkshop onClose={() => setShop(false)} />}
     </div>
   );
 }

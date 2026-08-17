@@ -421,4 +421,76 @@ function PickupWorkshop({ onClose }) {
   );
 }
 
-Object.assign(window, { TineWorkshop, PickupWorkshop });
+/* ============================================================
+   The cabinet workshop
+   ============================================================
+   One box, five dimensions -- so a bench of knobs, not lanes.
+   Each control is a physical thing and shows its physical value:
+   the enclosure sets the resonance alignment, the cone size sets
+   where it stops being a piston, the microphone's distance and
+   angle are the proximity lift and the beaming loss, and the
+   suspension is how far the cone travels before the limit.
+   ============================================================ */
+const WSC_TEMPLATES = [
+  ['SUITCASE',  [0.74, 0.59, 0.5, 0.25, 0.5]],
+  ['TWIN 2×12', [0.45, 0.55, 0.4, 0.15, 0.7]],
+  ['BASS 1×15', [0.9, 0.05, 0.35, 0.3, 0.6]],
+  ['PRACTICE',  [0.05, 0.95, 0.2, 0.1, 0.15]],
+  ['FLAT PA',   [1.0, 1.0, 0.8, 0.0, 1.0]],
+];
+
+const WSC_KNOBS = [
+  ['box',   'BOX',        (v) => 'fc ' + Math.round(140 * Math.pow(60 / 140, v)) + ' Hz'],
+  ['cone',  'CONE',       (v) => (2.5 * Math.pow(6000 / 2500, v)).toFixed(1) + ' kHz'],
+  ['dist',  'MIC DIST',   (v) => Math.round(2 + 58 * v) + ' cm'],
+  ['angle', 'MIC ANGLE',  (v) => Math.round(60 * v) + '\u00b0'],
+  ['susp',  'SUSPENSION', (v) => Math.round(v * 100) + '%'],
+];
+
+function CabinetWorkshop({ onClose }) {
+  const [v, setV] = useState(null);
+
+  useEffect(() => {
+    let alive = true;
+    try {
+      Juce.getNativeFunction('getCabMods')().then((a) => {
+        if (!alive) return;
+        const flat = a ? Array.from(a).map(Number) : [];
+        setV(flat.length === 5 ? flat : [0.74, 0.59, 0.5, 0.25, 0.5]);
+      });
+    } catch (_) { setV([0.74, 0.59, 0.5, 0.25, 0.5]); }
+    return () => { alive = false; };
+  }, []);
+
+  if (!v) return null;
+
+  const push = (arr) => {
+    setV(arr);
+    JuceBridge.emitNative('cab_mod', { box: arr[0], cone: arr[1], dist: arr[2], angle: arr[3], susp: arr[4] });
+  };
+
+  return (
+    <WsModal title="Cabinet Workshop" onClose={onClose}
+             onReset={() => { JuceBridge.emitNative('cab_mod_reset'); setV([0.74, 0.59, 0.5, 0.25, 0.5]); }}>
+      <div className="wstools">
+        <span className="wstoollabel">CABINETS</span>
+        {WSC_TEMPLATES.map(([n, t]) => (
+          <button key={n} className="wschip" onClick={() => push(t.slice())}>{n}</button>
+        ))}
+      </div>
+      <div className="wscabknobs">
+        {WSC_KNOBS.map(([, label, fmt], k) => (
+          <Knob key={label} value={v[k]} size="lg" label={label} format={fmt}
+                defaultValue={[0.74, 0.59, 0.5, 0.25, 0.5][k]}
+                onChange={(nv) => { const c = v.slice(); c[k] = nv; push(c); }} />
+        ))}
+      </div>
+      <div className="wsnote">
+        THE BOX SETS THE RESONANCE, THE CONE SETS THE BREAKUP, THE MICROPHONE SETS PROXIMITY
+        AND BEAMING · APPLIES TO THE CABINET BLEND ON THE AMP PANEL · SAVED WITH THE PROJECT
+      </div>
+    </WsModal>
+  );
+}
+
+Object.assign(window, { TineWorkshop, PickupWorkshop, CabinetWorkshop });

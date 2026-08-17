@@ -160,6 +160,25 @@ WebEditor::WebEditor (::EpiAudioProcessor& proc)
             })
         .withEventListener (juce::Identifier { "pickup_mod_reset" },
             [&proc = epiProcessor] (juce::var) { proc.resetPickupMods(); })
+        .withNativeFunction (juce::Identifier { "getCabMods" },
+            [&proc = epiProcessor] (const juce::Array<juce::var>&, auto complete)
+            {
+                juce::Array<juce::var> flat;
+                for (float v : proc.getCabMods()) flat.add (juce::var (static_cast<double> (v)));
+                complete (juce::var (flat));
+            })
+        .withEventListener (juce::Identifier { "cab_mod" },
+            [&proc = epiProcessor] (juce::var payload)
+            {
+                proc.setCabMod ({
+                    static_cast<float> (static_cast<double> (payload.getProperty ("box", 0.74))),
+                    static_cast<float> (static_cast<double> (payload.getProperty ("cone", 0.59))),
+                    static_cast<float> (static_cast<double> (payload.getProperty ("dist", 0.5))),
+                    static_cast<float> (static_cast<double> (payload.getProperty ("angle", 0.25))),
+                    static_cast<float> (static_cast<double> (payload.getProperty ("susp", 0.5))) });
+            })
+        .withEventListener (juce::Identifier { "cab_mod_reset" },
+            [&proc = epiProcessor] (juce::var) { proc.resetCabMods(); })
         .withEventListener (juce::Identifier { "ui_note" },
             [&proc = epiProcessor] (juce::var payload)
             {

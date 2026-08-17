@@ -302,29 +302,150 @@ public:
     void prepare (double sampleRate)
     {
         fs = sampleRate;
-        lo.setCutoff (75.0, fs);
-        hi.setCutoff (4200.0, fs);
-        presence.setCutoff (1800.0, fs);
+        setVoicing (voxBox, voxCone, voxDist, voxAngle, voxSusp);
         reset();
     }
 
-    void reset() { lo.reset(); hi.reset(); presence.reset(); }
+    void reset()
+    {
+        boxHp.z1 = boxHp.z2 = 0.0;
+        coneLp.z1 = coneLp.z2 = 0.0;
+        edge.z1 = edge.z2 = 0.0;
+        prox.z1 = prox.z2 = 0.0;
+        beam.reset();
+        air.reset();
+    }
 
     void setMix (double m) { mix = std::clamp (m, 0.0, 1.0); }
+
+    // The cabinet workshop's five dimensions, all normalised 0..1 and each a
+    // physical thing:
+    //   box    -- enclosure volume. A sealed box's compliance stiffens the
+    //             driver: a small box pushes the resonance up and its Q with
+    //             it (the boomy combo), a big one sits low and damped.
+    //   cone   -- driver size, as where the cone stops moving as a piston.
+    //             A fifteen breaks up around 2.5 kHz, an eight past 6; the
+    //             edge resonance rides just below the breakup.
+    //   dist   -- microphone distance. Close means proximity bass and no
+    //             room air; far loses the lift and a little top.
+    //   angle  -- microphone angle off the cone's axis. A cone beams: the
+    //             top octaves live on-axis and die toward the surround.
+    //   susp   -- suspension travel before the excursion limit. Less travel
+    //             is a smaller, earlier-farting speaker.
+    void setVoicing (double box, double cone, double dist, double angle, double susp)
+    {
+        voxBox = std::clamp (box, 0.0, 1.0);
+        voxCone = std::clamp (cone, 0.0, 1.0);
+        voxDist = std::clamp (dist, 0.0, 1.0);
+        voxAngle = std::clamp (angle, 0.0, 1.0);
+        voxSusp = std::clamp (susp, 0.0, 1.0);
+
+        // Sealed-box alignment: fc 140 down to 60 Hz as the box grows, Qtc
+        // falling with it -- the compliance ratio moves both together.
+        const double fc = 140.0 * std::pow (60.0 / 140.0, voxBox);
+        const double qc = 1.40 - 0.80 * voxBox;
+        setHighpass (boxHp, fc, qc);
+
+        // Cone breakup, and the edge resonance riding below it.
+        const double fb = 2500.0 * std::pow (6000.0 / 2500.0, voxCone);
+        setLowpass (coneLp, fb, 0.80);
+        setPeakEq (edge, 0.55 * fb, 3.0, 1.2);
+
+        // Proximity: up to +5 dB below 150 Hz right on the grille.
+        setLowShelf (prox, 150.0, 5.0 * (1.0 - voxDist));
+        // And the air: a long mic placement shaves the extreme top.
+        air.setCutoff (16000.0 * std::pow (9000.0 / 16000.0, voxDist), fs);
+
+        // Beaming: on-axis keeps 14 kHz, the surround keeps two.
+        beam.setCutoff (14000.0 * std::pow (2200.0 / 14000.0, voxAngle), fs);
+
+        // Excursion: the default half-travel setting reproduces the
+        // long-standing 1.4 drive into the limiter.
+        excursion = 1.4 / (0.35 + 1.30 * voxSusp);
+    }
 
     double process (double x)
     {
         if (mix <= 0.0) return x;
-        double y = hi.lowpass (lo.highpass (x));
-        y += 0.35 * presence.highpass (y);
+        double y = run (boxHp, x);
+        y = run (coneLp, y);
+        y = run (edge, y);
+        y = run (prox, y);
+        y = beam.lowpass (y);
+        y = air.lowpass (y);
         // Excursion limit: a cone cannot travel further than its suspension.
-        y = std::tanh (y * 1.4) / 1.4;
+        y = std::tanh (y * excursion) / excursion;
         return x + mix * (y - x);
     }
 
 private:
-    double fs = 48000.0, mix = 0.5;
-    OnePoleD lo, hi, presence;
+    struct BQ { double b0 = 1, b1 = 0, b2 = 0, a1 = 0, a2 = 0, z1 = 0, z2 = 0; };
+
+    static double run (BQ& q, double x)
+    {
+        const double y = q.b0 * x + q.z1;
+        q.z1 = q.b1 * x - q.a1 * y + q.z2;
+        q.z2 = q.b2 * x - q.a2 * y;
+        return y;
+    }
+
+    // Textbook RBJ forms, one per response. The folded do-everything shelf
+    // formula cost an afternoon once; each of these is written out.
+    void setHighpass (BQ& q, double f, double Q)
+    {
+        const double w = 2.0 * kPiD * std::min (f, fs * 0.45) / fs;
+        const double c = std::cos (w), a = std::sin (w) / (2.0 * Q);
+        const double a0 = 1.0 + a;
+        q.b0 = (1.0 + c) / 2.0 / a0;
+        q.b1 = -(1.0 + c) / a0;
+        q.b2 = (1.0 + c) / 2.0 / a0;
+        q.a1 = -2.0 * c / a0;
+        q.a2 = (1.0 - a) / a0;
+    }
+    void setLowpass (BQ& q, double f, double Q)
+    {
+        const double w = 2.0 * kPiD * std::min (f, fs * 0.45) / fs;
+        const double c = std::cos (w), a = std::sin (w) / (2.0 * Q);
+        const double a0 = 1.0 + a;
+        q.b0 = (1.0 - c) / 2.0 / a0;
+        q.b1 = (1.0 - c) / a0;
+        q.b2 = (1.0 - c) / 2.0 / a0;
+        q.a1 = -2.0 * c / a0;
+        q.a2 = (1.0 - a) / a0;
+    }
+    void setPeakEq (BQ& q, double f, double dB, double Q)
+    {
+        const double A = std::pow (10.0, dB / 40.0);
+        const double w = 2.0 * kPiD * std::min (f, fs * 0.45) / fs;
+        const double c = std::cos (w), al = std::sin (w) / (2.0 * Q);
+        const double a0 = 1.0 + al / A;
+        q.b0 = (1.0 + al * A) / a0;
+        q.b1 = -2.0 * c / a0;
+        q.b2 = (1.0 - al * A) / a0;
+        q.a1 = -2.0 * c / a0;
+        q.a2 = (1.0 - al / A) / a0;
+    }
+    void setLowShelf (BQ& q, double f, double dB)
+    {
+        const double A = std::pow (10.0, dB / 40.0);
+        const double w = 2.0 * kPiD * std::min (f, fs * 0.45) / fs;
+        const double c = std::cos (w);
+        const double al = std::sin (w) / 2.0 * std::sqrt ((A + 1.0 / A) * (1.0 / 0.9 - 1.0) + 2.0);
+        const double sq = 2.0 * std::sqrt (A) * al;
+        const double a0 = (A + 1.0) + (A - 1.0) * c + sq;
+        q.b0 = A * ((A + 1.0) - (A - 1.0) * c + sq) / a0;
+        q.b1 = 2.0 * A * ((A - 1.0) - (A + 1.0) * c) / a0;
+        q.b2 = A * ((A + 1.0) - (A - 1.0) * c - sq) / a0;
+        q.a1 = -2.0 * ((A - 1.0) + (A + 1.0) * c) / a0;
+        q.a2 = ((A + 1.0) + (A - 1.0) * c - sq) / a0;
+    }
+
+    double fs = 48000.0, mix = 0.5, excursion = 1.4;
+    // Defaults chosen to sit where the old fixed cabinet sat: fc near 75 Hz,
+    // breakup near 4.2 kHz, a touch of proximity, slightly off axis.
+    double voxBox = 0.74, voxCone = 0.59, voxDist = 0.5, voxAngle = 0.25, voxSusp = 0.5;
+    BQ boxHp, coneLp, edge, prox;
+    OnePoleD beam, air;
 };
 
 // ---------------------------------------------------------------------------

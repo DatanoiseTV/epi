@@ -409,3 +409,9 @@ html, body {
   background: var(--gold);
   box-shadow: 0 0 6px rgba(202, 164, 94, .8);
 }
+
+/* ---- cabinet workshop ---- */
+.wscabknobs {
+  display: flex; justify-content: center; gap: 26px;
+  padding: 10px 0 4px;
+}

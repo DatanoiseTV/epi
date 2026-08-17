@@ -222,6 +222,8 @@
           ? Array.from({ length: 176 }, () => 1)
           : n === 'getPickupMods'
           ? Array.from({ length: 264 }, (_, k) => (k % 3 === 2 ? 1 : 0))
+          : n === 'getCabMods'
+          ? [0.74, 0.59, 0.5, 0.25, 0.5]
           : []),
     };
   }

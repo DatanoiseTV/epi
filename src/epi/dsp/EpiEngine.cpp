@@ -349,6 +349,16 @@ void EpiEngine::process (float* outL, float* outR, int numSamples,
     phaserR.setParams (p.phaserRate, p.phaserDepth, p.phaserFb, p.phaserMix);
     cabinetL.setMix (p.cabMix);
     cabinetR.setMix (p.cabMix);
+    if (cabDirty.exchange (false, std::memory_order_acq_rel))
+    {
+        const double b = cabBox.load (std::memory_order_relaxed);
+        const double c = cabCone.load (std::memory_order_relaxed);
+        const double d = cabDist.load (std::memory_order_relaxed);
+        const double a = cabAngle.load (std::memory_order_relaxed);
+        const double su = cabSusp.load (std::memory_order_relaxed);
+        cabinetL.setVoicing (b, c, d, a, su);
+        cabinetR.setVoicing (b, c, d, a, su);
+    }
 
     int nextEvent = 0;
     float pL = 0.0f, pR = 0.0f;
@@ -628,6 +638,16 @@ void EpiEngine::processCP70 (float* outL, float* outR, int numSamples,
     phaserR.setParams (p.phaserRate, p.phaserDepth, p.phaserFb, p.phaserMix);
     cabinetL.setMix (p.cabMix);
     cabinetR.setMix (p.cabMix);
+    if (cabDirty.exchange (false, std::memory_order_acq_rel))
+    {
+        const double b = cabBox.load (std::memory_order_relaxed);
+        const double c = cabCone.load (std::memory_order_relaxed);
+        const double d = cabDist.load (std::memory_order_relaxed);
+        const double a = cabAngle.load (std::memory_order_relaxed);
+        const double su = cabSusp.load (std::memory_order_relaxed);
+        cabinetL.setVoicing (b, c, d, a, su);
+        cabinetR.setVoicing (b, c, d, a, su);
+    }
     if (std::abs (p.spaceSize - lastSpaceSize) > 1.0e-4f)
     {
         lastSpaceSize = p.spaceSize;

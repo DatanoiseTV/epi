@@ -162,6 +162,18 @@ public:
         tineMod[static_cast<std::size_t> (i)].dirty.store (true, std::memory_order_release);
     }
 
+    // The cabinet workshop: five physical dimensions, applied to both
+    // channels at the next block. Atomics for the same reason as the tines.
+    void setCabMod (float box, float cone, float dist, float angle, float susp)
+    {
+        cabBox.store (box, std::memory_order_relaxed);
+        cabCone.store (cone, std::memory_order_relaxed);
+        cabDist.store (dist, std::memory_order_relaxed);
+        cabAngle.store (angle, std::memory_order_relaxed);
+        cabSusp.store (susp, std::memory_order_relaxed);
+        cabDirty.store (true, std::memory_order_release);
+    }
+
     // The pickup workshop: height and gap offsets need a rebuild (they move
     // the operating point the voice glides to); the winding scale is read
     // live at the flux sum and needs none.
@@ -286,6 +298,9 @@ private:
                      std::atomic<bool> dirty { false } ; };
     std::array<TineMod, kNumTines> tineMod {};
     void rebuildTine (int i, const RhodesVoice::Config& cfg);
+    std::atomic<float> cabBox { 0.74f }, cabCone { 0.59f }, cabDist { 0.5f },
+                       cabAngle { 0.25f }, cabSusp { 0.5f };
+    std::atomic<bool> cabDirty { false };
     float lastCoilSat = -1.0f;
     // How many times the output chain had to be rebuilt. Reported by tests.
     std::atomic<int> recoveries { 0 };

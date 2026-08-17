@@ -210,6 +210,7 @@ void EpiAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
         if (m[0] != 1.0f || m[1] != 1.0f) { modded = true; break; }
     for (const auto& m : pickupMods)
         if (m[0] != 0.0f || m[1] != 0.0f || m[2] != 1.0f) { modded = true; break; }
+    if (cabMods != kCabDefaults) modded = true;
     if (modded)
     {
         juce::StringArray ls, ds, hs, gs, ws;
@@ -230,6 +231,9 @@ void EpiAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
         mods.setProperty ("pkh", hs.joinIntoString (","), nullptr);
         mods.setProperty ("pkg", gs.joinIntoString (","), nullptr);
         mods.setProperty ("pkw", ws.joinIntoString (","), nullptr);
+        juce::StringArray cs;
+        for (float v : cabMods) cs.add (juce::String (v, 6));
+        mods.setProperty ("cab", cs.joinIntoString (","), nullptr);
         state.appendChild (mods, nullptr);
     }
 
@@ -251,6 +255,7 @@ void EpiAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
             // incoming state has no modifications.
             resetTineMods();
             resetPickupMods();
+            resetCabMods();
             const auto mods = state.getChildWithName ("TineMods");
             if (mods.isValid())
             {
@@ -270,6 +275,12 @@ void EpiAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
                                   i < gs.size() ? gs[i].getFloatValue() : 0.0f,
                                   i < ws.size() ? ws[i].getFloatValue() : 1.0f);
                 }
+                juce::StringArray cs;
+                cs.addTokens (mods["cab"].toString(), ",", "");
+                if (cs.size() == 5)
+                    setCabMod ({ cs[0].getFloatValue(), cs[1].getFloatValue(),
+                                 cs[2].getFloatValue(), cs[3].getFloatValue(),
+                                 cs[4].getFloatValue() });
             }
         }
 }

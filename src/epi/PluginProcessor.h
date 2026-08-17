@@ -98,6 +98,16 @@ public:
         return pickupMods;
     }
 
+    // The cabinet workshop's five dimensions.
+    void setCabMod (const std::array<float, 5>& v)
+    {
+        cabMods = v;
+        engine.setCabMod (v[0], v[1], v[2], v[3], v[4]);
+    }
+    void resetCabMods() { setCabMod (kCabDefaults); }
+    const std::array<float, 5>& getCabMods() const { return cabMods; }
+    static constexpr std::array<float, 5> kCabDefaults { 0.74f, 0.59f, 0.5f, 0.25f, 0.5f };
+
     void pushUiNote (int note, float velocity, bool on)
     {
         const auto w = uiNoteWrite.load (std::memory_order_relaxed);
@@ -133,6 +143,8 @@ private:
         for (auto& m : a) m = { 0.0f, 0.0f, 1.0f };
         return a;
     }();
+
+    std::array<float, 5> cabMods = kCabDefaults;
 
     struct UiNote { int note; float velocity; bool on; };
     static constexpr unsigned kUiNoteCap = 64;
