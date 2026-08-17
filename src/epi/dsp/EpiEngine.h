@@ -319,6 +319,28 @@ private:
     // is exactly what the CP-70 was doing before this pair existed.
     Cabinet cabinetBL, cabinetBR;
 
+    // Block-rate parameter smoothing for the controls whose consumers take
+    // discrete jumps -- tone shelves, drive gains, the cabinet morph, the
+    // Wurlitzer's rail. A knob dragged across blocks otherwise steps its
+    // coefficients at the block rate, and the steps are heard as crackle.
+    // The output gain gets a per-sample ramp instead, in each path.
+    struct SmoothedParams
+    {
+        float drive = -1.0f, bass = 0.0f, treb = 0.0f, cabMix = -1.0f, sat = -1.0f;
+        float gain = -1.0f;
+        void step (float& v, float target, float k)
+        {
+            if (v < -0.5f) { v = target; return; }   // first block: snap
+            v += (target - v) * k;
+            if (std::abs (v - target) < 1.0e-5f) v = target;
+        }
+    };
+    SmoothedParams sm;
+    float smoothK (int numSamples) const
+    {
+        return 1.0f - std::exp (-static_cast<float> (numSamples) / (0.040f * static_cast<float> (fs)));   // ~40 ms
+    }
+
     // The workshop's per-tine steel, written from the message thread and read
     // by the audio thread's rebuild. Atomics rather than a lock: a torn pair
     // would only mistune one tine for one rebuild, but a formal race is a

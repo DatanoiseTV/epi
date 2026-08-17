@@ -26,6 +26,15 @@ namespace { constexpr int kRetuneBudget = EPI_RETUNE_BUDGET; }
 namespace epi
 {
 
+// Loudness alignment. Three instruments, three signal chains, one fader
+// convention: the same four-note forte chord measures the same RMS through
+// each, calibrated at -18 dBFS so a forte performance leaves honest
+// headroom at unity. The trims sit at the very end of each path -- after
+// every nonlinearity -- so no operating point moves, only the meter.
+static constexpr float kTrimRhodes = 0.66f;
+static constexpr float kTrimCP70   = 3.94f;
+static constexpr float kTrimWurli  = 3.85f;
+
 void EpiEngine::prepare (double sampleRate, int)
 {
     fs = sampleRate;
@@ -408,16 +417,23 @@ void EpiEngine::process (float* outL, float* outR, int numSamples,
         lastCoilSat = p.coilSat;
         for (auto& t : tines) t.setCoreSaturation (p.coilSat);
     }
-    preamp.setTone (p.bassDb, p.trebleDb, p.preampDrive);
+    {
+        const float k = smoothK (numSamples);
+        sm.step (sm.drive, p.preampDrive, k);
+        sm.step (sm.bass, p.bassDb, k);
+        sm.step (sm.treb, p.trebleDb, k);
+        sm.step (sm.cabMix, p.cabMix, k);
+    }
+    preamp.setTone (sm.bass, sm.treb, sm.drive);
     vibrato.setRate (p.tremRate);
     vibrato.setDepth (p.tremDepth);
     vibrato.setStereo (p.tremStereo);
     phaserL.setParams (p.phaserRate, p.phaserDepth, p.phaserFb, p.phaserMix);
     phaserR.setParams (p.phaserRate, p.phaserDepth, p.phaserFb, p.phaserMix);
-    cabinetL.setMix (p.cabMix);
-    cabinetR.setMix (p.cabMix);
-    cabinetBL.setMix (p.cabMix);
-    cabinetBR.setMix (p.cabMix);
+    cabinetL.setMix (sm.cabMix);
+    cabinetR.setMix (sm.cabMix);
+    cabinetBL.setMix (sm.cabMix);
+    cabinetBR.setMix (sm.cabMix);
     if (cabDirty.exchange (false, std::memory_order_acq_rel))
     {
         const double b = cabBox.load (std::memory_order_relaxed);
@@ -432,6 +448,13 @@ void EpiEngine::process (float* outL, float* outR, int numSamples,
     }
 
     int nextEvent = 0;
+    // The output gain ramps linearly across the block: a fader move steps
+    // once per block otherwise, and on a sustained chord that step is a tick.
+    const float gain1 = p.outGainLin * kTrimRhodes;
+    if (sm.gain < -0.5f) sm.gain = gain1;
+    const float gain0 = sm.gain;
+    sm.gain = gain1;
+
     float pL = 0.0f, pR = 0.0f;
     RhodesVoice* loudestVoice = nullptr;
     float loudest = -1.0f;
@@ -605,8 +628,9 @@ void EpiEngine::process (float* outL, float* outR, int numSamples,
             ++recoveries;
         }
 
-        const float fl = static_cast<float> (l) * p.outGainLin;
-        const float fr = static_cast<float> (r) * p.outGainLin;
+        const float g = gain0 + (gain1 - gain0) * (static_cast<float> (n + 1) / static_cast<float> (numSamples));
+        const float fl = static_cast<float> (l) * g;
+        const float fr = static_cast<float> (r) * g;
         outL[n] = fl;
         outR[n] = fr;
 
@@ -716,16 +740,23 @@ void EpiEngine::processCP70 (float* outL, float* outR, int numSamples,
         }
     }
 
-    cp70Preamp.setTone (p.bassDb, p.trebleDb, p.preampDrive);
+    {
+        const float k = smoothK (numSamples);
+        sm.step (sm.drive, p.preampDrive, k);
+        sm.step (sm.bass, p.bassDb, k);
+        sm.step (sm.treb, p.trebleDb, k);
+        sm.step (sm.cabMix, p.cabMix, k);
+    }
+    cp70Preamp.setTone (sm.bass, sm.treb, sm.drive);
     vibrato.setRate (p.tremRate);
     vibrato.setDepth (p.tremDepth);
     vibrato.setStereo (p.tremStereo);
     phaserL.setParams (p.phaserRate, p.phaserDepth, p.phaserFb, p.phaserMix);
     phaserR.setParams (p.phaserRate, p.phaserDepth, p.phaserFb, p.phaserMix);
-    cabinetL.setMix (p.cabMix);
-    cabinetR.setMix (p.cabMix);
-    cabinetBL.setMix (p.cabMix);
-    cabinetBR.setMix (p.cabMix);
+    cabinetL.setMix (sm.cabMix);
+    cabinetR.setMix (sm.cabMix);
+    cabinetBL.setMix (sm.cabMix);
+    cabinetBR.setMix (sm.cabMix);
     if (cabDirty.exchange (false, std::memory_order_acq_rel))
     {
         const double b = cabBox.load (std::memory_order_relaxed);
@@ -743,6 +774,13 @@ void EpiEngine::processCP70 (float* outL, float* outR, int numSamples,
         lastSpaceSize = p.spaceSize;
         room.setSize (p.spaceSize);
     }
+
+    // The output gain ramps linearly across the block: a fader move steps
+    // once per block otherwise, and on a sustained chord that step is a tick.
+    const float gain1 = p.outGainLin * kTrimCP70;
+    if (sm.gain < -0.5f) sm.gain = gain1;
+    const float gain0 = sm.gain;
+    sm.gain = gain1;
 
     float pL = 0.0f, pR = 0.0f;
     int nextEvent = 0;
@@ -811,8 +849,9 @@ void EpiEngine::processCP70 (float* outL, float* outR, int numSamples,
             ++recoveries;
         }
 
-        const float fl = static_cast<float> (l) * p.outGainLin;
-        const float fr = static_cast<float> (r) * p.outGainLin;
+        const float g = gain0 + (gain1 - gain0) * (static_cast<float> (n + 1) / static_cast<float> (numSamples));
+        const float fl = static_cast<float> (l) * g;
+        const float fr = static_cast<float> (r) * g;
         outL[n] = fl;
         outR[n] = fr;
         pL = std::max (pL, std::abs (fl));
@@ -899,15 +938,23 @@ void EpiEngine::processWurli (float* outL, float* outR, int numSamples,
     // The polarizing rail as a physical drive control, on the saturation
     // knob: 100 to 200 volts spans a sagging supply to the Series 200's
     // hotter rail, with the 200A's nominal +150 in the middle.
-    wurliBus.setBias (100.0 + 100.0 * std::clamp (p.coilSat, 0.0f, 1.0f));
-    wurliPre.setDrive (p.preampDrive);
-    wurliPre.setTone (p.bassDb, p.trebleDb);
+    {
+        const float k = smoothK (numSamples);
+        sm.step (sm.drive, p.preampDrive, k);
+        sm.step (sm.bass, p.bassDb, k);
+        sm.step (sm.treb, p.trebleDb, k);
+        sm.step (sm.cabMix, p.cabMix, k);
+        sm.step (sm.sat, p.coilSat, k);
+    }
+    wurliBus.setBias (100.0 + 100.0 * std::clamp (sm.sat, 0.0f, 1.0f));
+    wurliPre.setDrive (sm.drive);
+    wurliPre.setTone (sm.bass, sm.treb);
     wurliTrem.setRate (p.tremRate);
     wurliTrem.setDepth (p.tremDepth);
     phaserL.setParams (p.phaserRate, p.phaserDepth, p.phaserFb, p.phaserMix);
     phaserR.setParams (p.phaserRate, p.phaserDepth, p.phaserFb, p.phaserMix);
-    cabinetBL.setMix (p.cabMix);
-    cabinetBR.setMix (p.cabMix);
+    cabinetBL.setMix (sm.cabMix);
+    cabinetBR.setMix (sm.cabMix);
     if (cabDirty.exchange (false, std::memory_order_acq_rel))
     {
         const double b = cabBox.load (std::memory_order_relaxed);
@@ -925,6 +972,13 @@ void EpiEngine::processWurli (float* outL, float* outR, int numSamples,
         lastSpaceSize = p.spaceSize;
         room.setSize (p.spaceSize);
     }
+
+    // The output gain ramps linearly across the block: a fader move steps
+    // once per block otherwise, and on a sustained chord that step is a tick.
+    const float gain1 = p.outGainLin * kTrimWurli;
+    if (sm.gain < -0.5f) sm.gain = gain1;
+    const float gain0 = sm.gain;
+    sm.gain = gain1;
 
     float pL = 0.0f, pR = 0.0f;
     int nextEvent = 0;
@@ -1006,8 +1060,9 @@ void EpiEngine::processWurli (float* outL, float* outR, int numSamples,
             ++recoveries;
         }
 
-        const float fl = static_cast<float> (l) * p.outGainLin;
-        const float fr = static_cast<float> (r) * p.outGainLin;
+        const float gOut = gain0 + (gain1 - gain0) * (static_cast<float> (n + 1) / static_cast<float> (numSamples));
+        const float fl = static_cast<float> (l) * gOut;
+        const float fr = static_cast<float> (r) * gOut;
         outL[n] = fl;
         outR[n] = fr;
         pL = std::max (pL, std::abs (fl));
