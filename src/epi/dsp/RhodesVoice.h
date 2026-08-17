@@ -429,7 +429,17 @@ public:
             // about the cause justifies shipping the second one.
             if (! std::isfinite (e)) { recover (fluxOut); return; }
 
-            if (! hammer.isActive() && e < quietEnergy)
+            // The threshold is set where the overtones have genuinely gone,
+            // not where the whole tine has. At 1e-10 the note is some thirty
+            // decibels down in amplitude, and by then the overtones -- whose Q
+            // is twenty-five times lower than the fundamental's -- decayed
+            // long ago; a sympathetically driven tine never had them at all.
+            // The old threshold of 1e-13 only caught tines that were already
+            // inaudible, so with the pedal down all eighty-eight ran their
+            // full twenty-two modes to carry what one mode was holding.
+            // Freezing rather than clearing the parked modes is what lets a
+            // strike pick them straight back up.
+            if (! hammer.isActive() && e < kReducedEnergy)
             {
                 if (! reduced) { sys.setNumModes (1); reduced = true; }
             }
@@ -722,8 +732,23 @@ private:
         // fourteen milliseconds of being hit.
         const double damp = std::clamp (cfg.damping, 0.0, 1.0);
         const double qTrim        = 1.35 - 0.9 * damp;
-        const double qFundamental = 1800.0 * qTrim;
         const double qOvertone    =   70.0 * qTrim;
+
+        // The fundamental's privileged Q is CONDITIONAL, and the condition is
+        // the bar. The fork is balanced about its mounting only when both
+        // prongs are attached; unbolt the bar and the tine's fundamental
+        // drives the block directly, exactly as its overtones always do, and
+        // the note dies at their rate. So the coupling control owns the
+        // sustain -- which is what that knob means on the instrument, and
+        // which this model had silently dropped: it changed the attack clang
+        // and nothing else, and was reported as doing nothing.
+        //
+        // Normalised so the default setting keeps the measured T60s (28 s at
+        // A2 and the rest), full coupling sits at the top of the measured Q
+        // range, and zero leaves the fundamental as unprotected as any other
+        // mode.
+        const double balance = (0.10 + 0.90 * std::clamp (cfg.barCoupling, 0.0, 1.0)) / 0.64;
+        const double qFundamental = std::max (qOvertone, 1800.0 * qTrim * balance);
 
         // Where the hammer lands, as a fraction of the free length.
         //
@@ -1124,7 +1149,12 @@ private:
         constexpr double kAxialRestraint = 0.05;
         stretchEA   = kAxialRestraint * kSpringSteel.youngs * area
                     / std::max (1.0e-4, tineLength);
-        stretchGain = std::clamp (cfg.nonlinearity, 0.0, 1.0);
+        // The knob spans zero to twice the nominal restraint, with the
+        // default in the middle at the measured value -- the bass glide this
+        // produces at the default is a few cents where the reference
+        // instrument shows nine to twenty-nine, so the top half of the knob
+        // is the honest range, not an exaggeration.
+        stretchGain = 2.0 * std::clamp (cfg.nonlinearity, 0.0, 1.0);
 
         // Reconfiguring changes what the quadratised terms MEAN, so their
         // auxiliary variables no longer describe the system they belong to.
@@ -1427,6 +1457,7 @@ private:
     Collision diag;
     // How many times this tine has had to be put back. Reported by the tests.
     int diverged = 0;
+    static constexpr double kReducedEnergy = 1.0e-10;
     double linearSwing = 1.0e-4, quietEnergy = 1.0e-13;
     bool   reduced = false;
 

@@ -118,6 +118,11 @@ static EngineParams referenceParams()
     p.bassDb      = 0.0f;
     p.trebleDb    = 0.0f;
     p.coilSat     = 0.0f;
+    // The mechanism's thump is a separate signal with its own row (S6); left
+    // in here it contaminates every spectral measurement -- most visibly the
+    // chord-summing row, where its products through the tines' nonlinearity
+    // read as transducer intermodulation that is not there.
+    p.strikeNoise = 0.0f;
     p.outGainLin  = 1.0f;
     return p;
 }
@@ -203,7 +208,11 @@ static void sectionA()
         for (TestNote tn : { kBass, kLowMid, kMid, kUpper })
         {
             const auto& x = render (tn.midi, kHard, 3.0);
-            const double f0 = an::refineF0 (x, kFs, noteHz (tn.midi));
+            // Refined over the SAME window the partials are read in. A hard
+            // bass strike is still settling from its initial sharpness, and a
+            // fundamental measured earlier than its harmonics shows the glide
+            // as false inharmonicity.
+            const double f0 = an::refineF0 (x, kFs, noteHz (tn.midi), 1.0, 2.5);
             for (int k = 2; k <= 6; ++k)
             {
                 const double target = f0 * k;

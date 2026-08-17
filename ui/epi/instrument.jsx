@@ -49,6 +49,7 @@ function InstrumentView({ pickupPos, setPickupPos, pickupDist }) {
     const trail = new Array(96).fill(0);
     let trailAt = 0;
 
+    let vChipT = 0, vChipPeak = 0;
     const tick = (now) => {
       const dt = Math.min(0.1, (now - last) / 1000); last = now;
       const L = lv.current || {};
@@ -125,10 +126,17 @@ function InstrumentView({ pickupPos, setPickupPos, pickupDist }) {
         const g = 0.6 + 4.4 * P.current.pickupDist;
         gapRef.current.setAttribute('width', Math.max(2, g * 5).toFixed(1));
       }
-      if (voiceRef.current) {
+      /* Same discipline as the harp's caption: throttled, peak-held, and
+         padded to a fixed width so the header stops twitching. */
+      vChipPeak = Math.max(vChipPeak, L.voices || 0);
+      vChipT += dt;
+      if (voiceRef.current && vChipT >= 0.25) {
+        vChipT = 0;
         const hz = L.noteHz || 0;
         voiceRef.current.textContent =
-          (L.voices || 0) + ' voices' + (hz > 1 ? '  ·  ' + hz.toFixed(1) + ' Hz' : '');
+          String(vChipPeak).padStart(2, '\u2007') + ' voices' +
+          (hz > 1 ? '  ·  ' + hz.toFixed(1).padStart(6, '\u2007') + ' Hz' : '');
+        vChipPeak = 0;
       }
 
       raf = requestAnimationFrame(tick);

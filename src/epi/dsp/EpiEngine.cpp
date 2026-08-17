@@ -145,7 +145,7 @@ void EpiEngine::handleEvent (const NoteEvent& e, const EngineParams& p)
             tines[i].noteOn (e.note, vel, rhodesConfig (p), seed);
             // The mechanism knocks whether or not the tine is heard. It goes
             // into the frame, not into the output -- see ActionNoise.
-            action.strike (vel, noiseRng);
+            action.strike (static_cast<double> (i) / (kNumTines - 1), vel);
             vLastNote.store (e.note, std::memory_order_relaxed);
             seed = seed * 1664525u + 1013904223u;
             break;
@@ -157,7 +157,7 @@ void EpiEngine::handleEvent (const NoteEvent& e, const EngineParams& p)
             if (i < 0 || i >= kNumTines) break;
             keyDown[i] = false;
             tines[i].noteOff();
-            action.release();
+            action.release (static_cast<double> (i) / (kNumTines - 1));
             break;
         }
 

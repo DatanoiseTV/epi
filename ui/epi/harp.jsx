@@ -39,6 +39,25 @@ const HP_BAR_Y = 34, HP_BAR_X0 = -16;        // tone bar: above, and back to the
 const HP_BAR_LEN0 = 150, HP_BAR_LEN1 = 66;
 const HP_KEY_Y = -54, HP_KEY_X0 = -205, HP_KEY_X1 = -62;
 const HP_KEY_DIP = 7;                     // how far a key falls when played
+
+/* Black keys, measured off a real keyboard rather than invented. On a
+   164 mm octave the whites are 23.5 mm and the blacks 13.7 -- a ratio of
+   0.58, not the 0.6-of-a-white-boundary guess -- about 60 percent of the
+   white's length, RAISED roughly ten millimetres, and sitting at the
+   BACK of the key. And they are not centred on the white boundaries:
+   the pair is pushed apart, C sharp toward C and D sharp toward E, and
+   the triple spreads the same way about a centred G sharp. That offset
+   pattern is most of what makes a keyboard read as a keyboard.
+
+   Drawn as two faces each -- the top, and the nose falling to the white
+   surface -- because a raised slab seen from above and in front shows
+   exactly those two. The earlier version had them full length, in the
+   whites' own plane, painted underneath: invisible, and the whole thing
+   read as a picket fence. */
+const HP_BK_LEN = 86;                     // black key length, back portion
+const HP_BK_RISE = 10;                    // how far it stands above the whites
+const HP_BK_HW = 6.85;                    // 13.7 mm wide
+const HP_BK_SHIFT = { 1: -2.0, 3: +2.0, 6: -2.6, 8: 0.0, 10: +2.6 };
 const HP_HAM_AT = 0.20;                   // where the hammer meets the tine
 const HP_SWING = 11;                      // mm of tip travel at full deflection
 
@@ -104,6 +123,27 @@ function hpRibbon(x0, x1, y0, y1, z, hw) {
          d[0].toFixed(1) + ',' + d[1].toFixed(1);
 }
 
+/* The visible face of key i: a white key's top, or a black key's top and
+   nose as one polygon outline. */
+function keyFace(i, down) {
+  const z = HP_KEY_Z[i] + (HP_IS_BLACK[i] ? (HP_BK_SHIFT[(21 + i) % 12] || 0) : 0);
+  if (!HP_IS_BLACK[i]) {
+    return hpRibbon(HP_KEY_X0, HP_KEY_X1,
+                    HP_KEY_Y - (down ? HP_KEY_DIP : 0), HP_KEY_Y, z,
+                    HP_WKW * 0.5 - 0.5);
+  }
+  /* Top face from the back, then the nose dropping to the white surface. */
+  const x0 = HP_KEY_X1 - HP_BK_LEN;
+  const yTop = HP_KEY_Y + HP_BK_RISE - (down ? HP_KEY_DIP * 0.7 : 0);
+  const a = hpProject(x0, yTop, z - HP_BK_HW);
+  const b = hpProject(HP_KEY_X1, yTop, z - HP_BK_HW);
+  const c = hpProject(HP_KEY_X1, yTop, z + HP_BK_HW);
+  const d = hpProject(x0, yTop, z + HP_BK_HW);
+  const e = hpProject(x0 - 5, HP_KEY_Y, z + HP_BK_HW);
+  const f = hpProject(x0 - 5, HP_KEY_Y, z - HP_BK_HW);
+  return [a, b, c, d, e, f].map((q) => q[0].toFixed(1) + ',' + q[1].toFixed(1)).join(' ');
+}
+
 function HarpView() {
   const lv = JuceBridge.useEventRef('levels',
     { harp: [], keys: [], loNote: 21, voices: 0 });
@@ -124,6 +164,10 @@ function HarpView() {
     const prevEnv = new Float32Array(HARP_N);
     const strikeT = new Float32Array(HARP_N).fill(99);
     let scale = 1e-3;
+    /* The caption is throttled and its numbers are fixed width, because a
+       figure that reflows four times a second reads as a fault, not a
+       reading. Peak-held between updates so a fast chord is not missed. */
+    let capT = 0, capHeld = 0, capRing = 0;
 
     const frame = (now) => {
       const dt = Math.min(0.1, (now - prev) / 1000); prev = now;
@@ -170,9 +214,7 @@ function HarpView() {
           if (k.getAttribute('class') !== cls) k.setAttribute('class', cls);
           /* A key pivots on its balance rail, so the front falls and the
              back does not. */
-          k.setAttribute('points',
-            hpRibbon(HP_KEY_X0, HP_KEY_X1, HP_KEY_Y - (down ? HP_KEY_DIP : 0), HP_KEY_Y, z,
-                   HP_IS_BLACK[i] ? HP_WKW * 0.28 : HP_WKW * 0.46));
+          k.setAttribute('points', keyFace(i, down));
         }
 
         /* One hammer per note, fired by that tine's own level jumping, so
@@ -198,11 +240,17 @@ function HarpView() {
         }
       }
 
-      if (capRef.current) {
-        const txt = held > 0 && ringing > held
-          ? held + ' struck · ' + (ringing - held) + ' answering'
-          : ringing + (ringing === 1 ? ' tine' : ' tines') + ' ringing';
+      capHeld = Math.max(capHeld, held);
+      capRing = Math.max(capRing, ringing);
+      capT += dt;
+      if (capRef.current && capT >= 0.25) {
+        capT = 0;
+        const pad = (n) => String(n).padStart(2, '\u2007');
+        const txt = capHeld > 0
+          ? pad(capHeld) + ' struck · ' + pad(Math.max(0, capRing - capHeld)) + ' answering'
+          : pad(capRing) + ' ringing\u2007\u2007\u2007\u2007\u2007\u2007\u2007\u2007\u2007';
         if (capRef.current.textContent !== txt) capRef.current.textContent = txt;
+        capHeld = 0; capRing = 0;
       }
 
       raf = requestAnimationFrame(frame);
@@ -216,7 +264,7 @@ function HarpView() {
      nearest the viewer. Every note is the same distance from the camera
      -- it looks along the note axis, not across it -- so there is nothing
      to sort between them. */
-  const bars = [], blocks = [], poles = [], tines = [], hammers = [], keys = [];
+  const bars = [], blocks = [], poles = [], tines = [], hammers = [], keys = [], blackKeys = [];
   for (let i = 0; i < HARP_N; i++) {
     const z = HP_KEY_Z[i], len = hpTineLen(i), bl = hpBarLen(i);
     bars.push(<polygon key={'b' + i} className="hp-bar"
@@ -229,10 +277,13 @@ function HarpView() {
                         points={hpRibbon(0, len, 0, 0, z, HP_TINE_HW)} />);
     hammers.push(<polygon key={'h' + i} ref={hamRefs.current[i]} className="hp-hammer"
                           opacity="0" points="" />);
-    keys.push(<polygon key={'y' + i} ref={keyRefs.current[i]}
-                       className={HP_IS_BLACK[i] ? 'hp-key black' : 'hp-key'}
-                       points={hpRibbon(HP_KEY_X0, HP_KEY_X1, HP_KEY_Y, HP_KEY_Y, z,
-                                      HP_IS_BLACK[i] ? HP_WKW * 0.28 : HP_WKW * 0.46)} />);
+    /* Whites painted first and blacks after, because the blacks stand on
+       top of them -- interleaved by note number they vanish underneath,
+       which is what turned the keyboard into a picket fence. */
+    (HP_IS_BLACK[i] ? blackKeys : keys)
+      .push(<polygon key={'y' + i} ref={keyRefs.current[i]}
+                     className={HP_IS_BLACK[i] ? 'hp-key black' : 'hp-key'}
+                     points={keyFace(i, false)} />);
   }
 
   const rail = hpRibbon(HP_BAR_X0 - 12, HP_BAR_X0 - 2, HP_BAR_Y + 4, HP_BAR_Y + 4,
@@ -250,6 +301,7 @@ function HarpView() {
       {tines}
       {hammers}
       {keys}
+      {blackKeys}
       <text className="iv-cap" x="18" y="332">HARP · 88 TINES AND THEIR KEYS</text>
       <text className="iv-cap hp-count" ref={capRef} x="596" y="332">0 tines ringing</text>
     </g>

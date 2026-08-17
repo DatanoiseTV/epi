@@ -14,6 +14,8 @@
 
 #include "EpiModel.h"
 
+#include <array>
+
 namespace epi
 {
 
@@ -25,28 +27,30 @@ namespace epi
 // tine. None of that reaches the output directly, and this is the part that
 // decides how it has to be modelled: the pickup is a coil round a magnet, and
 // a magnet cannot hear a wooden key. It can only see steel moving in front of
-// it.
+// it. So the mechanism's noise gets out exactly one way -- it shakes the
+// frame, the frame shakes every tine bolted to it, and the pickups hear the
+// tines.
 //
-// So the mechanism's noise gets out exactly one way -- it shakes the frame,
-// the frame shakes every tine bolted to it, and the pickups hear the tines.
-// That is not an approximation made for convenience; it is why a Rhodes thumps
-// rather than clicks, and why the thump is pitched by whatever happens to be
-// free to ring. With the pedal down there is more of it, because there is more
-// left undamped to answer, and that falls out of the model rather than being
-// arranged.
+// Each strike is its own event, in its own voice, because each key is its own
+// mechanism. One shared envelope -- which is what this used to be -- meant a
+// chord's key noises piled into a single lump whose level belonged to no note
+// in particular, and a soft note landing just after a loud one inherited the
+// loud one's thump.
 //
-// Injecting a noise burst straight into the output would have been a line of
-// code and would have got all of that wrong.
-//
-// The burst itself is two decaying bands rather than one, because the two
-// events are not the same. The hammer knock is the harder and shorter of them;
-// the key bottoming out is softer, lower and a little later. Both are far
-// above the frame's own modes, so what actually comes out is the frame's
-// response to being hit, which is the point.
+// The character follows the key. A bass key carries the heaviest hammer on
+// the longest lever, so its bottoming-out is deeper and harder; a treble key
+// is a short light lever whose noise is a higher, quicker tick. The knock
+// brightens with velocity as well as loudening, because a mechanism moved
+// gently has nothing in it travelling fast enough to rattle.
 // ---------------------------------------------------------------------------
 class ActionNoise
 {
 public:
+    // Enough for both hands landing at once plus overlapping releases; the
+    // oldest is recycled beyond that, which on this signal -- a thump lasting
+    // tens of milliseconds -- is inaudible.
+    static constexpr int kVoices = 12;
+
     void prepare (double sampleRate)
     {
         fs = sampleRate;
@@ -55,78 +59,109 @@ public:
 
     void reset()
     {
-        knockEnv = thudEnv = 0.0;
-        knockState = thudState = 0.0;
+        for (auto& v : voices) v = {};
+        next = 0;
     }
 
-    // A key going down. Velocity sets both how hard and how bright, the way it
-    // does on the instrument: a key pressed gently is quieter AND duller,
-    // because nothing in the mechanism is travelling fast enough to rattle.
-    void strike (double velocity, Rng& rng)
+    // A key going down. `reg` is the key's place on the keyboard, 0 at the
+    // bottom, 1 at the top.
+    void strike (double reg, double velocity)
     {
-        const double v = std::clamp (velocity, 0.0, 1.0);
-        knockEnv += 1.0 * v * v;
-        thudEnv  += 0.6 * v;
-        knockCut = 900.0 + 2600.0 * v;
-        (void) rng;
+        const double vel = std::clamp (velocity, 0.0, 1.0);
+        const double r = std::clamp (reg, 0.0, 1.0);
+        Voice& v = alloc();
+
+        // The knock: the hammer's pivot and the escapement letting go. Faster
+        // strikes rattle brighter as well as louder, and the smaller treble
+        // mechanism rings higher.
+        v.knockEnv = vel * vel * (0.9 + 0.5 * r);
+        v.knockCut = (700.0 + 2400.0 * vel) * (1.0 + 1.1 * r);
+        v.knockDecay = std::exp (-1.0 / ((0.0030 - 0.0016 * r) * fs));
+
+        // The thud: the key bottoming out on its front rail felt. Heavier and
+        // deeper toward the bass, where the lever and hammer are largest.
+        v.thudEnv = vel * (1.35 - 0.85 * r);
+        v.thudCut = 190.0 + 240.0 * r;
+        v.thudDecay = std::exp (-1.0 / ((0.0170 - 0.0080 * r) * fs));
     }
 
-    // And coming back up: the damper arm dropping onto the tine. Softer, and
-    // it does not scale with how hard the note was played -- a released key
-    // returns under its own spring however it was struck.
-    void release()
+    // And coming back up: the damper arm dropping onto the tine and the key
+    // returning to its rest felt. It does not scale with how hard the note
+    // was played -- a released key returns under its own spring -- but it
+    // does scale with the weight of what returns.
+    void release (double reg)
     {
-        thudEnv += 0.22;
+        const double r = std::clamp (reg, 0.0, 1.0);
+        Voice& v = alloc();
+        v.knockEnv = 0.0;
+        v.thudEnv = 0.30 * (1.25 - 0.7 * r);
+        v.thudCut = 230.0 + 260.0 * r;
+        v.thudDecay = std::exp (-1.0 / (0.0110 * fs));
     }
 
-    bool isActive() const { return knockEnv > 1.0e-6 || thudEnv > 1.0e-6; }
+    bool isActive() const
+    {
+        for (const auto& v : voices)
+            if (v.knockEnv > 1.0e-6 || v.thudEnv > 1.0e-6) return true;
+        return false;
+    }
 
-    // One sample of force into the frame. Newtons, in the same units as the
-    // tine reaction the harp already receives.
+    // One sample of force into the frame, all voices summed.
     double tick (double amount, Rng& rng)
     {
-        if (amount <= 0.0 || ! isActive()) return 0.0;
+        if (amount <= 0.0) return 0.0;
 
+        double out = 0.0;
         const double n = static_cast<double> (rng.next());   // -1..1
 
-        // The knock: short and comparatively bright.
-        const double ak = std::exp (-1.0 / (0.0022 * fs));
-        knockState += (knockCut / fs) * (n - knockState);
-        const double knock = knockState * knockEnv;
-        knockEnv *= ak;
+        for (auto& v : voices)
+        {
+            if (v.knockEnv <= 1.0e-7 && v.thudEnv <= 1.0e-7) continue;
 
-        // The thud: longer, and lower by more than an octave.
-        const double at = std::exp (-1.0 / (0.0130 * fs));
-        thudState += (260.0 / fs) * (n - thudState);
-        const double thud = thudState * thudEnv;
-        thudEnv *= at;
+            v.knockState += (v.knockCut / fs) * (n - v.knockState);
+            out += v.knockState * v.knockEnv;
+            v.knockEnv *= v.knockDecay;
 
-        if (knockEnv < 1.0e-7) knockEnv = 0.0;
-        if (thudEnv  < 1.0e-7) thudEnv  = 0.0;
+            v.thudState += (v.thudCut / fs) * (n - v.thudState);
+            out += v.thudState * v.thudEnv;
+            v.thudEnv *= v.thudDecay;
 
-        // Scaled so the control's top end is audible against a played note
-        // without ever being the loudest thing in the instrument.
-        return kForce * amount * (knock + thud);
+            if (v.knockEnv < 1.0e-7) v.knockEnv = 0.0;
+            if (v.thudEnv < 1.0e-7) v.thudEnv = 0.0;
+        }
+
+        return kForce * amount * out;
     }
 
 private:
+    struct Voice
+    {
+        double knockEnv = 0.0, thudEnv = 0.0;
+        double knockState = 0.0, thudState = 0.0;
+        double knockCut = 2000.0, thudCut = 220.0;
+        double knockDecay = 0.0, thudDecay = 0.0;
+    };
+
+    Voice& alloc()
+    {
+        // Prefer a silent slot; otherwise recycle round-robin.
+        for (auto& v : voices)
+            if (v.knockEnv <= 1.0e-7 && v.thudEnv <= 1.0e-7) return v;
+        Voice& v = voices[static_cast<std::size_t> (next)];
+        next = (next + 1) % kVoices;
+        return v;
+    }
+
     // A coupling gain into the frame, not a force in newtons -- the harp's
     // mass is a lumped modal figure, so the scale here is only meaningful
-    // against it. Calibrated by measurement rather than by ear: at the
-    // control's maximum the mechanism sits about 30 dB under the note that
-    // made it, which is where a key thump sits on a direct feed from a real
-    // one.
-    //
-    // Recalibrated once the frame started resonating. It was set against a
-    // harp whose modes had been wiped by clear(), which left it an integrator
-    // rather than a resonator -- a force produced a permanent velocity, so it
-    // gave far more displacement for far less force than the real thing.
+    // against it. Calibrated by measurement: at the control's maximum the
+    // mechanism sits about 30 dB under the note that made it, which is where
+    // a key thump sits on a direct feed from a real one.
     static constexpr double kForce = 220000.0;
 
     double fs = 48000.0;
-    double knockEnv = 0.0, thudEnv = 0.0;
-    double knockState = 0.0, thudState = 0.0;
-    double knockCut = 2000.0;
+    std::array<Voice, kVoices> voices {};
+    int next = 0;
 };
 
 } // namespace epi

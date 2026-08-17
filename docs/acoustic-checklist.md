@@ -98,6 +98,15 @@ not over seconds.
 
 ## Known gaps
 
+- **96 kHz does not fit.** Measured under the adversarial stress (every
+  control sweeping, twenty notes a second, pedal cycling), 57% of blocks miss
+  the deadline at 96 kHz where 48 kHz misses 0.1%. The honest cause is that the
+  4x pickup oversampling is pure waste at 96 kHz — the flux content above the
+  fold is already down 60–100 dB at 48 kHz internal rates — but the
+  oversampling factor is compile-time and unwinding it is a real refactor, not
+  a constant change. Until then: run the plugin at 44.1/48 kHz.
+
+
 Tracked here so they are not rediscovered as surprises. Run
 `ctest -R epi_reference` for the current numbers; this is the standing list of
 what is understood and unfixed.

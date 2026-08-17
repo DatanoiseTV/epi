@@ -21,6 +21,7 @@
 #include "epi/dsp/EpiEngine.h"
 
 #include <cstdio>
+#include <cstdlib>
 #include <vector>
 
 using namespace epi;
@@ -39,6 +40,8 @@ static std::vector<double> render (const std::vector<int>& notes, float coilSat,
     EngineParams p;
     p.tremDepth = 0.0f; p.spaceMix = 0.0f; p.cabMix = 0.0f;
     p.coilSat = coilSat;
+    if (const char* v = std::getenv ("EPI_NONLIN")) p.nonlinAmt = (float) atof (v);
+    if (const char* v = std::getenv ("EPI_NOISE")) p.strikeNoise = (float) atof (v);
     p.preampDrive = preampDrive;
 
     std::vector<NoteEvent> evs;
