@@ -1,0 +1,35 @@
+diff --git a/modules/juce_gui_extra/native/juce_WebBrowserComponent_mac.mm b/modules/juce_gui_extra/native/juce_WebBrowserComponent_mac.mm
+index d881e76..e095ad2 100644
+--- a/modules/juce_gui_extra/native/juce_WebBrowserComponent_mac.mm
++++ b/modules/juce_gui_extra/native/juce_WebBrowserComponent_mac.mm
+@@ -878,9 +878,12 @@ public:
+                 [config.get() setURLSchemeHandler:webViewDelegate.get() forURLScheme:@"juce"];
+         }
+ 
+-       #if JUCE_DEBUG
++       // Doobie patch: enable WebView inspection even in Release builds.
++       // Required for Safari's Develop menu to attach to the running plugin's
++       // WebView when iterating on the HTML/CSS/JS UI. Removing this guard
++       // is the only way the underlying WKWebView responds to setInspectable
++       // on macOS 13.3+.
+         [preferences setValue: @(true) forKey: @"developerExtrasEnabled"];
+-       #endif
+ 
+        #if JUCE_MAC
+         auto& webviewClass = [&]() -> auto&
+@@ -912,6 +915,15 @@ public:
+         [webView.get() setNavigationDelegate: webViewDelegate.get()];
+         [webView.get() setUIDelegate:         webViewDelegate.get()];
+ 
++        // Doobie patch: macOS 13.3+ / Safari 16.4+ require setInspectable:YES
++        // on the WKWebView for the Develop menu to list it. Without this the
++        // developerExtrasEnabled pref above is silently ignored.
++        if (@available (macOS 13.3, iOS 16.4, *))
++        {
++            if ([webView.get() respondsToSelector: @selector (setInspectable:)])
++                webView.get().inspectable = YES;
++        }
++
+         setView (webView.get());
+         owner.owner.addAndMakeVisible (this);
+     }
