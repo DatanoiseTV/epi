@@ -43,6 +43,8 @@ EpiAudioProcessor::EpiAudioProcessor()
             for (int i = 0; i < epi::EpiEngine::kNumTines; ++i)
                 setTineMod (i, (*mods)[static_cast<std::size_t> (i)][0],
                                (*mods)[static_cast<std::size_t> (i)][1]);
+        if (const auto* cab = epi::factoryCabMods (presetManager.getCurrentName()))
+            setCabMod ({ (*cab)[0], (*cab)[1], (*cab)[2], (*cab)[3], (*cab)[4] });
     });
     snapshotCurrentParams();
 }

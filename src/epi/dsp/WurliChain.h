@@ -101,10 +101,12 @@ public:
     {
         input.setCutoff (18.0, rate);
         miller.setCutoff (15500.0, rate);
+        bassLp.setCutoff (100.0, rate);
+        trebHp.setCutoff (2000.0, rate);
         reset();
     }
 
-    void reset() { input.reset(); miller.reset(); }
+    void reset() { input.reset(); miller.reset(); bassLp.reset(); trebHp.reset(); }
 
     // drive 0..1 scales the signal into the clip knee exponentially, default
     // nearly clean. At kStockDrive the stage sees exactly the circuit's own
@@ -113,6 +115,16 @@ public:
     void setDrive (double d)
     {
         driveGain = 0.25 * std::pow (40.0, std::clamp (d, 0.0, 1.0));
+    }
+
+    // The real 200A has no tone controls -- volume and vibrato only. These
+    // two shelves are the engine's shared bass/treble knobs as a labelled
+    // studio convenience, placed after the clip like an outboard channel
+    // strip, so at zero they vanish and the circuit stays the circuit.
+    void setTone (double bassDb, double trebleDb)
+    {
+        bassGain = std::pow (10.0, std::clamp (bassDb, -12.0, 12.0) / 20.0) - 1.0;
+        trebGain = std::pow (10.0, std::clamp (trebleDb, -12.0, 12.0) / 20.0) - 1.0;
     }
 
     double process (double x)
@@ -128,7 +140,10 @@ public:
                      : kSatNeg * std::tanh (y / kSatNeg);
 
         y = miller.lowpass (y);
-        return y / driveGain;
+        y /= driveGain;
+        if (bassGain != 0.0) y += bassGain * bassLp.lowpass (y);
+        if (trebGain != 0.0) y += trebGain * trebHp.highpass (y);
+        return y;
     }
 
 private:
@@ -136,7 +151,8 @@ private:
     static constexpr double kSatPos = 2.0;    // V toward saturation
     static constexpr double kSatNeg = 11.0;   // V toward cutoff
 
-    OnePoleD input, miller;
+    OnePoleD input, miller, bassLp, trebHp;
+    double bassGain = 0.0, trebGain = 0.0;
     double driveGain = 0.25 * std::pow (40.0, kStockDrive);
 };
 

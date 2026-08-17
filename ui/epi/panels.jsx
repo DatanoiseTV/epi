@@ -30,10 +30,25 @@ function ActionPanel() {
    The knobs shown are the ones this instrument's physics can read. The
    CP-70 has no tone bar, no bloom and no magnetics -- showing those
    knobs would be showing dead controls. */
-function TinePanel({ cp70 }) {
+function TinePanel({ inst }) {
+  const cp70 = inst === 1, wurli = inst === 2;
   const [tune] = useJuceSlider('tune');
   const [shop, setShop] = useState(false);
   const a4 = (440 * Math.pow(2, JuceBridge.PARAMS.tune.map.to(tune) / 1200)).toFixed(1) + ' Hz';
+  if (wurli) return (
+    <div className="panel f-tine">
+      <PHead title="Reed" meta={a4} />
+      <div className="krow">
+        <PKnob id="tipMass" label="TONGUE" />
+        <PKnob id="resDamp" label="CLAMP" />
+        <PKnob id="tune" label="TUNE" />
+      </div>
+      {/* A solder-tuned steel tongue on a knife-edge clamp: the tongue knob
+          moves its thickness with the mass re-solved, the clamp knob files
+          the knife edge, and tuning is the tech's solder move in reverse. */}
+      <div className="note">tongue thickness · knife-edge loss · solder-tuned</div>
+    </div>
+  );
   if (cp70) return (
     <div className="panel f-tine">
       <div className="phead">
@@ -80,10 +95,28 @@ function TinePanel({ cp70 }) {
 }
 
 /* ---- PICKUP: where the sound is actually made ---- */
-function PickupPanel({ cp70 }) {
+function PickupPanel({ inst }) {
+  const cp70 = inst === 1, wurli = inst === 2;
   const [pos] = useJuceSlider('pickupPos');
+  const [sat] = useJuceSlider('coilSat');
   const [shop, setShop] = useState(false);
   const mm = (JuceBridge.PARAMS.pickupPos.map.to(pos) * 2).toFixed(2) + ' mm';
+  if (wurli) return (
+    <div className="panel f-pickup">
+      <PHead title="Pickup" meta={Math.round(100 + 100 * sat) + ' V'} />
+      {/* Electrostatic: the reed is one plate of a capacitor polarised at
+          +150 volts, and the 1/(gap - y) asymmetry IS the bark. Centring is
+          the manual's own voicing move; the supply rail is a physical drive
+          control -- a sagging unit sits near 130, the hotter Series 200
+          rail near 170. */}
+      <div className="krow">
+        <PKnob id="pickupPos" label="CENTRING" />
+        <PKnob id="pickupDist" label="GAP" />
+        <PKnob id="coilSat" label="SUPPLY" />
+      </div>
+      <div className="note">electrostatic · the asymmetry is the bark</div>
+    </div>
+  );
   if (cp70) return (
     <div className="panel f-pickup">
       <PHead title="Bridge" meta="PIEZO" />

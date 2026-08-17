@@ -28,4 +28,8 @@ namespace epi
     // deliberate default, so browsing amp voicings never destroys a scale
     // someone has painted.
     const std::array<std::array<float, 2>, 88>* factoryTineMods (const juce::String& name);
+
+    // And the cabinet bench, for presets whose instrument lives on its own
+    // speakers. Null for every preset that should leave the player's box.
+    const std::array<float, 5>* factoryCabMods (const juce::String& name);
 }

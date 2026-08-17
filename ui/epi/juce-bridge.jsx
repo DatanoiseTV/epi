@@ -48,7 +48,7 @@
   /* Choice lists. Order must match the C++ StringArrays in
      src/epi/ParameterIDs.h. */
   // Must match epi::ids::instrumentNames.
-  const INSTRUMENTS = ['Rhodes', 'CP-70'];
+  const INSTRUMENTS = ['Rhodes', 'CP-70', 'Wurlitzer'];
   const PICKUP_SEL  = ['Neck', 'Bridge', 'Both +', 'Both \u2212'];
 
   const pct  = (n) => Math.round(n * 100) + '%';

@@ -37,7 +37,6 @@ function App() {
 
   /* Which instrument this is decides which controls exist at all. */
   const [instIdx] = useJuceChoice('instrument', INSTRUMENTS);
-  const cp70 = instIdx === 1;
 
   const preset = useJuceEvent('presetInfo', { name: '—', dirty: false });
   const [browser, setBrowser] = React.useState(false);
@@ -49,8 +48,8 @@ function App() {
         <VizCard />
         <div className="rack">
           <ActionPanel />
-          <TinePanel cp70={cp70} />
-          <PickupPanel cp70={cp70} />
+          <TinePanel inst={instIdx} />
+          <PickupPanel inst={instIdx} />
           <AmpPanel />
           <FxPanel />
         </div>

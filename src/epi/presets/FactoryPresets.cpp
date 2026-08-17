@@ -167,6 +167,19 @@ std::vector<epicommon::PresetManager::Preset> makeFactoryPresets()
             { tremDepth, 0.0f }, { cabMix, 0.5f }, { spaceMix, 0.15f },
         }) },
 
+        // The third instrument: a 200A on its own speakers. The supply sits
+        // at nominal (+150 V on the saturation knob's midpoint), the drive
+        // at the circuit's literal level, the vibrato at the pot's classic
+        // mid setting -- and the cabinet bench is painted to the measured
+        // small open-back ovals by this preset's workshop table.
+        { "Two Hundred", base ({
+            { instrument, 2.0f },
+            { preampDrive, 0.31f }, { coilSat, 0.5f },
+            { pickupPos, 0.5f }, { pickupDist, 0.17f },
+            { tremDepth, 0.5f }, { tremRate, 5.6f },
+            { cabMix, 0.7f }, { spaceMix, 0.10f },
+        }) },
+
         // ---- workshop presets ------------------------------------------------
         // These four re-cut the harp itself through the tine workshop. Loading
         // one paints its table; loading any other preset leaves the workshop
@@ -246,6 +259,17 @@ namespace
         }
         return t;
     }
+}
+
+// A factory preset may also voice the cabinet bench. Same contract as the
+// tine tables: only the presets listed here touch it.
+const std::array<float, 5>* factoryCabMods (const juce::String& name)
+{
+    // The 200A's own speakers: two 4x8 open-back ovals, breakup at 5.5 kHz,
+    // short suspension -- the onboard grind (constants in WurliChain.h).
+    static const std::array<float, 5> wurli { 0.62f, 0.90f, 0.60f, 0.35f, 0.35f };
+    if (name == "Two Hundred") return &wurli;
+    return nullptr;
 }
 
 const std::array<std::array<float, 2>, 88>* factoryTineMods (const juce::String& name)

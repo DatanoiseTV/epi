@@ -40,9 +40,10 @@ const VZ_MAG = 3;
 /* Real resonator lengths in millimetres. Rhodes tines run 175 down to 22;
    the CP-70's strings follow the voice's own length law,
    L = 665 * 2^(-(note-60)/13.16). */
-function vzLenMm(i, tineMode) {
-  if (tineMode) return 175 * Math.pow(22 / 175, i / 87);
-  return 665.2 * Math.pow(2, -((VZ_LO + i) - 60) / 13.16);
+function vzLenMm(i, mode) {
+  if (mode === 1) return 665.2 * Math.pow(2, -((VZ_LO + i) - 60) / 13.16);
+  if (mode === 2) return 90 * Math.pow(14 / 90, i / 87);   // reed bar, roughly
+  return 175 * Math.pow(22 / 175, i / 87);
 }
 
 /* The CP-70's factory stretch table, the same anchors the voice uses.
@@ -109,8 +110,8 @@ function VizCard() {
   const strings = instIdx === 1;
   const lv = useEventRef('levels', { harp: [], keys: [], voices: 0 });
   const cvsRef = useRef(null);
-  const modeRef = useRef(strings);
-  modeRef.current = strings;
+  const modeRef = useRef(instIdx);
+  modeRef.current = instIdx;
 
   useEffect(() => {
     const cv = cvsRef.current;
@@ -132,7 +133,8 @@ function VizCard() {
       const L = lv.current || {};
       const H = L.harp || [], K = L.keys || [];
       const isDown = (i) => ((K[i >> 5] || 0) & (1 << (i & 31))) !== 0;
-      const tineMode = !modeRef.current;
+      const mode = modeRef.current;          // 0 tines, 1 strings, 2 reeds
+      const tineMode = mode !== 1;
 
       let peak = 1e-6;
       for (let i = 0; i < VZ_N; i++) {
@@ -202,8 +204,9 @@ function VizCard() {
         const x = VZ_KEYS[VZ_LO + i].cx;
         /* Tine length halves per two octaves; strings run longer and
            flatter -- the two real geometries, scaled to the frame. */
-        const Lm = tineMode ? 30 + 96 * Math.pow(1 - i / 87, 1.15)
-                            : 40 + 152 * Math.pow(1 - i / 87, 1.1);
+        const Lm = mode === 1 ? 40 + 152 * Math.pow(1 - i / 87, 1.1)
+                 : mode === 2 ? 22 + 54 * Math.pow(1 - i / 87, 1.1)
+                              : 30 + 96 * Math.pow(1 - i / 87, 1.15);
         const e = env[i] * inv;
         const a = e > 0 ? Math.min(1, Math.max(0, (20 * Math.log10(e) + VZ_RANGE) / VZ_RANGE)) : 0;
         const down = isDown(i);
@@ -213,7 +216,7 @@ function VizCard() {
         /* Physical swing: microns to millimetres, millimetres to pixels
            through this rod's own drawn-to-real scale, times the uniform
            magnifier. */
-        const A = (env[i] * 1e-3) * (Lm / vzLenMm(i, tineMode)) * VZ_MAG;
+        const A = (env[i] * 1e-3) * (Lm / vzLenMm(i, mode)) * VZ_MAG;
 
         /* Physical frequency: this note's fundamental, with the master
            tune and (for the strings) the factory stretch. Sampled once
@@ -365,7 +368,7 @@ function VizCard() {
     };
   }, []);
 
-  const modes = ['TINES', 'STRINGS'];
+  const modes = ['TINES', 'STRINGS', 'REEDS'];
   return (
     <div className="vizcard">
       <canvas ref={cvsRef} style={{ width: VZ_W, height: VZ_H }}
@@ -378,7 +381,7 @@ function VizCard() {
                     onClick={() => setInstIdx(i)}>{m}</button>
           ))}
         </div>
-        <span className="viz-note">{strings ? 'CP-70 · PIEZO BRIDGE' : 'RHODES · 88 TINES'} · HAMMER ACTION</span>
+        <span className="viz-note">{instIdx === 1 ? 'CP-70 · PIEZO BRIDGE' : instIdx === 2 ? 'WURLITZER · 64-STYLE REED BAR' : 'RHODES · 88 TINES'} · HAMMER ACTION</span>
       </div>
       <div className="viz-hint">CLICK KEYS OR PLAY A – ; ON YOUR KEYBOARD</div>
       <PedalLamp />

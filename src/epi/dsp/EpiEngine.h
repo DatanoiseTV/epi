@@ -14,6 +14,8 @@
 
 #include "ActionNoise.h"
 #include "CP70Voice.h"
+#include "WurliVoice.h"
+#include "WurliChain.h"
 
 #include <vector>
 #include "Effects.h"
@@ -253,6 +255,9 @@ private:
     void handleEvent (const NoteEvent& e, const EngineParams& p);
     RhodesVoice::Config rhodesConfig (const EngineParams& p) const;
     CP70Voice::Config cp70Config (const EngineParams& p) const;
+    WurliVoice::Config wurliConfig (const EngineParams& p) const;
+    void processWurli (float* outL, float* outR, int numSamples,
+                       const EngineParams& p, const NoteEvent* events, int numEvents);
     void processCP70 (float* outL, float* outR, int numSamples,
                       const EngineParams& p,
                       const NoteEvent* events, int numEvents);
@@ -297,11 +302,22 @@ private:
     // something no real configuration equals, so the first block always builds.
     RhodesVoice::Config lastCfg { -1.0e30 };
     CP70Voice::Config lastCP70Cfg { -1.0e30 };
+    WurliVoice::Config lastWurliCfg { -1.0e30 };
     // Which configuration each tine has been built to. A knob being turned
     // changes the configuration every block, and rebuilding all eighty-eight
     // every time is what pushed blocks past their deadline.
     std::uint32_t cfgVersion = 0;
     std::array<std::uint32_t, kNumTines> tineCfgVersion {};
+    std::array<std::uint32_t, kNumTines> wurliCfgVersion {};
+    std::vector<WurliVoice> wurli;
+    WurliPickupBus wurliBus;
+    WurliPreamp   wurliPre;
+    WurliTremolo  wurliTrem;
+    // The base-rate instruments get their own cabinet pair: the shared pair
+    // is prepared at the oversampled rate for the Rhodes loop, and running
+    // those filters at base rate lands every corner four times low -- which
+    // is exactly what the CP-70 was doing before this pair existed.
+    Cabinet cabinetBL, cabinetBR;
 
     // The workshop's per-tine steel, written from the message thread and read
     // by the audio thread's rebuild. Atomics rather than a lock: a torn pair

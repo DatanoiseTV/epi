@@ -57,6 +57,20 @@ void EpiEngine::prepare (double sampleRate, int)
     cp70CfgVersion.fill (0);
     cp70Preamp.prepare (sampleRate);
 
+    if (wurli.size() != static_cast<std::size_t> (kNumTines))
+        wurli.resize (static_cast<std::size_t> (kNumTines));
+    for (int i = 0; i < kNumTines; ++i)
+    {
+        wurli[i].prepare (sampleRate);
+        wurli[i].setNote (kLoNote + i, WurliVoice::Config {});
+    }
+    wurliCfgVersion.fill (0);
+    wurliBus.prepare (sampleRate * WurliVoice::kOver);
+    wurliPre.prepare (sampleRate * WurliVoice::kOver);
+    wurliTrem.prepare (sampleRate);
+    cabinetBL.prepare (sampleRate);
+    cabinetBR.prepare (sampleRate);
+
     coil.prepare (static_cast<float> (fsOs));
     preamp.prepare (fsOs);
     cabinetL.prepare (fsOs);
@@ -94,6 +108,11 @@ void EpiEngine::reset()
     for (auto& v : tines) v.reset();
     for (auto& v : cp70) { v.reset(); }
     cp70Preamp.reset();
+    wurliBus.reset();
+    wurliPre.reset();
+    wurliTrem.reset();
+    cabinetBL.reset();
+    cabinetBR.reset();
     keyDown.fill (false);
     harp.reset();
     action.reset();
@@ -162,6 +181,27 @@ CP70Voice::Config EpiEngine::cp70Config (const EngineParams& p) const
     return c;
 }
 
+WurliVoice::Config EpiEngine::wurliConfig (const EngineParams& p) const
+{
+    WurliVoice::Config c;
+    c.hammerHardness = p.hammerHard;
+    c.hammerMassNorm = p.hammerMass;
+    c.escapementNorm = p.escapement;
+    c.damperGrip     = p.damperGrip;
+    // The honest Wurlitzer meanings of the shared knobs: the "spring" knob
+    // becomes the tongue thickness (mu re-solved, the tech's solder move in
+    // reverse), the damping trim becomes the clamp loss -- filing the knife
+    // edge. The pickup pair maps to the manual's own voicing moves: height
+    // is the reed's rest offset in the slot, gap is the slot clearance.
+    c.tipMassNorm    = p.tipMass;
+    c.dampTrim       = p.resDamp;
+    c.pickupCentring = 0.5 * static_cast<double> (p.pickupPos);
+    c.gapMm          = 0.3 + 1.2 * static_cast<double> (p.pickupDist);
+    c.detuneCents    = static_cast<double> (p.tuneCents)
+                     + 100.0 * static_cast<double> (bendSemis);
+    return c;
+}
+
 void EpiEngine::handleEvent (const NoteEvent& e, const EngineParams& p)
 {
     switch (e.type)
@@ -188,7 +228,17 @@ void EpiEngine::handleEvent (const NoteEvent& e, const EngineParams& p)
             }
             tines[i].setPedal (pedalDown);
             cp70[i].setPedal (pedalDown);
-            if (p.instrument == 1)
+            wurli[static_cast<std::size_t> (i)].setPedal (pedalDown);
+            if (p.instrument == 2)
+            {
+                if (wurliCfgVersion[static_cast<std::size_t> (i)] != cfgVersion)
+                {
+                    wurli[static_cast<std::size_t> (i)].setNote (kLoNote + i, wurliConfig (p));
+                    wurliCfgVersion[static_cast<std::size_t> (i)] = cfgVersion;
+                }
+                wurli[static_cast<std::size_t> (i)].noteOn (e.note, vel, wurliConfig (p), seed);
+            }
+            else if (p.instrument == 1)
             {
                 if (cp70CfgVersion[i] != cfgVersion
                     || stringMod[static_cast<std::size_t> (i)].dirty.load (std::memory_order_acquire))
@@ -215,6 +265,7 @@ void EpiEngine::handleEvent (const NoteEvent& e, const EngineParams& p)
             keyDown[i] = false;
             tines[i].noteOff();
             cp70[i].noteOff();
+            wurli[static_cast<std::size_t> (i)].noteOff();
             action.release (i, static_cast<double> (i) / (kNumTines - 1));
             break;
         }
@@ -223,18 +274,21 @@ void EpiEngine::handleEvent (const NoteEvent& e, const EngineParams& p)
             keyDown.fill (false);
             for (auto& v : tines) v.noteOff();
             for (auto& v : cp70) v.noteOff();
+            for (auto& v : wurli) v.noteOff();
             break;
 
         case NoteEvent::sustainOn:
             pedalDown = true;
             for (auto& v : tines) v.setPedal (true);
             for (auto& v : cp70) v.setPedal (true);
+            for (auto& v : wurli) v.setPedal (true);
             break;
 
         case NoteEvent::sustainOff:
             pedalDown = false;
             for (auto& v : tines) v.setPedal (false);
             for (auto& v : cp70) v.setPedal (false);
+            for (auto& v : wurli) v.setPedal (false);
             break;
     }
 }
@@ -261,6 +315,11 @@ void EpiEngine::process (float* outL, float* outR, int numSamples,
     if (p.instrument == 1)
     {
         processCP70 (outL, outR, numSamples, p, events, numEvents);
+        return;
+    }
+    if (p.instrument == 2)
+    {
+        processWurli (outL, outR, numSamples, p, events, numEvents);
         return;
     }
 
@@ -357,6 +416,8 @@ void EpiEngine::process (float* outL, float* outR, int numSamples,
     phaserR.setParams (p.phaserRate, p.phaserDepth, p.phaserFb, p.phaserMix);
     cabinetL.setMix (p.cabMix);
     cabinetR.setMix (p.cabMix);
+    cabinetBL.setMix (p.cabMix);
+    cabinetBR.setMix (p.cabMix);
     if (cabDirty.exchange (false, std::memory_order_acq_rel))
     {
         const double b = cabBox.load (std::memory_order_relaxed);
@@ -366,6 +427,8 @@ void EpiEngine::process (float* outL, float* outR, int numSamples,
         const double su = cabSusp.load (std::memory_order_relaxed);
         cabinetL.setVoicing (b, c, d, a, su);
         cabinetR.setVoicing (b, c, d, a, su);
+        cabinetBL.setVoicing (b, c, d, a, su);
+        cabinetBR.setVoicing (b, c, d, a, su);
     }
 
     int nextEvent = 0;
@@ -661,6 +724,8 @@ void EpiEngine::processCP70 (float* outL, float* outR, int numSamples,
     phaserR.setParams (p.phaserRate, p.phaserDepth, p.phaserFb, p.phaserMix);
     cabinetL.setMix (p.cabMix);
     cabinetR.setMix (p.cabMix);
+    cabinetBL.setMix (p.cabMix);
+    cabinetBR.setMix (p.cabMix);
     if (cabDirty.exchange (false, std::memory_order_acq_rel))
     {
         const double b = cabBox.load (std::memory_order_relaxed);
@@ -670,6 +735,8 @@ void EpiEngine::processCP70 (float* outL, float* outR, int numSamples,
         const double su = cabSusp.load (std::memory_order_relaxed);
         cabinetL.setVoicing (b, c, d, a, su);
         cabinetR.setVoicing (b, c, d, a, su);
+        cabinetBL.setVoicing (b, c, d, a, su);
+        cabinetBR.setVoicing (b, c, d, a, su);
     }
     if (std::abs (p.spaceSize - lastSpaceSize) > 1.0e-4f)
     {
@@ -719,8 +786,8 @@ void EpiEngine::processCP70 (float* outL, float* outR, int numSamples,
         vVibL.store (static_cast<float> (gainL), std::memory_order_relaxed);
         vVibR.store (static_cast<float> (gainR), std::memory_order_relaxed);
 
-        double l = cabinetL.process (y * gainL);
-        double r = cabinetR.process (y * gainR);
+        double l = cabinetBL.process (y * gainL);
+        double r = cabinetBR.process (y * gainR);
 
         if (p.phaserMix > 0.0f)
         {
@@ -738,7 +805,192 @@ void EpiEngine::processCP70 (float* outL, float* outR, int numSamples,
 
         if (! std::isfinite (l) || ! std::isfinite (r))
         {
-            cp70Preamp.reset(); cabinetL.reset(); cabinetR.reset();
+            cp70Preamp.reset(); cabinetBL.reset(); cabinetBR.reset();
+            phaserL.reset(); phaserR.reset(); room.reset();
+            l = r = 0.0;
+            ++recoveries;
+        }
+
+        const float fl = static_cast<float> (l) * p.outGainLin;
+        const float fr = static_cast<float> (r) * p.outGainLin;
+        outL[n] = fl;
+        outR[n] = fr;
+        pL = std::max (pL, std::abs (fl));
+        pR = std::max (pR, std::abs (fr));
+
+        if (n == numSamples - 1) numActive.store (active, std::memory_order_relaxed);
+    }
+
+    for (int i = 0; i < kNumTines; ++i)
+    {
+        vTineTip[i].store (tineBlockPeak[i], std::memory_order_relaxed);
+        tineBlockPeak[i] = 0.0f;
+    }
+    for (int w = 0; w < kKeyWords; ++w)
+    {
+        std::uint32_t bits = 0;
+        for (int b = 0; b < 32; ++b)
+        {
+            const int i = w * 32 + b;
+            if (i < kNumTines && keyDown[i]) bits |= (1u << b);
+        }
+        vKeys[w].store (bits, std::memory_order_relaxed);
+    }
+    vPedal.store (pedalDown, std::memory_order_relaxed);
+
+    while (nextEvent < numEvents) handleEvent (events[nextEvent++], p);
+
+    auto bump = [] (std::atomic<float>& a, float v)
+    {
+        const float cur = a.load (std::memory_order_relaxed);
+        if (v > cur) a.store (v, std::memory_order_relaxed);
+    };
+    bump (peakL, pL);
+    bump (peakR, pR);
+}
+
+// ---------------------------------------------------------------------------
+// The Wurlitzer path. One sample of mechanics per voice, four subsamples of
+// transduction: every reed hangs its gap on the SAME 240 pF node, so the
+// voices sum as capacitance perturbations and superposition at the node is
+// exact -- the intermodulation belongs to the preamp, where the circuit puts
+// it. Chain: reeds -> pickup bus (HP + bias) -> preamp (asymmetric clip) ->
+// decimate -> tremolo (true AM, both channels alike) -> cabinet -> effects.
+// ---------------------------------------------------------------------------
+void EpiEngine::processWurli (float* outL, float* outR, int numSamples,
+                              const EngineParams& p,
+                              const NoteEvent* events, int numEvents)
+{
+    static_assert (WurliVoice::kOver == Decimator::kOver,
+                   "the reed writes the frames the decimator reads");
+    const auto cfg = wurliConfig (p);
+
+    if (std::memcmp (&cfg, &lastWurliCfg, sizeof cfg) != 0)
+    {
+        lastWurliCfg = cfg;
+        ++cfgVersion;
+    }
+
+    {
+        // Priority rebuild, tighter budget than the strings: a Wurlitzer
+        // rebuild calibrates its hammer by simulated strikes -- bisection at
+        // about a quarter millisecond per voice -- so four per block keeps
+        // the worst case near one millisecond.
+        int budget = 4;
+        for (int i = 0; i < kNumTines && budget > 0; ++i)
+        {
+            if (wurliCfgVersion[static_cast<std::size_t> (i)] == cfgVersion) continue;
+            if (! (wurli[static_cast<std::size_t> (i)].isRinging() || pedalDown || keyDown[i])) continue;
+            wurli[static_cast<std::size_t> (i)].setNote (kLoNote + i, cfg);
+            wurliCfgVersion[static_cast<std::size_t> (i)] = cfgVersion;
+            --budget;
+        }
+        for (int i = 0; i < kNumTines && budget > 0; ++i)
+        {
+            if (wurliCfgVersion[static_cast<std::size_t> (i)] == cfgVersion) continue;
+            wurli[static_cast<std::size_t> (i)].setNote (kLoNote + i, cfg);
+            wurliCfgVersion[static_cast<std::size_t> (i)] = cfgVersion;
+            --budget;
+        }
+    }
+
+    // The polarizing rail as a physical drive control, on the saturation
+    // knob: 100 to 200 volts spans a sagging supply to the Series 200's
+    // hotter rail, with the 200A's nominal +150 in the middle.
+    wurliBus.setBias (100.0 + 100.0 * std::clamp (p.coilSat, 0.0f, 1.0f));
+    wurliPre.setDrive (p.preampDrive);
+    wurliPre.setTone (p.bassDb, p.trebleDb);
+    wurliTrem.setRate (p.tremRate);
+    wurliTrem.setDepth (p.tremDepth);
+    phaserL.setParams (p.phaserRate, p.phaserDepth, p.phaserFb, p.phaserMix);
+    phaserR.setParams (p.phaserRate, p.phaserDepth, p.phaserFb, p.phaserMix);
+    cabinetBL.setMix (p.cabMix);
+    cabinetBR.setMix (p.cabMix);
+    if (cabDirty.exchange (false, std::memory_order_acq_rel))
+    {
+        const double b = cabBox.load (std::memory_order_relaxed);
+        const double c = cabCone.load (std::memory_order_relaxed);
+        const double d = cabDist.load (std::memory_order_relaxed);
+        const double a = cabAngle.load (std::memory_order_relaxed);
+        const double su = cabSusp.load (std::memory_order_relaxed);
+        cabinetL.setVoicing (b, c, d, a, su);
+        cabinetR.setVoicing (b, c, d, a, su);
+        cabinetBL.setVoicing (b, c, d, a, su);
+        cabinetBR.setVoicing (b, c, d, a, su);
+    }
+    if (std::abs (p.spaceSize - lastSpaceSize) > 1.0e-4f)
+    {
+        lastSpaceSize = p.spaceSize;
+        room.setSize (p.spaceSize);
+    }
+
+    float pL = 0.0f, pR = 0.0f;
+    int nextEvent = 0;
+
+    for (int n = 0; n < numSamples; ++n)
+    {
+        while (nextEvent < numEvents && events[nextEvent].offset <= n)
+            handleEvent (events[nextEvent++], p);
+
+        double noiseForce[kNumTines] = {};
+        const bool anyNoise = action.tick (p.strikeNoise, noiseRng,
+                                           noiseForce, kNumTines) > 0;
+
+        double dcBus[WurliVoice::kOver] = {};
+        double dc[WurliVoice::kOver];
+        int active = 0;
+        for (int i = 0; i < kNumTines; ++i)
+        {
+            auto& v = wurli[static_cast<std::size_t> (i)];
+            if (! v.isRinging()) continue;
+            v.process (cfg, dc);
+            for (int k = 0; k < WurliVoice::kOver; ++k) dcBus[k] += dc[k];
+            ++active;
+            const float amp = static_cast<float> (std::abs (v.tipDisplacement()));
+            if (amp > tineBlockPeak[i]) tineBlockPeak[i] = amp;
+        }
+
+        double os[Decimator::kOver];
+        for (int k = 0; k < WurliVoice::kOver; ++k)
+            os[k] = wurliPre.process (wurliBus.process (dcBus[k]));
+        double y = decimL.process (os);
+
+        // The mechanism's thump travels through the case, dry, exactly as on
+        // the CP-70 -- an electrostatic gap cannot hear a wooden key either.
+        if (anyNoise)
+        {
+            double nsum = 0.0;
+            for (int i = 0; i < kNumTines; ++i) nsum += noiseForce[i];
+            y += nsum * 2.0e-5;
+        }
+
+        // True amplitude tremolo: one gain, both channels alike. This is the
+        // control the Rhodes mislabels; here the word is honest.
+        const double g = wurliTrem.gain();
+        vVibL.store (static_cast<float> (g), std::memory_order_relaxed);
+        vVibR.store (static_cast<float> (g), std::memory_order_relaxed);
+
+        double l = cabinetBL.process (y * g);
+        double r = cabinetBR.process (y * g);
+
+        if (p.phaserMix > 0.0f)
+        {
+            l = phaserL.process (l);
+            r = phaserR.process (r);
+        }
+        if (p.spaceMix > 0.0f)
+        {
+            double wl = 0.0, wr = 0.0;
+            room.process (l, r, wl, wr);
+            const double mix = std::clamp (static_cast<double> (p.spaceMix), 0.0, 1.0);
+            l += mix * wl;
+            r += mix * wr;
+        }
+
+        if (! std::isfinite (l) || ! std::isfinite (r))
+        {
+            wurliBus.reset(); wurliPre.reset();
+            cabinetBL.reset(); cabinetBR.reset();
             phaserL.reset(); phaserR.reset(); room.reset();
             l = r = 0.0;
             ++recoveries;
