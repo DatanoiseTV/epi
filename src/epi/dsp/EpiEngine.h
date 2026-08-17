@@ -13,6 +13,9 @@
 #pragma once
 
 #include "ActionNoise.h"
+#include "CP70Voice.h"
+
+#include <vector>
 #include "Effects.h"
 #include "Harp.h"
 #include "OutputChain.h"
@@ -200,12 +203,27 @@ public:
 private:
     void handleEvent (const NoteEvent& e, const EngineParams& p);
     RhodesVoice::Config rhodesConfig (const EngineParams& p) const;
+    CP70Voice::Config cp70Config (const EngineParams& p) const;
+    void processCP70 (float* outL, float* outR, int numSamples,
+                      const EngineParams& p,
+                      const NoteEvent* events, int numEvents);
     void publishField();
 
     double fs = 48000.0;
 
     MagneticPickup field;
     std::array<RhodesVoice, kNumTines> tines;
+    // The CP-70's strings, permanently present exactly as the tines are. Two
+    // arrays, one active: the process loop dispatches once per block on the
+    // instrument, and each path keeps its own shape -- the Rhodes needs the
+    // oversampled flux sum, the CP-70 sums forces at base rate and skips it.
+    // A vector, not an array, and the difference is a segfault: 88 CP-70
+    // voices carry over a hundred modes each -- about four megabytes -- and
+    // an engine built on a test's stack died the moment they lived inside
+    // the object. The Rhodes tines stay inline; they are a tenth the size.
+    std::vector<CP70Voice> cp70;
+    std::array<std::uint32_t, kNumTines> cp70CfgVersion {};
+    CP70Preamp cp70Preamp;
     std::array<bool, kNumTines> keyDown {};
     Harp harp;
     ActionNoise action;
@@ -229,6 +247,7 @@ private:
     // newly added field cannot be forgotten. Deliberately initialised to
     // something no real configuration equals, so the first block always builds.
     RhodesVoice::Config lastCfg { -1.0e30 };
+    CP70Voice::Config lastCP70Cfg { -1.0e30 };
     // Which configuration each tine has been built to. A knob being turned
     // changes the configuration every block, and rebuilding all eighty-eight
     // every time is what pushed blocks past their deadline.

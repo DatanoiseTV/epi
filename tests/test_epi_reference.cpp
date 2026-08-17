@@ -1068,6 +1068,190 @@ static void sectionStructural()
 
 // ===========================================================================
 
+// ===========================================================================
+// CP-70: the second instrument, its own measured rows. The full 23-row plan
+// lives in docs/cp70-implementation-plan.md section 10; these are the
+// load-bearing subset -- the inharmonicity anchors the implementation consumed
+// as data, the compound decay, the superposition law the whole architecture
+// rests on, and the damper gate.
+// ===========================================================================
+
+static std::vector<double> renderCP70 (int note, double vel, double seconds,
+                                       bool release = false, double releaseAt = 0.0)
+{
+    const int N = static_cast<int> (kFs * seconds);
+    const int block = 512;
+    EpiEngine e;
+    e.prepare (kFs, block);
+    EngineParams p = referenceParams();
+    p.instrument = 1;
+    p.tremDepth = 0.0f; p.cabMix = 0.0f; p.spaceMix = 0.0f; p.preampDrive = 0.0f;
+
+    const int offAt = static_cast<int> (releaseAt * kFs);
+    std::vector<float> L (static_cast<std::size_t> (N), 0.0f);
+    std::vector<float> R (static_cast<std::size_t> (N), 0.0f);
+    for (int i = 0; i < N; i += block)
+    {
+        const int n = std::min (block, N - i);
+        NoteEvent ev[2];
+        int ne = 0;
+        if (i == 0) ev[ne++] = { 0, NoteEvent::noteOn, note, static_cast<float> (vel) };
+        if (release && i <= offAt && offAt < i + n)
+            ev[ne++] = { offAt - i, NoteEvent::noteOff, note, 0.0f };
+        e.process (L.data() + i, R.data() + i, n, p, ne ? ev : nullptr, ne);
+    }
+    std::vector<double> x (static_cast<std::size_t> (N));
+    for (int i = 0; i < N; ++i) x[static_cast<std::size_t> (i)] = L[static_cast<std::size_t> (i)];
+    return x;
+}
+
+static void sectionCP70()
+{
+    heading ("P. CP-70");
+
+    // P1: partials sit on f_k = k f0 sqrt(1 + B k^2) with the MEASURED B.
+    {
+        struct Row { int midi; double bWant; };
+        for (Row r : { Row { 50, 2.55e-4 }, Row { 72, 7.11e-4 } })
+        {
+            const auto x = renderCP70 (r.midi, 0.7, 3.0);
+            const double f0n = noteHz (r.midi) * std::pow (2.0, cp70StretchCents (r.midi) / 1200.0);
+            const double f0 = an::refineF0 (x, kFs, f0n, 0.4, 2.0);
+            // Fitted over HIGH partials, where B*k^2 dwarfs the bichord's
+            // beat noise -- at k=2 the unison pair's phase wander rivals the
+            // whole inharmonic shift and the fit reads the beating, not B.
+            // The reference's own fits ran to k=30 for the same reason.
+            double sxy = 0.0, sxx = 0.0;
+            int used = 0;
+            for (int k = 5; k <= 14; ++k)
+            {
+                const double guess = k * f0 * std::sqrt (1.0 + r.bWant * k * k);
+                const an::Envelope e = an::heterodyne (x, kFs, guess, f0);
+                if (e.z.empty()) continue;
+                const double got = an::partialFrequency (e, guess, 0.4, 2.0);
+                if (got <= 0.0) continue;
+                const double y = (got / (k * f0)) * (got / (k * f0)) - 1.0;
+                sxy += y * k * k; sxx += static_cast<double> (k * k) * (k * k);
+                ++used;
+            }
+            const double bGot = used >= 4 ? sxy / sxx : -1.0;
+            row ("P1", (std::string ("inharmonicity B, MIDI ") + std::to_string (r.midi)).c_str(),
+                 fmt ("%.2e +/-25%%", r.bWant),
+                 bGot > 0.0 ? fmt ("%.2e", bGot) : std::string ("unfit"),
+                 bGot > 0.0 ? within (bGot, r.bWant * 0.75, r.bWant * 1.25) : Verdict::fail);
+        }
+    }
+
+    // P2: the compound decay's -20 dB envelope times.
+    {
+        struct Row { int midi; double want; };
+        for (Row r : { Row { 72, 3.86 }, Row { 88, 1.42 } })
+        {
+            const auto x = renderCP70 (r.midi, 0.9, r.want * 2.2);
+            double pk = 0.0;
+            for (double v : x) pk = std::max (pk, std::abs (v));
+            double t20 = -1.0;
+            const int hop = static_cast<int> (kFs * 0.05);
+            for (std::size_t i = 0; i + static_cast<std::size_t> (hop) < x.size();
+                 i += static_cast<std::size_t> (hop))
+            {
+                double w = 0.0;
+                for (int j = 0; j < hop; ++j) w = std::max (w, std::abs (x[i + static_cast<std::size_t> (j)]));
+                if (w < pk * 0.1) { t20 = static_cast<double> (i) / kFs; break; }
+            }
+            // The plan's own designated calibration row: it is where the
+            // evidence-free strike position and the hammer spectrum meet the
+            // measured envelope, and the plan says to expect it to fail
+            // first. Bounded so it cannot degrade into a click while it
+            // waits for its calibration session.
+            row ("P2", (std::string ("-20 dB time, MIDI ") + std::to_string (r.midi)).c_str(),
+                 fmt ("%.1f s +/-40%%", r.want),
+                 t20 > 0.0 ? fmt ("%.2f s", t20) : std::string (">render"),
+                 t20 > 0.0 ? gap (t20, r.want * 0.6, r.want * 1.4, 0.15, r.want * 3.0)
+                           : Verdict::knownGap);
+        }
+    }
+
+    // P3: superposition, far stricter than the Rhodes row -- the measured
+    // -42 dB beat nulls forbid any nonlinearity ahead of the sum.
+    {
+        auto chord = [] (std::vector<int> notes)
+        {
+            const int N = static_cast<int> (kFs * 1.5);
+            EpiEngine e;
+            e.prepare (kFs, 512);
+            EngineParams p = referenceParams();
+            p.instrument = 1;
+            p.tremDepth = 0.0f; p.cabMix = 0.0f; p.spaceMix = 0.0f; p.preampDrive = 0.0f;
+            std::vector<NoteEvent> evs;
+            for (int n : notes) evs.push_back ({ 0, NoteEvent::noteOn, n, 0.9f });
+            std::vector<float> L (static_cast<std::size_t> (N), 0.0f);
+            std::vector<float> R (static_cast<std::size_t> (N), 0.0f);
+            for (int i = 0; i < N; i += 512)
+            {
+                const int n = std::min (512, N - i);
+                e.process (L.data() + i, R.data() + i, n, p,
+                           i == 0 ? evs.data() : nullptr, i == 0 ? static_cast<int> (evs.size()) : 0);
+            }
+            std::vector<double> x (static_cast<std::size_t> (N));
+            for (int i = 0; i < N; ++i) x[static_cast<std::size_t> (i)] = L[static_cast<std::size_t> (i)];
+            return x;
+        };
+        const auto a = chord ({ 50 });
+        const auto b = chord ({ 57 });
+        const auto ab = chord ({ 50, 57 });
+        double d = 0.0, ref = 0.0;
+        for (std::size_t i = 0; i < ab.size(); ++i)
+        {
+            d = std::max (d, std::abs (ab[i] - (a[i] + b[i])));
+            ref = std::max (ref, std::abs (ab[i]));
+        }
+        const double db = 20.0 * std::log10 (std::max (1.0e-12, d / std::max (1.0e-12, ref)));
+        row ("P3", "chord is the sum of its notes", "below -60 dB",
+             fmt ("%.1f dB", db), db < -60.0 ? Verdict::pass : Verdict::fail);
+    }
+
+    // P4: the damper gate at A6.
+    {
+        auto tailDb = [] (int note)
+        {
+            const auto x = renderCP70 (note, 0.8, 3.0, true, 0.8);
+            double early = 0.0, late = 0.0;
+            for (std::size_t i = static_cast<std::size_t> (0.5 * kFs);
+                 i < static_cast<std::size_t> (0.75 * kFs); ++i)
+                early = std::max (early, std::abs (x[i]));
+            for (std::size_t i = static_cast<std::size_t> (2.4 * kFs);
+                 i < std::min (x.size(), static_cast<std::size_t> (2.9 * kFs)); ++i)
+                late = std::max (late, std::abs (x[i]));
+            return 20.0 * std::log10 (std::max (1.0e-12, late / std::max (1.0e-12, early)));
+        };
+        const double below = tailDb (72);
+        const double above = tailDb (96);
+        row ("P4", "damper gate at A6", "C5 < -40 dB, C7 > -25 dB",
+             fmt2 ("C5 %.0f, C7 %.0f dB", below, above),
+             (below < -40.0 && above > -25.0) ? Verdict::pass : Verdict::fail);
+    }
+
+    // P5: finite and bounded across the compass at both extremes of velocity.
+    {
+        bool clean = true;
+        double pk = 0.0;
+        for (int n : { 21, 40, 60, 80, 100, 108 })
+            for (double v : { 0.05, 1.0 })
+            {
+                const auto x = renderCP70 (n, v, 1.0);
+                for (double s2 : x)
+                {
+                    if (! std::isfinite (s2)) clean = false;
+                    pk = std::max (pk, std::abs (s2));
+                }
+            }
+        row ("P5", "finite across compass", "finite, peak < 4",
+             clean ? fmt ("peak %.2f", pk) : std::string ("NON-FINITE"),
+             (clean && pk < 4.0) ? Verdict::pass : Verdict::fail);
+    }
+}
+
 int main()
 {
     std::printf ("Epi acoustic reference suite\n");
@@ -1075,6 +1259,7 @@ int main()
     std::printf ("\n  %-3s %-34s %-22s %-22s %s\n", "ID", "PROPERTY", "TARGET", "MEASURED", "");
 
     sectionStructural();
+    sectionCP70();
     sectionA();
     sectionB();
     sectionC();

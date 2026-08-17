@@ -327,4 +327,128 @@ private:
     OnePoleD lo, hi, presence;
 };
 
+// ---------------------------------------------------------------------------
+// The CP-70's electrical chain: 12 Hz piezo high-pass, the mid-scooped
+// cut-only tone stack, and one soft JFET stage.
+//
+// The scoop is the most under-reported fact about the instrument and it is a
+// FIXED filter, not a user curve: re-fitted by digitising the circuit
+// simulation against its own grid (docs/research/cp70-open-questions.md),
+// centre 488 Hz, depth -13.4 dB, Q 0.27 -- half as sharp as the first
+// published fit -- with a +4.0 dB shelf below 63 Hz and +1.9 dB above
+// 2.9 kHz, residual 0.39 dB against the plot.
+// ---------------------------------------------------------------------------
+class CP70Preamp
+{
+public:
+    void prepare (double sampleRate)
+    {
+        fs = sampleRate;
+        hp12.setCutoff (12.0, fs);
+        setPeak (scoop, 488.0, -13.4, 0.27);
+        setShelf (lowFixed, 63.0, 4.0, false);
+        setShelf (highFixed, 2900.0, 1.9, true);
+        setTone (0.0, 0.0, 0.0);
+        reset();
+    }
+
+    void reset()
+    {
+        hp12.reset();
+        for (auto* b : { &scoop, &lowFixed, &highFixed, &bassCtl, &trebCtl })
+            b->z1 = b->z2 = 0.0;
+    }
+
+    // The real controls are cut-only; the boost half is a stated studio
+    // convenience. Documented ranges: bass +/-17 dB at 50 Hz, treble
+    // +/-12.5 dB at 5 kHz.
+    void setTone (double bassDb, double trebleDb, double drive)
+    {
+        setShelf (bassCtl, 50.0, std::clamp (bassDb, -17.0, 17.0) * 17.0 / 12.0, false);
+        setShelf (trebCtl, 5000.0, std::clamp (trebleDb, -12.5, 12.5) * 12.5 / 12.0, true);
+        driveGain = 0.25 * std::pow (40.0, std::clamp (drive, 0.0, 1.0));
+    }
+
+    double process (double x)
+    {
+        double y = hp12.highpass (x);
+        y = run (scoop, y);
+        y = run (lowFixed, y);
+        y = run (highFixed, y);
+        y = run (bassCtl, y);
+        y = run (trebCtl, y);
+
+        // One soft asymmetric class-A JFET stage, nearly clean at the default
+        // -- the CP-70 chord intermodulates here, mildly, and nowhere else.
+        const double d = y * driveGain;
+        const double sHat = d >= 0.0 ? std::tanh (d) : std::tanh (d * 0.85) / 0.85;
+        return sHat / driveGain;
+    }
+
+private:
+    struct Biquad { double b0 = 1, b1 = 0, b2 = 0, a1 = 0, a2 = 0, z1 = 0, z2 = 0; };
+
+    static double runStatic (Biquad& q, double x)
+    {
+        const double y = q.b0 * x + q.z1;
+        q.z1 = q.b1 * x - q.a1 * y + q.z2;
+        q.z2 = q.b2 * x - q.a2 * y;
+        return y;
+    }
+    double run (Biquad& q, double x) const { return runStatic (q, x); }
+
+    void setPeak (Biquad& q, double f, double dB, double Q)
+    {
+        const double A = std::pow (10.0, dB / 40.0);
+        const double w = 2.0 * kPiD * f / fs;
+        const double al = std::sin (w) / (2.0 * Q);
+        const double a0 = 1.0 + al / A;
+        q.b0 = (1.0 + al * A) / a0;
+        q.b1 = (-2.0 * std::cos (w)) / a0;
+        q.b2 = (1.0 - al * A) / a0;
+        q.a1 = q.b1;
+        q.a2 = (1.0 - al / A) / a0;
+    }
+
+    // The two shelf types written out separately, textbook RBJ forms. The
+    // first version folded them into one function with a sign flag, got one
+    // sign wrong, and produced a filter with four thousand times gain at its
+    // corner -- a 1e-4 impulse hit the JFET rail. A folded formula saves ten
+    // lines and costs an afternoon; never again.
+    void setShelf (Biquad& q, double f, double dB, bool high)
+    {
+        const double A = std::pow (10.0, dB / 40.0);
+        const double w = 2.0 * kPiD * f / fs;
+        const double cw = std::cos (w), sw = std::sin (w);
+        const double al = sw / 2.0 * std::sqrt (2.0);
+        const double s2A = 2.0 * std::sqrt (A) * al;
+        double b0, b1, b2, a0, a1, a2;
+        if (! high)
+        {
+            b0 =     A * ((A + 1.0) - (A - 1.0) * cw + s2A);
+            b1 = 2.0 * A * ((A - 1.0) - (A + 1.0) * cw);
+            b2 =     A * ((A + 1.0) - (A - 1.0) * cw - s2A);
+            a0 =          (A + 1.0) + (A - 1.0) * cw + s2A;
+            a1 =   -2.0 * ((A - 1.0) + (A + 1.0) * cw);
+            a2 =          (A + 1.0) + (A - 1.0) * cw - s2A;
+        }
+        else
+        {
+            b0 =     A * ((A + 1.0) + (A - 1.0) * cw + s2A);
+            b1 = -2.0 * A * ((A - 1.0) + (A + 1.0) * cw);
+            b2 =     A * ((A + 1.0) + (A - 1.0) * cw - s2A);
+            a0 =          (A + 1.0) - (A - 1.0) * cw + s2A;
+            a1 =    2.0 * ((A - 1.0) - (A + 1.0) * cw);
+            a2 =          (A + 1.0) - (A - 1.0) * cw - s2A;
+        }
+        q.b0 = b0 / a0; q.b1 = b1 / a0; q.b2 = b2 / a0;
+        q.a1 = a1 / a0; q.a2 = a2 / a0;
+    }
+
+    double fs = 48000.0;
+    OnePoleD hp12;
+    Biquad scoop, lowFixed, highFixed, bassCtl, trebCtl;
+    double driveGain = 0.25;
+};
+
 } // namespace epi

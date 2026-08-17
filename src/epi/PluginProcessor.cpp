@@ -65,6 +65,8 @@ epi::EngineParams EpiAudioProcessor::buildEngineParams() const
     epi::EngineParams p;
     using namespace epi::ids;
 
+    p.instrument = static_cast<int> (raw (instrument));
+
     p.tuneCents  = raw (tune);
 
     p.velCurve    = raw (velCurve);

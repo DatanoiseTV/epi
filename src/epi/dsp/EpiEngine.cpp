@@ -47,6 +47,16 @@ void EpiEngine::prepare (double sampleRate, int)
     // The stages that clip run at the oversampled rate; the decimators and the
     // panner are the only things that know about the base rate.
     const double fsOs = sampleRate * Decimator::kOver;
+    if (cp70.size() != static_cast<std::size_t> (kNumTines))
+        cp70.resize (static_cast<std::size_t> (kNumTines));
+    for (int i = 0; i < kNumTines; ++i)
+    {
+        cp70[i].prepare (sampleRate);
+        cp70[i].setNote (kLoNote + i, CP70Voice::Config {});
+    }
+    cp70CfgVersion.fill (0);
+    cp70Preamp.prepare (sampleRate);
+
     coil.prepare (static_cast<float> (fsOs));
     preamp.prepare (fsOs);
     cabinetL.prepare (fsOs);
@@ -82,6 +92,8 @@ void EpiEngine::prepare (double sampleRate, int)
 void EpiEngine::reset()
 {
     for (auto& v : tines) v.reset();
+    for (auto& v : cp70) { v.reset(); }
+    cp70Preamp.reset();
     keyDown.fill (false);
     harp.reset();
     action.reset();
@@ -133,6 +145,23 @@ RhodesVoice::Config EpiEngine::rhodesConfig (const EngineParams& p) const
     return c;
 }
 
+CP70Voice::Config EpiEngine::cp70Config (const EngineParams& p) const
+{
+    CP70Voice::Config c;
+    c.hammerHardness = p.hammerHard;
+    c.hammerMassNorm = p.hammerMass;
+    c.escapementNorm = p.escapement;
+    c.damperGrip     = p.damperGrip;
+    // The honest CP meanings of the shared knobs: the "tuning spring" becomes
+    // the unison spread, the tine damping trim becomes a global loss trim.
+    // Everything magnetic is simply not read on this path.
+    c.detuneSpread   = p.tipMass;
+    c.dampTrim       = p.resDamp;
+    c.detuneCents    = static_cast<double> (p.tuneCents)
+                     + 100.0 * static_cast<double> (bendSemis);
+    return c;
+}
+
 void EpiEngine::handleEvent (const NoteEvent& e, const EngineParams& p)
 {
     switch (e.type)
@@ -157,7 +186,11 @@ void EpiEngine::handleEvent (const NoteEvent& e, const EngineParams& p)
                 tineCfgVersion[i] = cfgVersion;
             }
             tines[i].setPedal (pedalDown);
-            tines[i].noteOn (e.note, vel, rhodesConfig (p), seed);
+            cp70[i].setPedal (pedalDown);
+            if (p.instrument == 1)
+                cp70[i].noteOn (e.note, vel, cp70Config (p), seed);
+            else
+                tines[i].noteOn (e.note, vel, rhodesConfig (p), seed);
             // The mechanism knocks whether or not the tine is heard. It goes
             // into the frame, not into the output -- see ActionNoise.
             action.strike (i, static_cast<double> (i) / (kNumTines - 1), vel);
@@ -172,6 +205,7 @@ void EpiEngine::handleEvent (const NoteEvent& e, const EngineParams& p)
             if (i < 0 || i >= kNumTines) break;
             keyDown[i] = false;
             tines[i].noteOff();
+            cp70[i].noteOff();
             action.release (i, static_cast<double> (i) / (kNumTines - 1));
             break;
         }
@@ -179,16 +213,19 @@ void EpiEngine::handleEvent (const NoteEvent& e, const EngineParams& p)
         case NoteEvent::allNotesOff:
             keyDown.fill (false);
             for (auto& v : tines) v.noteOff();
+            for (auto& v : cp70) v.noteOff();
             break;
 
         case NoteEvent::sustainOn:
             pedalDown = true;
             for (auto& v : tines) v.setPedal (true);
+            for (auto& v : cp70) v.setPedal (true);
             break;
 
         case NoteEvent::sustainOff:
             pedalDown = false;
             for (auto& v : tines) v.setPedal (false);
+            for (auto& v : cp70) v.setPedal (false);
             break;
     }
 }
@@ -197,6 +234,12 @@ void EpiEngine::process (float* outL, float* outR, int numSamples,
                          const EngineParams& p,
                          const NoteEvent* events, int numEvents)
 {
+    if (p.instrument == 1)
+    {
+        processCP70 (outL, outR, numSamples, p, events, numEvents);
+        return;
+    }
+
     const auto cfg = rhodesConfig (p);
 
     // Reconfiguring a voice re-solves its beam geometry and its tuning trim, so
@@ -512,6 +555,163 @@ void EpiEngine::process (float* outL, float* outR, int numSamples,
     vOffset.store (p.pickupPos, std::memory_order_relaxed);
     vVibL.store (lastVibL, std::memory_order_relaxed);
     vVibR.store (lastVibR, std::memory_order_relaxed);
+}
+
+// ---------------------------------------------------------------------------
+// The CP-70 path. Base rate throughout: the voice is a linear functional of
+// the modal state (the measured -42 dB beat nulls forbid anything else), and
+// the only nonlinearity is the shared JFET stage, nearly clean at its
+// default. No decimator, no coil, no field -- the chain is
+// forces -> 12 Hz HP + scoop + JFET -> panner -> room.
+// ---------------------------------------------------------------------------
+void EpiEngine::processCP70 (float* outL, float* outR, int numSamples,
+                             const EngineParams& p,
+                             const NoteEvent* events, int numEvents)
+{
+    const auto cfg = cp70Config (p);
+
+    if (std::memcmp (&cfg, &lastCP70Cfg, sizeof cfg) != 0)
+    {
+        lastCP70Cfg = cfg;
+        ++cfgVersion;
+    }
+    {
+        // Same priority rebuild as the Rhodes: sounding first, bounded.
+        int budget = 12;   // a CP string rebuild is ~40 modes of setMode
+        for (int i = 0; i < kNumTines && budget > 0; ++i)
+        {
+            if (cp70CfgVersion[i] == cfgVersion) continue;
+            if (! (cp70[i].isRinging() || pedalDown || keyDown[i])) continue;
+            cp70[i].setNote (kLoNote + i, cfg);
+            cp70CfgVersion[i] = cfgVersion;
+            --budget;
+        }
+        for (int i = 0; i < kNumTines && budget > 0; ++i)
+        {
+            if (cp70CfgVersion[i] == cfgVersion) continue;
+            cp70[i].setNote (kLoNote + i, cfg);
+            cp70CfgVersion[i] = cfgVersion;
+            --budget;
+        }
+    }
+
+    cp70Preamp.setTone (p.bassDb, p.trebleDb, p.preampDrive);
+    vibrato.setRate (p.tremRate);
+    vibrato.setDepth (p.tremDepth);
+    vibrato.setStereo (p.tremStereo);
+    phaserL.setParams (p.phaserRate, p.phaserDepth, p.phaserFb, p.phaserMix);
+    phaserR.setParams (p.phaserRate, p.phaserDepth, p.phaserFb, p.phaserMix);
+    cabinetL.setMix (p.cabMix);
+    cabinetR.setMix (p.cabMix);
+    if (std::abs (p.spaceSize - lastSpaceSize) > 1.0e-4f)
+    {
+        lastSpaceSize = p.spaceSize;
+        room.setSize (p.spaceSize);
+    }
+
+    float pL = 0.0f, pR = 0.0f;
+    int nextEvent = 0;
+
+    for (int n = 0; n < numSamples; ++n)
+    {
+        while (nextEvent < numEvents && events[nextEvent].offset <= n)
+            handleEvent (events[nextEvent++], p);
+
+        double noiseForce[kNumTines] = {};
+        const bool anyNoise = action.tick (p.strikeNoise, noiseRng,
+                                           noiseForce, kNumTines) > 0;
+
+        double bus = 0.0;
+        int active = 0;
+        for (int i = 0; i < kNumTines; ++i)
+        {
+            auto& v = cp70[i];
+            if (! v.isRinging()) continue;
+            bus += v.process (cfg);
+            v.applyDamperIfDue();
+            ++active;
+            const float amp = static_cast<float> (std::abs (v.tipDisplacement()));
+            if (amp > tineBlockPeak[i]) tineBlockPeak[i] = amp;
+        }
+
+        // The mechanism's thump goes to the output dry -- key knock travels
+        // through the case on this instrument, not through string coupling,
+        // and there is no frame path to carry it.
+        if (anyNoise)
+        {
+            double nsum = 0.0;
+            for (int i = 0; i < kNumTines; ++i) nsum += noiseForce[i];
+            bus += nsum * 2.0e-5;
+        }
+
+        double y = cp70Preamp.process (bus);
+
+        double gainL = 0.0, gainR = 0.0;
+        vibrato.process (1.0, gainL, gainR);
+        vVibL.store (static_cast<float> (gainL), std::memory_order_relaxed);
+        vVibR.store (static_cast<float> (gainR), std::memory_order_relaxed);
+
+        double l = cabinetL.process (y * gainL);
+        double r = cabinetR.process (y * gainR);
+
+        if (p.phaserMix > 0.0f)
+        {
+            l = phaserL.process (l);
+            r = phaserR.process (r);
+        }
+        if (p.spaceMix > 0.0f)
+        {
+            double wl = 0.0, wr = 0.0;
+            room.process (l, r, wl, wr);
+            const double mix = std::clamp (static_cast<double> (p.spaceMix), 0.0, 1.0);
+            l += mix * wl;
+            r += mix * wr;
+        }
+
+        if (! std::isfinite (l) || ! std::isfinite (r))
+        {
+            cp70Preamp.reset(); cabinetL.reset(); cabinetR.reset();
+            phaserL.reset(); phaserR.reset(); room.reset();
+            l = r = 0.0;
+            ++recoveries;
+        }
+
+        const float fl = static_cast<float> (l) * p.outGainLin;
+        const float fr = static_cast<float> (r) * p.outGainLin;
+        outL[n] = fl;
+        outR[n] = fr;
+        pL = std::max (pL, std::abs (fl));
+        pR = std::max (pR, std::abs (fr));
+
+        if (n == numSamples - 1) numActive.store (active, std::memory_order_relaxed);
+    }
+
+    for (int i = 0; i < kNumTines; ++i)
+    {
+        vTineTip[i].store (tineBlockPeak[i], std::memory_order_relaxed);
+        tineBlockPeak[i] = 0.0f;
+    }
+    for (int w = 0; w < kKeyWords; ++w)
+    {
+        std::uint32_t bits = 0;
+        for (int b = 0; b < 32; ++b)
+        {
+            const int i = w * 32 + b;
+            if (i < kNumTines && keyDown[i]) bits |= (1u << b);
+        }
+        vKeys[w].store (bits, std::memory_order_relaxed);
+    }
+    vPedal.store (pedalDown, std::memory_order_relaxed);
+
+    while (nextEvent < numEvents) handleEvent (events[nextEvent++], p);
+
+    auto bump = [] (std::atomic<float>& a, float v)
+    {
+        const float cur = a.load (std::memory_order_relaxed);
+        if (v > cur) a.store (v, std::memory_order_relaxed);
+    };
+    bump (peakL, pL);
+    bump (peakR, pR);
 }
 
 } // namespace epi

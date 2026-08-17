@@ -45,6 +45,7 @@ std::vector<epicommon::PresetManager::Preset> makeFactoryPresets()
     auto base = [] (std::initializer_list<std::pair<const char*, float>> diff)
     {
         std::vector<std::pair<juce::String, float>> p = {
+            { instrument, 0.0f },
             { tune, 0.0f },
             { velCurve, 0.5f }, { hammerHard, 0.5f }, { hammerMass, 0.5f },
             { escapement, 0.4f }, { strikeNoise, 0.22f }, { damperGrip, 0.6f },
@@ -143,6 +144,16 @@ std::vector<epicommon::PresetManager::Preset> makeFactoryPresets()
         { "Amp Tremolo", base ({
             { tremDepth, 0.55f }, { tremRate, 5.8f }, { tremStereo, 0.0f },
             { preampDrive, 0.35f }, { cabMix, 0.6f },
+        }) },
+
+        // The electric grand: strings on a piezo bridge through the
+        // mid-scooped preamp, antiphase panner running. Everything magnetic
+        // is inert on this instrument by construction.
+        { "CP-70", base ({
+            { instrument, 1.0f },
+            { tremDepth, 0.30f }, { tremRate, 4.5f },
+            { cabMix, 0.0f },
+            { spaceMix, 0.18f }, { spaceSize, 0.5f },
         }) },
 
         // A Rhodes through a slow phaser, which is one of the two or three

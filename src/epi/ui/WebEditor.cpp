@@ -35,7 +35,7 @@ namespace
         "spaceMix", "spaceSize", "outGain",
     };
     constexpr const char* kBoolIds[]   = { };
-    constexpr const char* kChoiceIds[] = { "pickupSel" };
+    constexpr const char* kChoiceIds[] = { "pickupSel", "instrument" };
 
     constexpr int kDesignW = 1280;
     constexpr int kDesignH = 830;

@@ -34,7 +34,10 @@ namespace epi::ids
     // in code, and a selector that offers them is a control that does nothing --
     // which is precisely the defect this project has just spent a day removing
     // from six other knobs. They go back on the list when they play.
-    inline const juce::StringArray instrumentNames { "Rhodes" };
+    // Two real instruments now, so the selector returns. It was removed when
+    // only one existed: a single-entry choice has the range [0, 0] and AU
+    // validation reads back NaN from the normalisation divide.
+    inline const juce::StringArray instrumentNames { "Rhodes", "CP-70" };
 
     // ---- Action: key, hammer, damper ---------------------------------------
     inline constexpr const char* velCurve    = "velCurve";    // 0..1
@@ -212,6 +215,10 @@ namespace epi::ids
         // interface's job — panels.jsx puts these where they belong.
         // testParameterOrderIsStable pins the published order.
         // ---------------------------------------------------------------------
+
+        // ---- Instrument, appended at the end per the rule above -------------
+        add (std::make_unique<Pc> (juce::ParameterID { instrument, 1 }, "Instrument",
+                                   instrumentNames, 0));
 
         return { params.begin(), params.end() };
     }
