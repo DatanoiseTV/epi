@@ -392,3 +392,20 @@ html, body {
   padding: 4px 8px; cursor: pointer;
 }
 .wschip:hover { color: var(--gold); border-color: #3a3120; }
+
+/* ---- sustain pedal lamp ---- */
+.pedal-lamp {
+  position: absolute; bottom: 62px; right: 14px;
+  display: flex; align-items: center; gap: 5px;
+  font-size: 8px; letter-spacing: .18em; color: var(--ghost);
+  pointer-events: none;
+}
+.pedal-lamp .led {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: #241f14; border: 1px solid #322a19;
+}
+.pedal-lamp.on { color: var(--gold); }
+.pedal-lamp.on .led {
+  background: var(--gold);
+  box-shadow: 0 0 6px rgba(202, 164, 94, .8);
+}

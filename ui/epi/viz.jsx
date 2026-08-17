@@ -381,8 +381,34 @@ function VizCard() {
         <span className="viz-note">{strings ? 'CP-70 · PIEZO BRIDGE' : 'RHODES · 88 TINES'} · HAMMER ACTION</span>
       </div>
       <div className="viz-hint">CLICK KEYS OR PLAY A – ; ON YOUR KEYBOARD</div>
+      <PedalLamp />
     </div>
   );
 }
 
-Object.assign(window, { VizCard });
+/* The sustain-pedal lamp. A pedal held by CC64 is invisible on the panel,
+   and an inverted or stuck pedal is the classic "why does everything
+   sustain" -- the lamp makes the state diagnosable at a glance. Its own
+   tiny component so the 30 Hz telemetry never re-renders the canvas card:
+   state changes only when the pedal actually moves. */
+function PedalLamp() {
+  const lv = JuceBridge.useEventRef('levels', { pedal: false });
+  const [down, setDown] = React.useState(false);
+  useEffect(() => {
+    let raf = 0;
+    const tick = () => {
+      const d = !!(lv.current && lv.current.pedal);
+      setDown((prev) => (prev === d ? prev : d));
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+  return (
+    <div className={'pedal-lamp' + (down ? ' on' : '')}>
+      <span className="led" />SUSTAIN
+    </div>
+  );
+}
+
+Object.assign(window, { VizCard, PedalLamp });
