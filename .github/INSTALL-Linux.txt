@@ -1,0 +1,12 @@
+Epi and Didge — installing on Linux
+===================================
+
+Copy each format you want into its folder. The same paths apply to both
+plugins.
+
+  Epi.vst3   ->  ~/.vst3/
+  Epi.clap   ->  ~/.clap/
+  Epi        ->  anywhere; it runs on its own, no host needed
+
+Then restart your host so it rescans. The standalone needs the webkit2gtk
+4.1 (or 4.0) runtime, which every mainstream distribution packages.
