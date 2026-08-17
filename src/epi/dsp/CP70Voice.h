@@ -97,9 +97,17 @@ inline double cp70StretchCents (int midi)
 // Below a kilohertz the polynomial is the median of a fast/slow mixture and
 // fits neither; the fast component is used there and the slow polarisation
 // carries the rest, which is what the measurements prescribe.
+//
+// The 0.6 factor on the polynomial is a direct measurement correcting a
+// population statistic: heterodyne slopes fitted over each reference note's
+// full length put C5's partials four through six at 11.7, 11.5 and 19.7
+// dB/s where the polynomial says 17, 22 and 26 -- the population median
+// mixes registers (a low note's high partial dies faster than a high note's
+// at the same frequency), and the audible cost of trusting it was an attack
+// band that fell away twice too fast.
 inline double cp70AlphaFast (double f)
 {
-    const double poly = 0.393 + 9.23e-3 * f - 1.275e-7 * f * f;
+    const double poly = 0.6 * (0.393 + 9.23e-3 * f - 1.275e-7 * f * f);
     if (f >= 1200.0) return std::max (0.5, poly);
     if (f <= 800.0) return 6.5;
     const double t = (f - 800.0) / 400.0;
@@ -314,10 +322,12 @@ private:
 
         numStrings = note >= 43 ? 2 : 1;
 
-        // Unison spread: nominal 1.2 cents at the default knob, deterministic
-        // per-note scatter -- a well-maintained CP sits at the low end of the
-        // measured 0.5..5 cent range.
-        const double spreadCents = 5.0 * cfg.detuneSpread * cfg.detuneSpread
+        // Unison spread: nominal 1.0 cent at the default knob, deterministic
+        // per-note scatter. Measured directly: the reference D3's fundamental
+        // ripples with a ~9.5 second beat period, which is 1.2 cents between
+        // the pair -- the earlier nominal put the null at half that time and
+        // the engine's bass envelope dipped where the recording is smooth.
+        const double spreadCents = 4.0 * cfg.detuneSpread * cfg.detuneSpread
                                  * (0.7 + 0.6 * (((note * 2654435761u) & 255u) / 255.0));
 
         // Mode budget: everything under fs/pi vertically; horizontal only
@@ -380,7 +390,19 @@ private:
                 const double patch = std::min (0.45, 0.006 / L);
                 const double z = k * kPiD * patch;
                 const double w = std::abs (z) < 1e-9 ? 1.0 : std::sin (z) / z;
-                S.strikeShape[k - 1] = std::sin (k * kPiD * beta) * w;
+                // The tip is compliant. A urethane pad cannot follow -- or
+                // push -- string ripple above its own contact resonance, so
+                // the coupling shape itself rolls off second-order above
+                // kContactHz. Sensing and forcing share the weight (the
+                // reciprocity rule), which keeps the coupled system passive
+                // and also removes the one-sample-delayed point coupling's
+                // spurious drive near Nyquist: without this the launch
+                // carried partials at five kilohertz twenty decibels above
+                // the recordings, whatever the contact stiffness, because
+                // the rigid point contact was chasing ripple no real tip
+                // can feel.
+                const double comp = 1.0 / (1.0 + (fk / kContactHz) * (fk / kContactHz));
+                S.strikeShape[k - 1] = std::sin (k * kPiD * beta) * w * comp;
             }
             for (int k = 1; k <= kH; ++k)
             {
@@ -392,15 +414,26 @@ private:
                 const int idx = kV + k - 1;
                 S.sys.setMode (idx, fk, 60.0 / aH, modalMass);
                 alphaOfMode[s][idx] = aH;
-                S.outShape[idx] = T * k * kPiD / L * kOutScale;
+                const double footArgH = k * kPiD * (kBridgeFoot / 2.0) / L;
+                const double footH = std::abs (footArgH) < 1e-9 ? 1.0
+                                   : std::sin (footArgH) / footArgH;
+                S.outShape[idx] = T * k * kPiD / L * footH * kOutScale;
                 const double beta = strikeBeta();
                 // The slow polarisation's launch level follows the
                 // measurements: the D3 doublet members are within a decibel
                 // of each other while C4's slow member sits 9 dB down, and
                 // above C5 the fast component alone reproduces the measured
-                // envelope times -- so the skew tapers with register.
-                const double skew = 0.5 * std::clamp (1.0 - (note - 50.0) / 26.0, 0.12, 1.0);
-                S.strikeShape[idx] = skew * std::sin (k * kPiD * beta);
+                // envelope times. A 0.89 launch is that one decibel; the
+                // square on the taper is what puts C4 nine down. The earlier
+                // 0.5 prefactor contradicted the very measurement quoted
+                // above it, and the audible result was a bass whose
+                // fundamental died at the fast polarisation's 6.5 dB/s when
+                // the recordings sustain at three -- the slow member IS the
+                // bass sustain, and it was launched six decibels short.
+                const double tp = std::clamp (1.0 - (note - 50.0) / 26.0, 0.12, 1.0);
+                const double skew = 0.89 * tp * tp;
+                const double compH = 1.0 / (1.0 + (fk / kContactHz) * (fk / kContactHz));
+                S.strikeShape[idx] = skew * std::sin (k * kPiD * beta) * compH;
             }
             for (int i = S.kV; i < kMaxModes; ++i)
             { S.outShape[i] = 0.0; S.strikeShape[i] = 0.0; }
@@ -443,12 +476,14 @@ private:
 
     double strikeBeta() const
     {
-        // 1/8 through the compass, rising to 1/6 at the top where the physical
-        // strike distance stays put while L collapses. The one parameter with
-        // no evidence behind it -- named as the calibration variable, and the
-        // fundamental-poor-bass row is its designated target.
-        if (note <= 88) return 1.0 / 8.0;
-        return 1.0 / 8.0 + (1.0 / 6.0 - 1.0 / 8.0) * std::min (1.0, (note - 88.0) / 12.0);
+        // Near 1/8 through the compass, rising toward 1/6 at the top where
+        // the physical strike distance stays put while L collapses. Not
+        // EXACTLY 1/8: the reference D3's launch spectrum shows partial
+        // eight at a healthy -24 dB where an exact one-eighth strike puts a
+        // null -- the measured spectrum has no deep strike nulls anywhere,
+        // so the ratio is held a little off the integer division.
+        if (note <= 88) return 0.118;
+        return 0.118 + (1.0 / 6.0 - 0.118) * std::min (1.0, (note - 88.0) / 12.0);
     }
 
     static double wireDiameter (int note)
@@ -468,8 +503,9 @@ private:
     // One scale for the whole instrument, folding the piezo charge constant
     // and the preamp input into a number that lands the output near the
     // Rhodes' level. Calibrated by the level test row.
-    static constexpr double kOutScale = 2.7e-3;
+    static constexpr double kOutScale = 8.0e-3;
     static constexpr double kBridgeFoot = 0.040;   // m, the piezo's integration length
+    static constexpr double kContactHz = 1500.0;   // tip compliance corner, calibrated on the launch spectra
 
     double fs = 48000.0;
     int note = 60;

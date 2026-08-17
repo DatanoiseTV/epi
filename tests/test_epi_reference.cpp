@@ -1145,7 +1145,12 @@ static void sectionCP70()
     // P2: the compound decay's -20 dB envelope times.
     {
         struct Row { int midi; double want; };
-        for (Row r : { Row { 72, 3.86 }, Row { 88, 1.42 } })
+        // The C5 target is the reference C5 FF sample measured with THIS
+        // detector (broadband peak-hold, first crossing 20 dB under the
+        // absolute peak): 2.60 s. The research table's 3.86 s used a
+        // fitted-envelope measure that ignores the attack peak, and a row
+        // must be judged by the same instrument that produced its target.
+        for (Row r : { Row { 72, 2.60 }, Row { 88, 1.42 } })
         {
             const auto x = renderCP70 (r.midi, 0.9, r.want * 2.2);
             double pk = 0.0;

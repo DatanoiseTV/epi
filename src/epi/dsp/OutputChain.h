@@ -344,7 +344,17 @@ public:
     void prepare (double sampleRate)
     {
         fs = sampleRate;
-        hp12.setCutoff (12.0, fs);
+        // The piezo into its load is a highpass, and the corner is audible
+        // in the recordings: the hammer's contact leaves a unipolar
+        // millisecond-scale force hump at the termination which the model's
+        // readout reproduces faithfully -- and the reference recordings do
+        // not contain it. A 12 Hz corner (the preamp's own input cap) would
+        // pass it; the element-plus-cable source capacitance against the
+        // input resistance sits far higher. Two poles at 60 Hz remove the
+        // hump while costing the D3 fundamental under a decibel, which is
+        // what the measured attack-to-body ratios require.
+        hpA.setCutoff (60.0, fs);
+        hpB.setCutoff (60.0, fs);
         setPeak (scoop, 488.0, -13.4, 0.27);
         setShelf (lowFixed, 63.0, 4.0, false);
         setShelf (highFixed, 2900.0, 1.9, true);
@@ -354,7 +364,8 @@ public:
 
     void reset()
     {
-        hp12.reset();
+        hpA.reset();
+        hpB.reset();
         for (auto* b : { &scoop, &lowFixed, &highFixed, &bassCtl, &trebCtl })
             b->z1 = b->z2 = 0.0;
     }
@@ -371,7 +382,7 @@ public:
 
     double process (double x)
     {
-        double y = hp12.highpass (x);
+        double y = hpB.highpass (hpA.highpass (x));
         y = run (scoop, y);
         y = run (lowFixed, y);
         y = run (highFixed, y);
@@ -446,7 +457,7 @@ private:
     }
 
     double fs = 48000.0;
-    OnePoleD hp12;
+    OnePoleD hpA, hpB;
     Biquad scoop, lowFixed, highFixed, bassCtl, trebCtl;
     double driveGain = 0.25;
 };
