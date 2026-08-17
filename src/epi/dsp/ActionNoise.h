@@ -63,13 +63,14 @@ public:
         next = 0;
     }
 
-    // A key going down. `reg` is the key's place on the keyboard, 0 at the
-    // bottom, 1 at the top.
-    void strike (double reg, double velocity)
+    // A key going down. `tine` is which key, `reg` its place on the keyboard,
+    // 0 at the bottom, 1 at the top.
+    void strike (int tine, double reg, double velocity)
     {
         const double vel = std::clamp (velocity, 0.0, 1.0);
         const double r = std::clamp (reg, 0.0, 1.0);
         Voice& v = alloc();
+        v.tine = tine;
 
         // The knock: the hammer's pivot and the escapement letting go. Faster
         // strikes rattle brighter as well as louder, and the smaller treble
@@ -93,10 +94,11 @@ public:
     // returning to its rest felt. It does not scale with how hard the note
     // was played -- a released key returns under its own spring -- but it
     // does scale with the weight of what returns.
-    void release (double reg)
+    void release (int tine, double reg)
     {
         const double r = std::clamp (reg, 0.0, 1.0);
         Voice& v = alloc();
+        v.tine = tine;
         v.knockEnv = 0.0;
         v.thudEnv = 0.30 * (1.05 - 0.5 * r);
         v.thudCut = 280.0 + 260.0 * r;
@@ -110,28 +112,33 @@ public:
         return false;
     }
 
-    // One sample of force into the frame, all voices summed.
-    double tick (double amount, Rng& rng)
+    // One sample. Each voice's force goes to ITS OWN key's tine -- the
+    // mechanism is bolted under that key, and its impulse reaches that tine's
+    // clamp first and hardest. Routing the noise through the frame's modal
+    // sum instead played it through six discrete resonances, and six pinged
+    // resonances at 143 to 418 hertz are a set of chimes, which is what it
+    // was heard as. A tine forced at its clamp responds broadband -- the
+    // forced response follows the force, and only the tine's own note rings.
+    //
+    // Returns how much (if anything) was written; forces[] must hold one slot
+    // per tine and is NOT cleared here.
+    int tick (double amount, Rng& rng, double* forces, int numTines)
     {
-        if (amount <= 0.0) return 0.0;
+        if (amount <= 0.0) return 0;
 
-        double out = 0.0;
+        int wrote = 0;
         const double n = static_cast<double> (rng.next());   // -1..1
 
         for (auto& v : voices)
         {
             if (v.knockEnv <= 1.0e-7 && v.thudEnv <= 1.0e-7) continue;
 
+            double out = 0.0;
             v.knockState += (v.knockCut / fs) * (n - v.knockState);
             out += v.knockState * v.knockEnv;
             v.knockEnv *= v.knockDecay;
 
-            // The thud is a BAND, not a lowpass. A lowpassed noise reaches
-            // down to DC, and a force with energy at 47 and 88 hertz lands
-            // squarely on the frame's two lowest modes -- what came back was
-            // not a key bottoming out, it was the harp rung like a marimba
-            // bar, and it was reported as exactly that. The difference of two
-            // onepoles passes the tock and starves the modes.
+            // The thud is a BAND, not a lowpass: lowpassed noise reaches DC.
             v.thudState += (v.thudCut / fs) * (n - v.thudState);
             v.thudFloor += (0.30 * v.thudCut / fs) * (n - v.thudFloor);
             out += (v.thudState - v.thudFloor) * v.thudEnv;
@@ -139,9 +146,14 @@ public:
 
             if (v.knockEnv < 1.0e-7) v.knockEnv = 0.0;
             if (v.thudEnv < 1.0e-7) v.thudEnv = 0.0;
-        }
 
-        return kForce * amount * out;
+            if (v.tine >= 0 && v.tine < numTines)
+            {
+                forces[v.tine] += kForce * amount * out;
+                ++wrote;
+            }
+        }
+        return wrote;
     }
 
 private:
@@ -151,6 +163,7 @@ private:
         double knockState = 0.0, thudState = 0.0, thudFloor = 0.0;
         double knockCut = 2000.0, thudCut = 220.0;
         double knockDecay = 0.0, thudDecay = 0.0;
+        int tine = -1;
     };
 
     Voice& alloc()
@@ -163,12 +176,12 @@ private:
         return v;
     }
 
-    // A coupling gain into the frame, not a force in newtons -- the harp's
-    // mass is a lumped modal figure, so the scale here is only meaningful
-    // against it. Calibrated by measurement: at the control's maximum the
-    // mechanism sits about 30 dB under the note that made it, which is where
-    // a key thump sits on a direct feed from a real one.
-    static constexpr double kForce = 220000.0;
+    // A coupling gain into the tine's clamp, calibrated by measurement
+    // against the note that made it: at the control's default the mechanism
+    // sits about 25 dB under a bass note and 40 under a mid one, which is
+    // where a key thump sits on a direct feed from a real instrument, and the
+    // spectrum peaks in the tock band rather than ringing anything.
+    static constexpr double kForce = 7.0;
 
     double fs = 48000.0;
     std::array<Voice, kVoices> voices {};

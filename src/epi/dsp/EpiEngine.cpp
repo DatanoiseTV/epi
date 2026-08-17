@@ -160,7 +160,7 @@ void EpiEngine::handleEvent (const NoteEvent& e, const EngineParams& p)
             tines[i].noteOn (e.note, vel, rhodesConfig (p), seed);
             // The mechanism knocks whether or not the tine is heard. It goes
             // into the frame, not into the output -- see ActionNoise.
-            action.strike (static_cast<double> (i) / (kNumTines - 1), vel);
+            action.strike (i, static_cast<double> (i) / (kNumTines - 1), vel);
             vLastNote.store (e.note, std::memory_order_relaxed);
             seed = seed * 1664525u + 1013904223u;
             break;
@@ -172,7 +172,7 @@ void EpiEngine::handleEvent (const NoteEvent& e, const EngineParams& p)
             if (i < 0 || i >= kNumTines) break;
             keyDown[i] = false;
             tines[i].noteOff();
-            action.release (static_cast<double> (i) / (kNumTines - 1));
+            action.release (i, static_cast<double> (i) / (kNumTines - 1));
             break;
         }
 
@@ -320,6 +320,11 @@ void EpiEngine::process (float* outL, float* outR, int numSamples,
         const double harpU = harp.displacement();
         double harpReaction = 0.0;
 
+        // Each key's mechanical noise, as clamp force on its own tine.
+        double noiseForce[kNumTines] = {};
+        const bool anyNoise = action.tick (p.strikeNoise, noiseRng,
+                                           noiseForce, kNumTines) > 0;
+
         for (int i = 0; i < kNumTines; ++i)
         {
             auto& t = tines[i];
@@ -334,10 +339,18 @@ void EpiEngine::process (float* outL, float* outR, int numSamples,
             // again, and each recovery fires a step through the differentiating
             // coil: a diverge-wake-diverge cycle at a few hundred hertz, which
             // is a steady buzz from an instrument nobody is playing.
+            const bool noisy = anyNoise && noiseForce[i] != 0.0;
             const bool live = ! t.isLockedOut()
-                           && (t.isRinging() || (free && harpCoupling > 0.0
-                                                      && std::abs (harpU) > 1.0e-12));
+                           && (t.isRinging() || noisy
+                               || (free && harpCoupling > 0.0
+                                        && std::abs (harpU) > 1.0e-12));
             if (! live) continue;
+
+            if (noisy)
+            {
+                t.addClampForce (noiseForce[i]);
+                t.setSounding (true);
+            }
 
             if (harpCoupling > 0.0 && free)
             {
@@ -366,7 +379,6 @@ void EpiEngine::process (float* outL, float* outR, int numSamples,
         }
 
         harp.addForce (harpReaction);
-        harp.addNoiseForce (action.tick (p.strikeNoise, noiseRng));
         harp.tick();
         if (! std::isfinite (harp.displacement())) harp.reset();
 

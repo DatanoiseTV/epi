@@ -98,6 +98,22 @@ not over seconds.
 
 ## Known gaps
 
+- **The striking line runs the wrong way, per the service manual — queued as
+  the next model change, and it is not a constant swap.** The manual gives the
+  hammer's contact point as 57.15 mm from the tone generator at the extreme
+  bass and 3.175 mm at the extreme treble — about a third of the free length
+  falling to a seventh — where this model runs 0.13 L rising to 0.26 L, the
+  opposite direction, from a straight-rail argument the manual explicitly
+  contradicts ("the precise curve given to the Tone Bar Rail"). A strike a
+  third of the way out is very likely the real source of the bass swing, the
+  slow bass attack and the growl this model lacks. Tried once: dropping the
+  manual's line in raises seven reference failures, because the hammer mass
+  graduation and the velocity law were both calibrated against the wrong
+  geometry — the bass then overshoots and the treble goes clicky, and scaling
+  the throw alone does not converge. Needs a session recalibrating the three
+  together with the suite as judge.
+
+
 - **96 kHz does not fit.** Measured under the adversarial stress (every
   control sweeping, twenty notes a second, pedal cycling), 57% of blocks miss
   the deadline at 96 kHz where 48 kHz misses 0.1%. The honest cause is that the
