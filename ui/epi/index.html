@@ -71,11 +71,11 @@
       } catch (_) {}
       try { location.reload(); } catch (_) {}
     };
-    /* Fit-to-window: uniform-scale #plugin (the fixed 1280x860 design canvas)
+    /* Fit-to-window: uniform-scale #plugin (the fixed design canvas)
        to the window. transform: scale() translates pointer events through the
        matrix so drags land on the correct widget. */
     (function () {
-      var DESIGN_W = 1280, DESIGN_H = 830;
+      var DESIGN_W = 1224, DESIGN_H = 768;
       var lastW = 0, lastH = 0;
       function fit() {
         var el = document.getElementById('plugin');
@@ -135,8 +135,7 @@
 
   <script type="text/babel" data-presets="react" src="juce-bridge.jsx"></script>
   <script type="text/babel" data-presets="react" src="knob.jsx"></script>
-  <script type="text/babel" data-presets="react" src="harp.jsx"></script>
-  <script type="text/babel" data-presets="react" src="instrument.jsx"></script>
+  <script type="text/babel" data-presets="react" src="viz.jsx"></script>
   <script type="text/babel" data-presets="react" src="panels.jsx"></script>
   <script type="text/babel" data-presets="react" src="app.jsx"></script>
   <script type="text/babel" data-presets="react">ok('d-mount');</script>

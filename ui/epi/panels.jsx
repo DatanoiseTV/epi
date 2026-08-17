@@ -1,25 +1,22 @@
 /* ============================================================
    Epi · control panels
-   Action · Tine · Pickup · Amp · Output
+   Action · Tine/Strings · Pickup/Bridge · Amp · Effects
    ============================================================ */
 
-const { useJuceSlider, useJuceChoice, useJuceEvent, emitNative, PARAMS } = JuceBridge;
+const { useJuceSlider, useJuceChoice, useJuceEvent, emitNative } = JuceBridge;
 
 /* ---- ACTION: the key, the hammer and the damper ---- */
 function ActionPanel() {
   return (
-    <div className="panel">
+    <div className="panel f-action">
       <PHead title="Action" />
-      <div className="prow"><PCycle id="instrument" options={INSTRUMENTS} label="INSTRUMENT" /></div>
       <div className="krow">
-        <PKnob id="hammerHard" />
-        <PKnob id="hammerMass" />
-        <PKnob id="velCurve" />
-      </div>
-      <div className="krow">
-        <PKnob id="escapement" alt />
-        <PKnob id="damperGrip" alt />
-        <PKnob id="strikeNoise" alt />
+        <PKnob id="hammerHard" label="HARDNESS" />
+        <PKnob id="hammerMass" label="MASS" />
+        <PKnob id="velCurve" label="VEL CURVE" />
+        <PKnob id="escapement" label="LET-OFF" />
+        <PKnob id="damperGrip" label="DAMPER" />
+        <PKnob id="strikeNoise" label="KEY NOISE" />
       </div>
       {/* Contact duration is the whole attack. A neoprene tip stays on a bass
           tine for about four milliseconds, which lowpasses the strike hard
@@ -32,16 +29,17 @@ function ActionPanel() {
 /* ---- TINE / STRINGS: the resonator, per instrument ----
    The knobs shown are the ones this instrument's physics can read. The
    CP-70 has no tone bar, no bloom and no magnetics -- showing those
-   knobs would be showing dead controls, which this project has spent
-   enough time removing to know better. */
+   knobs would be showing dead controls. */
 function TinePanel({ cp70 }) {
+  const [tune] = useJuceSlider('tune');
+  const a4 = (440 * Math.pow(2, JuceBridge.PARAMS.tune.map.to(tune) / 1200)).toFixed(1) + ' Hz';
   if (cp70) return (
-    <div className="panel">
-      <PHead title="Strings" />
+    <div className="panel f-tine">
+      <PHead title="Strings" meta={a4} />
       <div className="krow">
         <PKnob id="tipMass" label="UNISON" />
         <PKnob id="resDamp" label="DECAY" />
-        <PKnob id="tune" />
+        <PKnob id="tune" label="TUNE" />
       </div>
       {/* One or two strings per note on a rigid bridge; the unison pair is
           deliberately uncoupled, because the measurements forbid coupling. */}
@@ -49,17 +47,16 @@ function TinePanel({ cp70 }) {
     </div>
   );
   return (
-    <div className="panel">
-      <PHead title="Tine" />
+    <div className="panel f-tine">
+      <PHead title="Tine" meta={a4} />
       <div className="krow">
-        <PKnob id="tipMass" />
-        <PKnob id="resDamp" />
-        <PKnob id="tune" />
-      </div>
-      <div className="krow">
-        <PKnob id="barCouple" alt />
-        <PKnob id="barTune" alt />
-        <PKnob id="nonlinAmt" alt />
+        <PKnob id="tipMass" label="SPRING" />
+        <PKnob id="resDamp" label="DAMPING" />
+        <PKnob id="tune" label="TUNE" />
+        <PKnob id="barCouple" label="TONE BAR" />
+        <PKnob id="barTune" label="BAR TUNE" />
+        <PKnob id="nonlinAmt" label="BLOOM" />
+        <PKnob id="bodyMix" label="BODY" />
       </div>
       {/* Sliding the tuning spring does not only retune the tine: it sits at a
           different fraction of every mode's shape, so it re-voices the
@@ -71,8 +68,10 @@ function TinePanel({ cp70 }) {
 
 /* ---- PICKUP: where the sound is actually made ---- */
 function PickupPanel({ cp70 }) {
+  const [pos] = useJuceSlider('pickupPos');
+  const mm = (JuceBridge.PARAMS.pickupPos.map.to(pos) * 2).toFixed(2) + ' mm';
   if (cp70) return (
-    <div className="panel">
+    <div className="panel f-pickup">
       <PHead title="Bridge" meta="PIEZO" />
       {/* The CP-70's pickup is one piezo element under each bridge, reading
           the string's termination FORCE -- a +6 dB per octave tilt that is a
@@ -80,31 +79,27 @@ function PickupPanel({ cp70 }) {
           voice: no magnet, no gap, no coil, no resonance. What shapes the
           sound instead is the hammer and the mid-scooped preamp. */}
       <div className="krow">
-        <PKnob id="strikeNoise" />
-        <PKnob id="damperGrip" />
+        <PKnob id="strikeNoise" label="STRIKE" />
+        <PKnob id="damperGrip" label="DAMPER" />
       </div>
       <div className="note">force sensing · fixed by construction</div>
     </div>
   );
-  const [pos] = useJuceSlider('pickupPos');
-  const mm = (PARAMS.pickupPos.map.to(pos) * 2).toFixed(2);
   return (
-    <div className="panel">
-      <PHead title="Pickup" meta={mm + ' mm'} />
+    <div className="panel f-pickup">
+      <PHead title="Pickup" meta={mm} />
       {/* Height is the voicing screw. On the pole centreline the field is
-          symmetric, the tine crosses its peak twice a cycle, and the note comes
-          out an octave up with almost no fundamental. Off-centre the
+          symmetric, the tine crosses its peak twice a cycle, and the note
+          comes out an octave up with almost no fundamental. Off-centre the
           fundamental returns. It is geometry, not a filter. */}
       <div className="krow">
-        <PKnob id="pickupPos" size="lg" />
-        <PKnob id="pickupDist" />
+        <PKnob id="pickupPos" label="HEIGHT" />
+        <PKnob id="pickupDist" label="GAP" />
+        <PKnob id="coilFreq" label="COIL PEAK" />
+        <PKnob id="coilQ" label="COIL Q" />
+        <PKnob id="coilSat" label="CORE SAT" />
       </div>
-      <div className="krow">
-        <PKnob id="coilFreq" alt />
-        <PKnob id="coilQ" alt />
-        <PKnob id="coilSat" alt />
-      </div>
-      <div className="note">drag the tine in the field above</div>
+      <div className="note">the voicing screw, in millimetres</div>
     </div>
   );
 }
@@ -113,28 +108,19 @@ function PickupPanel({ cp70 }) {
 function AmpPanel() {
   const [depth] = useJuceSlider('tremDepth');
   return (
-    <div className="panel">
+    <div className="panel f-amp">
       <PHead title="Amp" meta={depth > 0.01 ? 'VIBRATO' : ''} />
       <div className="krow">
-        <PKnob id="preampDrive" />
-        <PKnob id="bass" />
-        <PKnob id="treble" />
-      </div>
-      {/* Called vibrato on the instrument, but nothing modulates pitch: it
-          pans, by shining one oscillator through two photocells wired in
-          opposition. The cells decay far slower than they attack, so the depth
-          falls away as the rate rises -- which is why a fast Suitcase vibrato
-          is shallow. */}
-      <div className="krow">
-        <PKnob id="tremRate" alt />
-        <PKnob id="tremDepth" alt />
-        <PKnob id="tremStereo" alt />
-      </div>
-      {/* Whether the two photocells are wired in opposition or together is the
-          whole difference between the panner a Rhodes calls vibrato and the
-          amplitude tremolo everyone else means by the word. */}
-      <div className="krow">
-        <PKnob id="cabMix" alt />
+        <PKnob id="preampDrive" label="DRIVE" />
+        <PKnob id="bass" label="BASS" />
+        <PKnob id="treble" label="TREBLE" />
+        <PKnob id="cabMix" label="CABINET" />
+        {/* Called vibrato on the instrument, but nothing modulates pitch: it
+            pans, by shining one oscillator through two photocells wired in
+            opposition. */}
+        <PKnob id="tremRate" label="RATE" />
+        <PKnob id="tremDepth" label="VIBRATO" />
+        <PKnob id="tremStereo" label="WIDTH" />
       </div>
       <div className="bars">
         <LiveBar field="vibL" full={1} label="Left" digits={2} />
@@ -144,31 +130,22 @@ function AmpPanel() {
   );
 }
 
-/* ---- OUTPUT ---- */
-function OutputPanel() {
+/* ---- EFFECTS: phaser and the room ---- */
+function FxPanel() {
   const lv = useJuceEvent('levels', { voices: 0 });
   return (
-    <div className="panel">
-      <PHead title="Output" meta={(lv.voices || 0) + ' voices'} />
+    <div className="panel f-fx">
+      <PHead title="Effects" meta={(lv.voices || 0) + ' voices'} />
       {/* Neither of these is in the instrument. A Rhodes through a phaser is
-          one of the sounds it is known for, so it is here -- after the speaker,
-          as an effect, not pretending to be part of the physics. */}
+          one of the sounds it is known for, so it is here -- after the
+          speaker, as an effect, not pretending to be part of the physics. */}
       <div className="krow">
-        <PKnob id="phaserMix" alt />
-        <PKnob id="phaserRate" alt />
-        <PKnob id="phaserDepth" alt />
-        <PKnob id="phaserFb" alt />
-      </div>
-      <div className="krow">
-        <PKnob id="spaceMix" />
-        <PKnob id="spaceSize" />
-      </div>
-      <div className="outrow">
-        <PKnob id="outGain" size="lg" />
-        <div className="meters">
-          <LiveMeter channel={0} label="L" />
-          <LiveMeter channel={1} label="R" />
-        </div>
+        <PKnob id="phaserMix" label="PHASER" />
+        <PKnob id="phaserRate" label="PH RATE" />
+        <PKnob id="phaserDepth" label="PH DEPTH" />
+        <PKnob id="phaserFb" label="PH RES" />
+        <PKnob id="spaceMix" label="ROOM" />
+        <PKnob id="spaceSize" label="SIZE" />
       </div>
     </div>
   );
@@ -233,4 +210,4 @@ function PresetBrowser({ onClose, currentName }) {
   );
 }
 
-Object.assign(window, { ActionPanel, TinePanel, PickupPanel, AmpPanel, OutputPanel, PresetBrowser });
+Object.assign(window, { ActionPanel, TinePanel, PickupPanel, AmpPanel, FxPanel, PresetBrowser });

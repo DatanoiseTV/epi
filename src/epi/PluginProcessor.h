@@ -58,6 +58,19 @@ public:
     epi::EpiEngine&       getEngine()       { return engine; }
     const epi::EpiEngine& getEngine() const { return engine; }
 
+    // A note played from the interface (clicking the drawn keys). Called on
+    // the message thread; drained into the engine's event list at the top of
+    // the next block. A fixed ring with atomic indices -- one producer, one
+    // consumer -- so the audio thread never takes a lock for it.
+    void pushUiNote (int note, float velocity, bool on)
+    {
+        const auto w = uiNoteWrite.load (std::memory_order_relaxed);
+        const auto r = uiNoteRead.load (std::memory_order_acquire);
+        if (w - r >= kUiNoteCap) return;                    // full: drop, UI notes are advisory
+        uiNotes[w % kUiNoteCap] = { note, velocity, on };
+        uiNoteWrite.store (w + 1, std::memory_order_release);
+    }
+
     // True when any parameter differs from the last preset load or user save.
     // Computed on demand rather than tracked from a ValueTree callback: the
     // APVTS only pushes parameter changes into its tree on the message thread,
@@ -73,6 +86,11 @@ private:
     void collectEvents (juce::MidiBuffer& midi);
 
     juce::AudioProcessorValueTreeState apvts;
+
+    struct UiNote { int note; float velocity; bool on; };
+    static constexpr unsigned kUiNoteCap = 64;
+    std::array<UiNote, kUiNoteCap> uiNotes {};
+    std::atomic<unsigned> uiNoteWrite { 0 }, uiNoteRead { 0 };
     epi::EpiEngine engine;
     epicommon::PresetManager presetManager;
 

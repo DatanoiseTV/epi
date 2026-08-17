@@ -47,6 +47,7 @@ juce::String WebResources::mimeForName (const juce::String& name)
     if (name.endsWith (".svg"))   return "image/svg+xml";
     if (name.endsWith (".png"))   return "image/png";
     if (name.endsWith (".json"))  return "application/json";
+    if (name.endsWith (".woff2")) return "font/woff2";
     return "application/octet-stream";
 }
 

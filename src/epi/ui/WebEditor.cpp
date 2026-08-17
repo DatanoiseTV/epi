@@ -37,8 +37,8 @@ namespace
     constexpr const char* kBoolIds[]   = { };
     constexpr const char* kChoiceIds[] = { "pickupSel", "instrument" };
 
-    constexpr int kDesignW = 1280;
-    constexpr int kDesignH = 830;
+    constexpr int kDesignW = 1224;
+    constexpr int kDesignH = 768;
     constexpr int kTelemetryHz = 60;
 
     epicommon::WebResources& resources()
@@ -117,6 +117,15 @@ WebEditor::WebEditor (::EpiAudioProcessor& proc)
                 juce::Array<juce::var> arr;
                 for (const auto& n : presets.getUserNames()) arr.add (juce::var (n));
                 complete (juce::var (arr));
+            })
+        .withEventListener (juce::Identifier { "ui_note" },
+            [&proc = epiProcessor] (juce::var payload)
+            {
+                const int note = static_cast<int> (payload.getProperty ("note", -1));
+                const bool on = static_cast<bool> (payload.getProperty ("on", false));
+                const float vel = static_cast<float> (
+                    static_cast<double> (payload.getProperty ("velocity", 0.75)));
+                proc.pushUiNote (note, vel, on);
             })
         .withEventListener (juce::Identifier { "preset_prev" },
             [&presets] (juce::var) { presets.previous(); })

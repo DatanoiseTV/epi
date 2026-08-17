@@ -113,6 +113,17 @@ void EpiAudioProcessor::collectEvents (juce::MidiBuffer& midi)
 {
     events.clear();
 
+    // Notes clicked on the interface, queued from the message thread.
+    for (auto r = uiNoteRead.load (std::memory_order_relaxed);
+         r != uiNoteWrite.load (std::memory_order_acquire);
+         uiNoteRead.store (++r, std::memory_order_release))
+    {
+        const auto& u = uiNotes[r % kUiNoteCap];
+        if (u.note >= 0 && u.note < 128)
+            events.push_back ({ 0, u.on ? epi::NoteEvent::noteOn : epi::NoteEvent::noteOff,
+                                u.note, u.on ? std::max (0.05f, u.velocity) : 0.0f });
+    }
+
     for (const auto meta : midi)
     {
         const auto m = meta.getMessage();
