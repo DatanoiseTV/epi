@@ -857,6 +857,8 @@ void EpiEngine::processCP70 (float* outL, float* outR, int numSamples,
 // it. Chain: reeds -> pickup bus (HP + bias) -> preamp (asymmetric clip) ->
 // decimate -> tremolo (true AM, both channels alike) -> cabinet -> effects.
 // ---------------------------------------------------------------------------
+static constexpr double kWurliOutScale = 0.04;
+
 void EpiEngine::processWurli (float* outL, float* outR, int numSamples,
                               const EngineParams& p,
                               const NoteEvent* events, int numEvents)
@@ -953,7 +955,15 @@ void EpiEngine::processWurli (float* outL, float* outR, int numSamples,
         double os[Decimator::kOver];
         for (int k = 0; k < WurliVoice::kOver; ++k)
             os[k] = wurliPre.process (wurliBus.process (dcBus[k]));
-        double y = decimL.process (os);
+        // The chain up to here speaks VOLTS -- the preamp's collector really
+        // swings two volts into saturation -- and the engine's nominal
+        // domain does not. Without this stage a bass fortissimo left the
+        // preamp at twelve and the cabinet's excursion limit flattened it
+        // against its rail, which was heard as exactly what it was: the low
+        // notes far more distorted than the bark accounts for. The constant
+        // is the volume pot at its calibrated spot: fortissimo bass lands
+        // near half scale, level-matched to the other two instruments.
+        double y = decimL.process (os) * kWurliOutScale;
 
         // The mechanism's thump travels through the case, dry, exactly as on
         // the CP-70 -- an electrostatic gap cannot hear a wooden key either.

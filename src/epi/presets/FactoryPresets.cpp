@@ -180,6 +180,40 @@ std::vector<epicommon::PresetManager::Preset> makeFactoryPresets()
             { cabMix, 0.7f }, { spaceMix, 0.10f },
         }) },
 
+        // The 200A's family, each a real way these were run.
+
+        // The soul-record setting: vibrato deep and classic, the drive a
+        // touch past the circuit's own level, played on the onboard ovals.
+        { "Wurli Soul", base ({
+            { instrument, 2.0f },
+            { preampDrive, 0.40f }, { coilSat, 0.5f },
+            { pickupPos, 0.5f }, { pickupDist, 0.17f },
+            { tremDepth, 0.65f }, { tremRate, 5.6f },
+            { cabMix, 0.7f }, { spaceMix, 0.14f }, { spaceSize, 0.45f },
+        }) },
+
+        // A tired unit: the rail sagging near 115 volts -- Pfeifle measured
+        // a real one at 130 -- which is a physical volume-and-bark drop, so
+        // the tone goes gentle without any tone control touching it.
+        { "Sagging Rail", base ({
+            { instrument, 2.0f },
+            { preampDrive, 0.25f }, { coilSat, 0.15f },
+            { pickupPos, 0.5f }, { pickupDist, 0.20f },
+            { tremDepth, 0.35f }, { tremRate, 5.0f },
+            { cabMix, 0.65f }, { spaceMix, 0.12f },
+        }) },
+
+        // The hotter Series 200 rail and the drive well into the knee: the
+        // bark forward, the onboard speakers grinding at their early
+        // excursion limit, close and dry.
+        { "Reed Grind", base ({
+            { instrument, 2.0f },
+            { preampDrive, 0.60f }, { coilSat, 0.85f },
+            { pickupPos, 0.6f }, { pickupDist, 0.12f },
+            { tremDepth, 0.20f }, { tremRate, 6.2f },
+            { cabMix, 0.8f }, { spaceMix, 0.05f },
+        }) },
+
         // ---- workshop presets ------------------------------------------------
         // These four re-cut the harp itself through the tine workshop. Loading
         // one paints its table; loading any other preset leaves the workshop
@@ -268,7 +302,9 @@ const std::array<float, 5>* factoryCabMods (const juce::String& name)
     // The 200A's own speakers: two 4x8 open-back ovals, breakup at 5.5 kHz,
     // short suspension -- the onboard grind (constants in WurliChain.h).
     static const std::array<float, 5> wurli { 0.62f, 0.90f, 0.60f, 0.35f, 0.35f };
-    if (name == "Two Hundred") return &wurli;
+    if (name == "Two Hundred" || name == "Wurli Soul"
+        || name == "Sagging Rail" || name == "Reed Grind")
+        return &wurli;
     return nullptr;
 }
 
