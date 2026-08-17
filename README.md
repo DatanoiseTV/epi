@@ -108,14 +108,11 @@ submodule. `cmake -S . -B build && cmake --build build --target Epi_All`.
 Measured, not asserted. The models are calibrated against recordings of the
 real instruments and against the published measurements of the people who
 put them under high-speed cameras and spectrum analysers — and the repo
-carries the receipts: six test suites (130+ numbered rows) render audio
+carries the receipts: four test suites (130+ numbered rows) render audio
 offline and measure it, from inharmonicity curves and per-partial decay
 rates to "a chord must equal the sum of its notes on the piezo bridge, and
 must NOT on a coupled soundboard". `docs/` holds the implementation plans
 and the research notes with every number's provenance.
-
-The repository also contains **Didge**, a physically modeled didgeridoo
-built on the same engine discipline — see [docs/didge.md](docs/didge.md).
 
 ## Trademarks
 

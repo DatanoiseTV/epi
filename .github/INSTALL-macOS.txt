@@ -1,8 +1,8 @@
-Epi and Didge — installing on macOS
-===================================
+Epi — installing on macOS
+=========================
 
 Copy each format you want into its folder. These are user folders, so no
-administrator password is needed. The same paths apply to both plugins.
+administrator password is needed.
 
   Epi.vst3        ->  ~/Library/Audio/Plug-Ins/VST3/
   Epi.component   ->  ~/Library/Audio/Plug-Ins/Components/

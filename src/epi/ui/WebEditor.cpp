@@ -34,7 +34,8 @@ namespace
         "phaserMix", "phaserRate", "phaserDepth", "phaserFb",
         "spaceMix", "spaceSize", "outGain", "clarity",
     };
-    constexpr const char* kBoolIds[]   = { };
+    // No bool parameters exist; an empty constexpr array is a compiler
+    // extension GCC and MSVC both reject, so there is simply no list.
     constexpr const char* kChoiceIds[] = { "pickupSel", "instrument" };
 
     constexpr int kDesignW = 1224;
@@ -57,7 +58,6 @@ juce::StringArray WebEditor::boundParameterIds()
 {
     juce::StringArray ids;
     for (auto id : kFloatIds)  ids.add (id);
-    for (auto id : kBoolIds)   ids.add (id);
     for (auto id : kChoiceIds) ids.add (id);
     return ids;
 }
@@ -233,7 +233,7 @@ WebEditor::WebEditor (::EpiAudioProcessor& proc)
 
     relays.addToOptions (options,
                          kFloatIds,  (int) std::size (kFloatIds),
-                         kBoolIds,   0,
+                         nullptr,    0,
                          kChoiceIds, (int) std::size (kChoiceIds));
 
     webView = std::make_unique<juce::WebBrowserComponent> (options);

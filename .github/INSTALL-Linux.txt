@@ -1,8 +1,7 @@
-Epi and Didge — installing on Linux
-===================================
+Epi — installing on Linux
+=========================
 
-Copy each format you want into its folder. The same paths apply to both
-plugins.
+Copy each format you want into its folder.
 
   Epi.vst3   ->  ~/.vst3/
   Epi.clap   ->  ~/.clap/

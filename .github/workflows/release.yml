@@ -1,5 +1,4 @@
-# Release builds: installable macOS, Windows and Linux packages for Epi and
-# Didge.
+# Release builds: installable macOS, Windows and Linux packages.
 #
 # Separate from ci.yml, which only proves the tree compiles and the suites
 # pass. This one builds what a user actually downloads: a universal macOS
@@ -94,35 +93,29 @@ jobs:
       - name: build
         shell: bash
         run: |
-          EPI_TESTS="epi_dsp_tests epi_reference_tests epi_grand_tests epi_wurli_tests"
-          if [[ "${{ runner.os }}" == "Linux" ]]; then
-            cmake --build build --target Didge_All Didge_CLAP Epi_All Epi_CLAP didge_dsp_tests $EPI_TESTS -j
-          else
-            cmake --build build --target Didge_All Didge_CLAP Epi_All Epi_CLAP didge_dsp_tests didge_state_tests $EPI_TESTS -j
-          fi
+          cmake --build build --target Epi_All Epi_CLAP \
+            epi_dsp_tests epi_reference_tests epi_grand_tests epi_wurli_tests -j
 
       # A release that does not play in tune is not a release.
       - name: tests
         shell: bash
         run: ctest --test-dir build --output-on-failure
 
-      - name: verify macos binaries are universal
+      - name: verify macos binary is universal
         if: runner.os == 'macOS'
         shell: bash
         run: |
-          for BIN in build/Didge_artefacts/Release/VST3/Didge.vst3/Contents/MacOS/Didge \
-                     build/Epi_artefacts/Release/VST3/Epi.vst3/Contents/MacOS/Epi; do
-            lipo -info "$BIN"
-            lipo -info "$BIN" | grep -q "arm64" || { echo "missing arm64 slice"; exit 1; }
-            lipo -info "$BIN" | grep -q "x86_64" || { echo "missing x86_64 slice"; exit 1; }
-          done
+          BIN=build/Epi_artefacts/Release/VST3/Epi.vst3/Contents/MacOS/Epi
+          lipo -info "$BIN"
+          lipo -info "$BIN" | grep -q "arm64" || { echo "missing arm64 slice"; exit 1; }
+          lipo -info "$BIN" | grep -q "x86_64" || { echo "missing x86_64 slice"; exit 1; }
 
       - name: package
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p dist
-          for PLUGIN in Epi Didge; do
+          for PLUGIN in Epi; do
             ART="build/${PLUGIN}_artefacts/Release"
             STAGE="stage/$PLUGIN"
             mkdir -p "$STAGE"

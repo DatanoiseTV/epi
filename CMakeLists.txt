@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(Didge VERSION 0.5.0 LANGUAGES C CXX)
+project(Epi VERSION 0.5.0 LANGUAGES C CXX)
 
 # -----------------------------------------------------------------------------
 # Project-wide settings
@@ -28,16 +28,16 @@ endif()
 # Version / build identity baked into the binary.
 # -----------------------------------------------------------------------------
 find_package(Git QUIET)
-set(DIDGE_GIT_HASH "unknown")
-set(DIDGE_GIT_BRANCH "unknown")
+set(EPI_GIT_HASH "unknown")
+set(EPI_GIT_BRANCH "unknown")
 if(GIT_FOUND)
     execute_process(COMMAND ${GIT_EXECUTABLE} rev-parse --short HEAD
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-        OUTPUT_VARIABLE DIDGE_GIT_HASH OUTPUT_STRIP_TRAILING_WHITESPACE
+        OUTPUT_VARIABLE EPI_GIT_HASH OUTPUT_STRIP_TRAILING_WHITESPACE
         ERROR_QUIET)
     execute_process(COMMAND ${GIT_EXECUTABLE} rev-parse --abbrev-ref HEAD
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-        OUTPUT_VARIABLE DIDGE_GIT_BRANCH OUTPUT_STRIP_TRAILING_WHITESPACE
+        OUTPUT_VARIABLE EPI_GIT_BRANCH OUTPUT_STRIP_TRAILING_WHITESPACE
         ERROR_QUIET)
 endif()
 
@@ -66,94 +66,8 @@ add_subdirectory(external/clap-juce-extensions EXCLUDE_FROM_ALL)
 # plug-in directories.
 option(PLUGIN_INSTALL_LOCAL "Copy built plugins into the user's plug-in dirs" ON)
 
-juce_add_plugin(Didge
-    COMPANY_NAME            "DatanoiseTV"
-    BUNDLE_ID               "com.datanoisetv.didge"
-    PLUGIN_MANUFACTURER_CODE Dnse
-    PLUGIN_CODE             Ddge
-    FORMATS                 AU VST3 Standalone
-    PRODUCT_NAME            "Didge"
-    DESCRIPTION             "Physically modeled didgeridoo"
-    IS_SYNTH                TRUE
-    NEEDS_MIDI_INPUT        TRUE
-    NEEDS_MIDI_OUTPUT       FALSE
-    IS_MIDI_EFFECT          FALSE
-    EDITOR_WANTS_KEYBOARD_FOCUS FALSE
-    NEEDS_WEB_BROWSER       TRUE   # pulls webkit2gtk + gtk pkg-config on Linux
-    NEEDS_WEBVIEW2          TRUE   # Windows: statically link the WebView2 loader
-    COPY_PLUGIN_AFTER_BUILD ${PLUGIN_INSTALL_LOCAL}
-    VST3_CATEGORIES         Instrument Synth
-    AU_MAIN_TYPE            kAudioUnitType_MusicDevice)
-
-juce_generate_juce_header(Didge)
-
-# -----------------------------------------------------------------------------
-# CLAP wrapper — builds Didge.clap from the same shared plugin code. Creates a
-# `Didge_CLAP` target (NOT part of Didge_All, so build it explicitly).
-# -----------------------------------------------------------------------------
-clap_juce_extensions_plugin(TARGET Didge
-    CLAP_ID              "com.datanoisetv.didge"
-    CLAP_FEATURES        instrument synthesizer "physical-modeling"
-    CLAP_MANUAL_URL      "https://github.com/DatanoiseTV/didge"
-    CLAP_SUPPORT_URL     "https://github.com/DatanoiseTV/didge/issues")
-
-# -----------------------------------------------------------------------------
-# UI assets — index.html / CSS / JSX / vendored React + Babel-standalone +
-# the JUCE WebView frontend library. Served at runtime by
-# WebBrowserComponent's resource provider, all bundled as BinaryData so the
-# plugin never reaches the network. The vendored React UMDs and
-# babel-standalone are MIT-licensed.
-# -----------------------------------------------------------------------------
-file(GLOB DIDGE_UI_SRC    CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/ui/didge/*")
-file(GLOB DIDGE_UI_VENDOR CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/ui/vendor/*")
-juce_add_binary_data(DidgeUI
-    SOURCES     ${DIDGE_UI_SRC} ${DIDGE_UI_VENDOR}
-    NAMESPACE   DidgeUIData
-    HEADER_NAME DidgeUIData.h)
-set_target_properties(DidgeUI PROPERTIES POSITION_INDEPENDENT_CODE TRUE)
-
-# -----------------------------------------------------------------------------
-# Sources
-# -----------------------------------------------------------------------------
-target_sources(Didge PRIVATE
-    src/PluginProcessor.cpp
-    src/dsp/DidgeEngine.cpp
-    src/presets/FactoryPresets.cpp
-    src/ui/WebEditor.cpp
-    ${EPI_COMMON_SOURCES})
-
-target_include_directories(Didge PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src)
-
-target_compile_definitions(Didge
-    PUBLIC
-        JUCE_WEB_BROWSER=1
-        JUCE_USE_CURL=0
-        JUCE_VST3_CAN_REPLACE_VST2=0
-        JUCE_REPORT_APP_USAGE=0
-        # Windows: NEEDS_WEBVIEW2 only LINKS the WebView2 loader; the module
-        # compile flag must be set separately or juce_gui_extra falls back to
-        # the legacy IE backend, which has no resource provider.
-        $<$<PLATFORM_ID:Windows>:JUCE_USE_WIN_WEBVIEW2_WITH_STATIC_LINKING=1>
-    PRIVATE
-        DIDGE_VERSION="${PROJECT_VERSION}"
-        DIDGE_GIT_HASH="${DIDGE_GIT_HASH}"
-        DIDGE_GIT_BRANCH="${DIDGE_GIT_BRANCH}")
-
-target_link_libraries(Didge PRIVATE
-    DidgeUI
-    juce::juce_audio_utils
-    juce::juce_dsp
-    juce::juce_gui_extra
-    PUBLIC
-    juce::juce_recommended_config_flags
-    juce::juce_recommended_lto_flags
-    juce::juce_recommended_warning_flags)
-
 # =============================================================================
-# Epi — physically modeled electric pianos (Rhodes now; Wurlitzer, Clavinet and
-# CP-70 to follow on the same skeleton). A second product sharing this
-# repository's plugin shell.
+# Epi — physically modeled electric pianos.
 # =============================================================================
 juce_add_plugin(Epi
     COMPANY_NAME            "DatanoiseTV"
@@ -179,12 +93,12 @@ juce_generate_juce_header(Epi)
 clap_juce_extensions_plugin(TARGET Epi
     CLAP_ID              "com.datanoisetv.epi"
     CLAP_FEATURES        instrument synthesizer piano "physical-modeling"
-    CLAP_MANUAL_URL      "https://github.com/DatanoiseTV/didge"
-    CLAP_SUPPORT_URL     "https://github.com/DatanoiseTV/didge/issues")
+    CLAP_MANUAL_URL      "https://github.com/DatanoiseTV/epi"
+    CLAP_SUPPORT_URL     "https://github.com/DatanoiseTV/epi/issues")
 
 file(GLOB EPI_UI_SRC CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/ui/epi/*")
 juce_add_binary_data(EpiUI
-    SOURCES     ${EPI_UI_SRC} ${DIDGE_UI_VENDOR}
+    SOURCES     ${EPI_UI_SRC} ${EPI_UI_VENDOR}
     NAMESPACE   EpiUIData
     HEADER_NAME EpiUIData.h)
 set_target_properties(EpiUI PROPERTIES POSITION_INDEPENDENT_CODE TRUE)
@@ -208,8 +122,8 @@ target_compile_definitions(Epi
         $<$<PLATFORM_ID:Windows>:JUCE_USE_WIN_WEBVIEW2_WITH_STATIC_LINKING=1>
     PRIVATE
         EPI_VERSION="${PROJECT_VERSION}"
-        EPI_GIT_HASH="${DIDGE_GIT_HASH}"
-        EPI_GIT_BRANCH="${DIDGE_GIT_BRANCH}")
+        EPI_GIT_HASH="${EPI_GIT_HASH}"
+        EPI_GIT_BRANCH="${EPI_GIT_BRANCH}")
 
 target_link_libraries(Epi PRIVATE
     EpiUI

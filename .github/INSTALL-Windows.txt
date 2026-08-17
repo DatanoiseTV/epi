@@ -1,8 +1,7 @@
-Epi and Didge — installing on Windows
-=====================================
+Epi — installing on Windows
+===========================
 
-Copy each format you want into its folder. The same paths apply to both
-plugins.
+Copy each format you want into its folder.
 
   Epi.vst3   ->  C:\Program Files\Common Files\VST3\
   Epi.clap   ->  C:\Program Files\Common Files\CLAP\

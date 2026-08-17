@@ -1,6 +1,6 @@
-# Fast PR / branch CI: builds Epi and Didge on macOS + Linux + Windows and
-# runs every measured suite. No signing, no artefacts — just the proof that
-# main and proposed merges compile clean and the models still measure right.
+# Fast PR / branch CI: builds Epi on macOS + Linux + Windows and runs every
+# measured suite. No signing, no artefacts — just the proof that main and
+# proposed merges compile clean and the models still measure right.
 
 name: ci
 
@@ -74,18 +74,10 @@ jobs:
           ${WEBVIEW2_DIR:+-DJUCE_WEBVIEW2_PACKAGE_LOCATION=$WEBVIEW2_DIR}
 
       - name: build
-        # State tests link the full Didge target, which cascades juce_gui_extra
-        # sources into the test compile — fine on Apple/Windows, but on Linux
-        # it needs the WebKit subprocess-helper header only the plugin target
-        # generates. tests/CMakeLists.txt gates the target; skip it here too.
         shell: bash
         run: |
-          EPI_TESTS="epi_dsp_tests epi_reference_tests epi_grand_tests epi_wurli_tests"
-          if [[ "${{ matrix.os }}" == ubuntu-* ]]; then
-            cmake --build build --target Didge_All Didge_CLAP Epi_All Epi_CLAP didge_dsp_tests $EPI_TESTS -j
-          else
-            cmake --build build --target Didge_All Didge_CLAP Epi_All Epi_CLAP didge_dsp_tests didge_state_tests $EPI_TESTS -j
-          fi
+          cmake --build build --target Epi_All Epi_CLAP \
+            epi_dsp_tests epi_reference_tests epi_grand_tests epi_wurli_tests -j
 
       - name: tests
         shell: bash
