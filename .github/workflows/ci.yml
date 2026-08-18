@@ -17,6 +17,11 @@ jobs:
   build:
     name: build (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    # A wedged runner (a hung apt mirror, a stalled action download) otherwise
+    # burns the six-hour default doing nothing -- one sat in "install deps"
+    # for over an hour before anyone noticed. The slowest honest leg finishes
+    # in under ten minutes; thirty is generosity, not a constraint.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
