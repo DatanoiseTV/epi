@@ -77,6 +77,11 @@ struct EngineParams
     float bassDb      = 0.0f;
     float trebleDb    = 0.0f;
     float clarityDb   = 0.0f;
+    // Transducer swap: 0 Magnetic, 1 Native (the instrument's own),
+    // 2 Electro, 3 Contact. The founding measurement of this project is that
+    // the transducer makes the timbre; this is that fact handed to the
+    // player.
+    int   transducer  = 1;
     float tremRate    = 5.5f;
     float tremDepth   = 0.0f;
     float tremStereo  = 1.0f;   // 1 = the Rhodes panner, 0 = amplitude tremolo

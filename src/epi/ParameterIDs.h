@@ -62,15 +62,18 @@ namespace epi::ids
     // fundamental dominates. On the real instrument this is a screw.
     inline constexpr const char* pickupPos  = "pickupPos";  // -1..1
     inline constexpr const char* pickupDist = "pickupDist"; // 0..1 gap
-    inline constexpr const char* pickupSel  = "pickupSel";  // choice (Clavinet)
+    inline constexpr const char* pickupSel  = "pickupSel";  // choice: transducer swap
     inline constexpr const char* coilFreq   = "coilFreq";   // 0..1 resonance
     inline constexpr const char* coilQ      = "coilQ";      // 0..1
     inline constexpr const char* coilSat    = "coilSat";    // 0..1 core saturation
 
     // Clavinet pickup switching. Order must match epi::PickupSelect.
     inline const juce::StringArray pickupSelNames {
-        "Neck", "Bridge", "Both +", "Both −"
-    };
+        // Order is state: index 1 has been the stored default since the
+        // parameter existed, so NATIVE lives there and old sessions keep
+        // their sound. MAGNETIC is a coil reading flux, ELECTRO a polarised
+        // capacitor, CONTACT the force at the mount.
+        "Magnetic", "Native", "Electro", "Contact" };
 
     // ---- Amplifier ----------------------------------------------------------
     inline constexpr const char* preampDrive = "preampDrive"; // 0..1

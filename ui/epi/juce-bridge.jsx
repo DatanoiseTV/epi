@@ -49,7 +49,7 @@
      src/epi/ParameterIDs.h. */
   // Must match epi::ids::instrumentNames.
   const INSTRUMENTS = ['Tine', 'E-Grand', 'Reed'];
-  const PICKUP_SEL  = ['Neck', 'Bridge', 'Both +', 'Both \u2212'];
+  const PICKUP_SEL  = ['MAGNETIC', 'NATIVE', 'ELECTRO', 'CONTACT'];
 
   const pct  = (n) => Math.round(n * 100) + '%';
   const msOf = (m) => (n) => { const v = m.to(n); return (v < 10 ? v.toFixed(1) : Math.round(v)) + ' ms'; };

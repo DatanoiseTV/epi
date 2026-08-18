@@ -62,7 +62,7 @@ void EpiEngine::prepare (double sampleRate, int)
         cp70.resize (static_cast<std::size_t> (kNumTines));
     for (int i = 0; i < kNumTines; ++i)
     {
-        cp70[i].prepare (sampleRate);
+        cp70[i].prepare (sampleRate, &field);
         cp70[i].setNote (kLoNote + i, CP70Voice::Config {});
     }
     cp70CfgVersion.fill (0);
@@ -72,7 +72,7 @@ void EpiEngine::prepare (double sampleRate, int)
         wurli.resize (static_cast<std::size_t> (kNumTines));
     for (int i = 0; i < kNumTines; ++i)
     {
-        wurli[i].prepare (sampleRate);
+        wurli[i].prepare (sampleRate, &field);
         wurli[i].setNote (kLoNote + i, WurliVoice::Config {});
     }
     wurliCfgVersion.fill (0);
@@ -174,6 +174,7 @@ RhodesVoice::Config EpiEngine::rhodesConfig (const EngineParams& p) const
     // concerned, so they arrive as one number.
     c.detuneCents    = static_cast<double> (p.tuneCents)
                      + 100.0 * static_cast<double> (bendSemis);
+    c.transducer = static_cast<double> (p.transducer);
     return c;
 }
 
@@ -191,6 +192,11 @@ CP70Voice::Config EpiEngine::cp70Config (const EngineParams& p) const
     c.dampTrim       = p.resDamp;
     c.detuneCents    = static_cast<double> (p.tuneCents)
                      + 100.0 * static_cast<double> (bendSemis);
+    c.transducer    = static_cast<double> (p.transducer);
+    // The point pickups gain the coordinate the bridge never had: position
+    // along the string from the height knob, gap from the gap knob.
+    c.pickupPosNorm = 0.5 + 0.5 * static_cast<double> (p.pickupPos);
+    c.gapNorm       = static_cast<double> (p.pickupDist);
     return c;
 }
 
@@ -212,6 +218,7 @@ WurliVoice::Config EpiEngine::wurliConfig (const EngineParams& p) const
     c.gapMm          = 0.3 + 1.2 * static_cast<double> (p.pickupDist);
     c.detuneCents    = static_cast<double> (p.tuneCents)
                      + 100.0 * static_cast<double> (bendSemis);
+    c.transducer = static_cast<double> (p.transducer);
     return c;
 }
 
@@ -596,7 +603,11 @@ void EpiEngine::process (float* outL, float* outR, int numSamples,
         double osL[Decimator::kOver], osR[Decimator::kOver];
         for (int k = 0; k < Decimator::kOver; ++k)
         {
-            double y = coil.process (static_cast<float> (os[k]));
+            // A coil is magnetic hardware; the swapped transducers feed the
+            // preamp directly, at their own calibrated level.
+            double y = (p.transducer <= 1)
+                     ? coil.process (static_cast<float> (os[k]))
+                     : os[k];
             y = preamp.process (y);
             // One cabinet per channel. Running both through a single instance
             // interleaves two signals in its filters, which is not a stereo
@@ -1038,8 +1049,10 @@ void EpiEngine::processWurli (float* outL, float* outR, int numSamples,
         }
 
         double os[Decimator::kOver];
+        const bool electroChain = (p.transducer == 1 || p.transducer == 2);
         for (int k = 0; k < WurliVoice::kOver; ++k)
-            os[k] = wurliPre.process (wurliBus.process (dcBus[k]));
+            os[k] = wurliPre.process (electroChain ? wurliBus.process (dcBus[k])
+                                                   : dcBus[k] * 40.0);
         // The chain up to here speaks VOLTS -- the preamp's collector really
         // swings two volts into saturation -- and the engine's nominal
         // domain does not. Without this stage a bass fortissimo left the

@@ -152,13 +152,15 @@ public:
         // the frequencies move -- which is also why a bend does not change how
         // the note is struck.
         double detuneCents    = 0.0;
+        // 0 Magnetic, 1 Native (= magnetic here), 2 Electro, 3 Contact.
+        double transducer     = 1.0;
     };
 
     // Compared byte-for-byte by the engine to decide whether the instrument
     // needs rebuilding, so it must have no padding for that comparison to mean
     // what it says.
     static_assert (std::is_trivially_copyable<Config>::value, "Config must be memcmp-able");
-    static_assert (sizeof (Config) == 12 * sizeof (double), "Config has padding");
+    static_assert (sizeof (Config) == 13 * sizeof (double), "Config has padding");
 
     void prepare (double sampleRate, const MagneticPickup* sharedField)
     {
@@ -424,7 +426,7 @@ public:
         // sympathetic tines at minus a hundred and forty decibels paid four
         // field evaluations a sample each to render silence -- at ninety-six
         // kilohertz that was most of the pedal's cost.
-        if (reduced && ! hammer.isActive())
+        if (reduced && ! hammer.isActive() && trans == 0)
         {
             glidePickup();
             sys.tick();
@@ -575,6 +577,57 @@ public:
         // energy check above runs at control rate, which is too late for that.
         if (! std::isfinite (vNow)) { recover (fluxOut); return; }
         const double hNow = sys.displacementAt (shapeTipH);
+
+        // -- alternative transducers --------------------------------------
+        // The founding measurement says the transducer makes the timbre, so
+        // the transducer is swappable. Electro: the tip is one plate of a
+        // polarised capacitor, out follows y/(g-y) -- the reed piano's law
+        // pointed at a tine. Contact: the inertial force into the mount,
+        // linear, which is the harp heard through a contact microphone. Both
+        // reuse the same hermite path reconstruction as the coil, and both
+        // report a zero rest so the engine's operating-point bookkeeping
+        // stays exact.
+        if (trans == 2)
+        {
+            const double gE = std::max (0.6e-3, staticGap);
+            for (int k = 0; k < kOver; ++k)
+            {
+                const double t = static_cast<double> (k + 1) / kOver;
+                double vv = hermite (vHist[0], vHist[1], vHist[2], vNow, t);
+                vv = std::min (vv, 0.85 * gE);
+                fluxOut[k] = kElectroOut * (vv / (gE - vv));
+            }
+            vHist[0] = vHist[1]; vHist[1] = vHist[2]; vHist[2] = vNow;
+            hHist[0] = hHist[1]; hHist[1] = hHist[2]; hHist[2] = hNow;
+            lastTipV = vNow; lastTipH = hNow;
+            if (--traceCount <= 0)
+            {
+                traceCount = traceDecim;
+                traceIdx = (traceIdx + 1) & (kTraceLen - 1);
+                trace[traceIdx] = static_cast<float> (vNow);
+            }
+            return;
+        }
+        if (trans == 3)
+        {
+            const double cf = sys.displacementAt (shapeContact);
+            for (int k = 0; k < kOver; ++k)
+            {
+                const double t = static_cast<double> (k + 1) / kOver;
+                fluxOut[k] = kContactOut * hermite (cfHist[0], cfHist[1], cfHist[2], cf, t);
+            }
+            cfHist[0] = cfHist[1]; cfHist[1] = cfHist[2]; cfHist[2] = cf;
+            vHist[0] = vHist[1]; vHist[1] = vHist[2]; vHist[2] = vNow;
+            hHist[0] = hHist[1]; hHist[1] = hHist[2]; hHist[2] = hNow;
+            lastTipV = vNow; lastTipH = hNow;
+            if (--traceCount <= 0)
+            {
+                traceCount = traceDecim;
+                traceIdx = (traceIdx + 1) & (kTraceLen - 1);
+                trace[traceIdx] = static_cast<float> (vNow);
+            }
+            return;
+        }
 
         // A tine swinging a small fraction of the pole's flat is sampling a
         // patch of the field that is straight. A straight function of a sine is
@@ -728,7 +781,7 @@ public:
         updateRestSaturation();
     }
 
-    double restingFlux() const { return satRestVal; }
+    double restingFlux() const { return trans == 0 ? satRestVal : 0.0; }
 
     // The tine's displacement where it is bolted to the harp, and a force
     // applied there. This is the whole of the sympathetic path: a struck tine
@@ -1304,6 +1357,22 @@ private:
         sys.disableTerm (kTermStretch);
         sys.disableTerm (kTermJoint);
 
+        // The transducer this voice renders through. Native is the coil.
+        {
+            const int t = static_cast<int> (cfg.transducer + 0.5);
+            trans = (t == 1 || t == 0) ? 0 : t;
+        }
+        // The contact transducer reads the inertial force the assembly puts
+        // into its mount: sum of phi_clamp * omega^2 * modal mass over the
+        // tine's vertical modes -- what a contact microphone bolted to the
+        // harp actually hears.
+        for (int m = 0; m < kNumModes; ++m) shapeContact[m] = 0.0;
+        for (int m = 0; m < kTineModes; ++m)
+        {
+            const double w = 2.0 * kPiD * tineFreq[m];
+            shapeContact[kV0 + m] = shapeClamp[kV0 + m] * w * w * modalMass;
+        }
+
         configured = true;
         EPI_CHK ("configure exit");
     }
@@ -1498,6 +1567,12 @@ private:
     double damperFactor = 1.0;
     double tineLength = 0.1;
     double geoLen = 1.0, geoDia = 1.0;      // the workshop's trims
+    // Resolved transducer: 0 magnetic, 2 electro, 3 contact (native folds in).
+    int trans = 0;
+    double shapeContact[kNumModes] {};
+    double cfHist[3] {};
+    static constexpr double kElectroOut = 2.5e-2;   // level-matched by probe
+    static constexpr double kContactOut = 3.2e-2;
     double pkHOff = 0.0, pkGOff = 0.0;      // the pickup workshop's offsets
     double staticOffset = 0.0, staticGap = 1.5e-3, restFlux = 0.0;
     double staticOffsetT = 0.0, staticGapT = 1.5e-3;

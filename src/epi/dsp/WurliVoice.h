@@ -13,6 +13,7 @@
 #pragma once
 
 #include "EpiModel.h"
+#include "PickupMagnetic.h"
 #include "ModalCore.h"
 
 #include <type_traits>
@@ -297,16 +298,19 @@ public:
         // Master tune and pitch bend together, in cents. Applied by
         // re-solving mu -- the tech's solder move -- not by an offset.
         double detuneCents    = 0.0;
+        // 0 Magnetic, 1 Native (= electrostatic here), 2 Electro, 3 Contact.
+        double transducer     = 1.0;
     };
 
     // Compared byte-for-byte by the engine to decide whether the instrument
     // needs rebuilding, so it must have no padding for that comparison to
     // mean what it says.
     static_assert (std::is_trivially_copyable<Config>::value, "Config must be memcmp-able");
-    static_assert (sizeof (Config) == 9 * sizeof (double), "Config has padding");
+    static_assert (sizeof (Config) == 10 * sizeof (double), "Config has padding");
 
-    void prepare (double sampleRate)
+    void prepare (double sampleRate, const MagneticPickup* sharedField = nullptr)
     {
+        field = sharedField;
         fs = sampleRate;
         sys.prepare (sampleRate);
         sys.setNumModes (kReedModes);
@@ -453,6 +457,9 @@ public:
         beatPhase += 2.0 * kPiD * beatDelta / fs;
         if (beatPhase > 2.0 * kPiD) beatPhase -= 2.0 * kPiD;
         const double outMod = 1.0 + beatDepth * std::sin (beatPhase);
+        const double cfNow = (trans == 3) ? sysDisplacementContact() : 0.0;
+        if (trans == 0 && field != nullptr && magRest == 0.0)
+            magRest = field->flux (static_cast<float> (kMagOffset), kMagGap);
 
         // The tip's path between this sample and the last is band-limited --
         // one live mode plus a dying chirp -- so reconstructing it at kOver
@@ -463,7 +470,20 @@ public:
         {
             const double t = static_cast<double> (k + 1) / kOver;
             const double vv = hermite (tipHist[0], tipHist[1], tipHist[2], tip, t);
-            dcOut[k] = deltaCPf (vv) * outMod;
+            // The swappable transducer: the native electrostatic law, a
+            // magnetic coil's flux with the tip riding the field table, or
+            // the linear force into the clamp. Same reconstructed path for
+            // all three -- the Rhodes staircase lesson holds regardless of
+            // which law is looking.
+            if (trans == 2)
+                dcOut[k] = deltaCPf (vv) * outMod;
+            else if (trans == 0)
+                dcOut[k] = (field != nullptr
+                             ? (field->flux (static_cast<float> (kMagOffset + vv), kMagGap) - magRest)
+                             : 0.0) * kMagOut * outMod;
+            else
+                dcOut[k] = kContactOut
+                         * hermite (cfHist[0], cfHist[1], cfHist[2], cfNow, t) * outMod;
         }
         tipHist[0] = tipHist[1]; tipHist[1] = tipHist[2]; tipHist[2] = tip;
     }
@@ -780,6 +800,22 @@ private:
         centring = std::clamp (cfg.pickupCentring, -0.5, 0.5);
         dcRest = c0 * capLaw (centring);
 
+        {
+            const int t = static_cast<int> (cfg.transducer + 0.5);
+            trans = (t == 1) ? 2 : t;   // native IS the electrostatic law
+        }
+        // Contact: the inertial force the reed puts into its clamp -- what
+        // a contact microphone on the reed bar hears. Mode shapes at the
+        // near-clamp station, weighted by omega squared and the modal mass.
+        {
+            const double fr[3] = { reed.f0, reed.f0 * reed.r2, reed.f0 * reed.r3 };
+            for (int m = 0; m < kReedModes; ++m)
+            {
+                const double w = 2.0 * kPiD * fr[m];
+                shapeContact[m] = CantileverModes::shape (m, 0.06) * w * w
+                                * reed.beamMass * (0.25 + reed.mu);
+            }
+        }
         configured = true;
     }
 
@@ -793,6 +829,21 @@ private:
     double shapeStrike[kReedModes] {};
     double shapeTip[kReedModes] {};
     double tipHist[3] {};
+    double cfHist[3] {};
+    double shapeContact[64] {};
+    const MagneticPickup* field = nullptr;
+    int trans = 2;
+    double magRest = 0.0;
+    static constexpr double kMagOffset = -1.0e-3;   // m, off the pole centre
+    static constexpr float  kMagGap    = 1.8e-3f;
+    static constexpr double kMagOut    = 0.043;       // level-matched by probe
+    static constexpr double kContactOut= 2.5;
+    double sysDisplacementContact()
+    {
+        double cf = sys.displacementAt (shapeContact);
+        cfHist[0] = cfHist[1]; cfHist[1] = cfHist[2]; cfHist[2] = cf;
+        return cf;
+    }
     double c0 = 3.0, invGap = 2000.0, centring = 0.0, dcRest = 0.0;
     double damperFactor = 1.0;
     double beatDelta = 2.4, beatDepth = 0.08, beatPhase = 0.0;

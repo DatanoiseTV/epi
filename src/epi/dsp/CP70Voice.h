@@ -14,6 +14,8 @@
 
 #include "EpiModel.h"
 #include "ModalCore.h"
+#include "PickupMagnetic.h"
+#include "OutputChain.h"
 
 namespace epi
 {
@@ -129,11 +131,21 @@ public:
         double detuneSpread   = 0.5;    // "tipMass" knob: unison spread 0..5 cents
         double dampTrim       = 0.5;    // "resDamp": global alpha trim x0.7..1.5
         double detuneCents    = 0.0;    // master tune + bend
+        // The transducer swap. 0 Magnetic, 1 Native (= the piezo bridge),
+        // 2 Electro, 3 Contact (which IS the piezo -- it reads the mount
+        // force; selecting it is selecting native). A non-native pickup is
+        // a POINT sensor, so it gains the coordinate the bridge never had:
+        // a position along the string.
+        double transducer     = 1.0;
+        double pickupPosNorm  = 0.5;    // fraction of L, mapped 0.08..0.50
+        double gapNorm        = 0.35;   // transverse gap for the point pickups
     };
 
-    void prepare (double sampleRate)
+    void prepare (double sampleRate, const MagneticPickup* sharedField = nullptr)
     {
         fs = sampleRate;
+        field = sharedField;
+        pdec.prepare (sampleRate);
         for (auto& s : str) s.sys.prepare (sampleRate);
         hammer.prepare (sampleRate);
         reset();
@@ -239,10 +251,43 @@ public:
         }
 
         double force = 0.0;
-        for (int s = 0; s < numStrings; ++s)
+        if (trans == 1)
         {
-            str[s].sys.tick();
-            force += str[s].sys.displacementAt (str[s].outShape);
+            for (int s = 0; s < numStrings; ++s)
+            {
+                str[s].sys.tick();
+                force += str[s].sys.displacementAt (str[s].outShape);
+            }
+        }
+        else
+        {
+            // The point pickup: displacement at xp, reconstructed at four
+            // subsamples (the staircase lesson), pushed through the chosen
+            // law, and decimated back to the base rate inside the voice.
+            double yp = 0.0;
+            for (int s = 0; s < numStrings; ++s)
+            {
+                str[s].sys.tick();
+                yp += str[s].sys.displacementAt (pshape[s]);
+            }
+            double os[Decimator::kOver];
+            for (int k = 0; k < Decimator::kOver; ++k)
+            {
+                const double t = static_cast<double> (k + 1) / Decimator::kOver;
+                double vv = hermiteP (ypHist[0], ypHist[1], ypHist[2], yp, t);
+                if (trans == 0)
+                    os[k] = (field != nullptr
+                              ? (field->flux (static_cast<float> (kMagOffP + vv),
+                                              static_cast<float> (pgap)) - magRestP)
+                              : 0.0) * kMagOutP;
+                else
+                {
+                    vv = std::min (vv, 0.85 * pgap);
+                    os[k] = kElecOutP * (vv / (pgap - vv));
+                }
+            }
+            ypHist[0] = ypHist[1]; ypHist[1] = ypHist[2]; ypHist[2] = yp;
+            force = pdec.process (os);
         }
 
         if (++controlCounter >= 32)
@@ -458,6 +503,34 @@ private:
             { S.outShape[i] = 0.0; S.strikeShape[i] = 0.0; }
         }
 
+        // ---- the point pickup, when one is fitted ---------------------------
+        // A magnetic or electrostatic pickup is a POINT sensor at xp along
+        // the string -- the coordinate the rigid piezo bridge never had.
+        // Its readout weight for mode k is sin(k pi xp) with the aperture's
+        // sinc folded in: the comb voicing every guitarist knows, obtained
+        // from the same modal state, not from a filter.
+        {
+            const int t = static_cast<int> (cfg.transducer + 0.5);
+            trans = (t == 3) ? 1 : t;       // contact IS the piezo here
+            const double xp = 0.08 + 0.42 * std::clamp (cfg.pickupPosNorm, 0.0, 1.0);
+            pgap = 0.8e-3 + 3.2e-3 * std::clamp (cfg.gapNorm, 0.0, 1.0);
+            for (int si = 0; si < 2; ++si)
+                for (int m = 0; m < kMaxModes; ++m) pshape[si][m] = 0.0;
+            for (int si = 0; si < numStrings; ++si)
+            {
+                Str& S = str[si];
+                const int kV = S.kV - S.kH;
+                for (int k = 1; k <= kV; ++k)
+                {
+                    const double ap = k * kPiD * 0.004 / 0.6;   // ~8 mm aperture
+                    const double w = std::abs (ap) < 1e-9 ? 1.0 : std::sin (ap) / ap;
+                    pshape[si][k - 1] = std::sin (k * kPiD * xp) * w;
+                }
+            }
+            magRestP = (field != nullptr)
+                     ? field->flux (static_cast<float> (kMagOffP), static_cast<float> (pgap)) : 0.0;
+        }
+
         // ---- hammer: urethane over leather, not felt ------------------------
         const double reg = std::clamp ((note - 28.0) / 72.0, 0.0, 1.0);
         hammerCfg.alpha = 2.2;
@@ -528,6 +601,27 @@ private:
 
     double fs = 48000.0;
     double geoLen = 1.0, geoDia = 1.0;      // the workshop's trims
+    // The point-pickup machinery for the transducer swap: readout shape at
+    // a position along the string, a hermite history for the oversampled
+    // laws, and a private decimator so the voice still returns one base-rate
+    // sample to the bus.
+    static double hermiteP (double a, double b, double c, double d, double t)
+    {
+        const double m0 = 0.5 * (c - a), m1 = 0.5 * (d - b);
+        const double t2 = t * t, t3 = t2 * t;
+        return (2*t3 - 3*t2 + 1) * b + (t3 - 2*t2 + t) * m0
+             + (-2*t3 + 3*t2) * c + (t3 - t2) * m1;
+    }
+    const MagneticPickup* field = nullptr;
+    Decimator pdec;
+    int trans = 1;                          // resolved: 1/3 piezo, 0 mag, 2 electro
+    double pshape[2][kMaxModes] {};
+    double ypHist[3] {};
+    double pgap = 1.5e-3;
+    double magRestP = 0.0;
+    static constexpr double kMagOffP   = -0.9e-3;   // m, off the pole centre
+    static constexpr double kMagOutP   = 0.53;    // level-matched by probe
+    static constexpr double kElecOutP  = 8.0e-2;
     int note = 60;
     int numStrings = 1;
     Str str[2];
