@@ -1098,7 +1098,7 @@ private:
         if (ks > 0.0)
         {
             const double rk = std::sqrt (ks);
-            for (int pass = 0; pass < 4; ++pass)
+            for (int pass = 0; pass < 8; ++pass)
             {
                 const double got = assembledFundamental (tineFreq, modalMass, rk, trim);
                 if (! (got > 0.0)) break;
