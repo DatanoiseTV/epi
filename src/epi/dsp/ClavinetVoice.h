@@ -691,8 +691,10 @@ private:
         {
             const double fk = k * f0 * std::sqrt (1.0 + B * k * k);
             const double ripple = 1.0 + kRippleDepth * std::cos (2.0 * kPiD * fk / (rippleRate * f0));
+            // String rule: material loss acts on the bending share only --
+            // B k^2/(1+B k^2) -- the tension is geometric and lossless.
             const double a = trim * ClavinetScale::alphaDbPerS (fk) * ripple
-                           + 8.686 * kPiD * fk
+                           + 8.686 * kPiD * fk * ((B * k * k) / (1.0 + B * k * k))
                              * std::max (0.0, static_cast<double> (mat.lossEta) - static_cast<double> (kMusicWire.lossEta));
             sys.setMode (k - 1, fk, 60.0 / a, modalMass);
             speakFreq[k - 1] = fk;

@@ -538,8 +538,20 @@ private:
                 // Vertical (fast) polarisation: the plain-wire law above
                 // D#4, the wound mixture below it -- the same construction
                 // boundary the geometry branch already draws.
+                // Material loss on a STRING acts only on the bending share
+                // of the energy -- the tension's restoring force is
+                // geometric and lossless, which is why a nylon guitar
+                // string rings for seconds while a nylon rod clunks. The
+                // bending fraction of mode k is the inharmonicity term
+                // B k^2 / (1 + B k^2): nearly nothing for low partials,
+                // growing with k -- so nylon keeps its fundamental and
+                // sheds its highs, the warm pluck-into-sustain of the real
+                // material. Cantilevers keep the full loss, because a
+                // cantilever's restoring force IS bending.
+                const double bendFrac = (B * k * k) / (1.0 + B * k * k);
                 const double aV = trim * cp70AlphaFast (fk, note >= 63)
-                                + 8.686 * kPiD * fk * std::max (0.0, static_cast<double> (mat.lossEta) - static_cast<double> (kMusicWire.lossEta));
+                                + 8.686 * kPiD * fk * bendFrac
+                                  * std::max (0.0, static_cast<double> (mat.lossEta) - static_cast<double> (kMusicWire.lossEta));
                 S.sys.setMode (k - 1, fk, 60.0 / aV, modalMass);
                 alphaOfMode[s][k - 1] = aV;
 
@@ -590,7 +602,8 @@ private:
                 // correction to the FAST law must not stretch them; launched
                 // at tp^2 they are inaudibly far down on plain notes anyway.
                 const double aH = trim * cp70AlphaFast (fk) / rr
-                                + 8.686 * kPiD * fk * std::max (0.0, static_cast<double> (mat.lossEta) - static_cast<double> (kMusicWire.lossEta));
+                                + 8.686 * kPiD * fk * ((B * k * k) / (1.0 + B * k * k))
+                                  * std::max (0.0, static_cast<double> (mat.lossEta) - static_cast<double> (kMusicWire.lossEta));
                 const int idx = kV + k - 1;
                 S.sys.setMode (idx, fk, 60.0 / aH, modalMass);
                 alphaOfMode[s][idx] = aH;
