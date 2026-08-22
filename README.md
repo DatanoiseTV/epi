@@ -2,9 +2,9 @@
 
 # Epi
 
-### Three electric pianos, built from physics — no samples anywhere
+### Four pianos, built from physics — no samples anywhere
 
-**Tine · E-Grand · Reed** — VST3 · AU · CLAP · Standalone
+**Tine · E-Grand · Reed · Grand** — VST3 · AU · CLAP · Standalone
 
 ![License](https://img.shields.io/badge/license-GPL--3.0-blue)
 ![Formats](https://img.shields.io/badge/formats-VST3%20%C2%B7%20AU%20%C2%B7%20CLAP%20%C2%B7%20Standalone-caa45e)
@@ -22,7 +22,7 @@ electrical signal. There is no sample library and no oscillator standing in
 for one — when you change the hammer, the pickup, or the steel itself, the
 sound changes the way it would on the real bench.
 
-Three instruments live behind one selector:
+Four instruments live behind one selector:
 
 - **Tine** — the classic tine piano: 88 tuned steel rods with tone bars,
   magnetic pickups, and the stereo panner its amplifier called vibrato. The
@@ -36,6 +36,11 @@ Three instruments live behind one selector:
   electrostatic pickup polarised at 150 volts. The louder you play, the more
   the gap's asymmetry barks — that snarl is the geometry of the pickup, and
   the SUPPLY knob is a real voltage.
+- **Grand** — an acoustic grand: 88 notes of one to three strings each on a
+  fitted soundboard, radiated through a spaced mic pair. Decay knees, the
+  bass-left stereo image, half-pedal and the pedal-open board wash all come
+  out of the same coupled model, verified row by row against measurements
+  of a real instrument.
 
 Every voice is its own mechanism. All 88 notes have their own hammer, their
 own resonator, their own pickup — chords never steal voices, repeated notes

@@ -12,7 +12,7 @@ function Header({ onOpenBrowser }) {
     <div className="hdr">
       <div className="brand">
         <div className="name">epi</div>
-        <div className="tag">Physical Modeling E·Piano</div>
+        <div className="tag">Physical Modeling Piano</div>
       </div>
       <div className="mid">
         <div className="presetbar">

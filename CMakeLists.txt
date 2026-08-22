@@ -67,7 +67,7 @@ add_subdirectory(external/clap-juce-extensions EXCLUDE_FROM_ALL)
 option(PLUGIN_INSTALL_LOCAL "Copy built plugins into the user's plug-in dirs" ON)
 
 # =============================================================================
-# Epi — physically modeled electric pianos.
+# Epi — physically modeled pianos.
 # =============================================================================
 juce_add_plugin(Epi
     COMPANY_NAME            "DatanoiseTV"
@@ -76,7 +76,7 @@ juce_add_plugin(Epi
     PLUGIN_CODE             Epi1
     FORMATS                 AU VST3 Standalone
     PRODUCT_NAME            "Epi"
-    DESCRIPTION             "Physically modeled electric pianos"
+    DESCRIPTION             "Physically modeled pianos"
     IS_SYNTH                TRUE
     NEEDS_MIDI_INPUT        TRUE
     NEEDS_MIDI_OUTPUT       FALSE
