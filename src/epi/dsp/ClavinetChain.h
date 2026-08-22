@@ -192,12 +192,13 @@ class ClavinetPreamp
 public:
     void prepare (double rate)
     {
+        input.setCutoff (10.0, rate);
         low.setCutoff (130.0, rate);
         high.setCutoff (4000.0, rate);
         reset();
     }
 
-    void reset() { low.reset(); high.reset(); }
+    void reset() { input.reset(); low.reset(); high.reset(); }
 
     // 1.0 is the circuit's own level; the calibrated THD numbers hold there.
     void setDrive (double d) { drive = std::clamp (d, 0.0, 4.0); }
@@ -215,7 +216,12 @@ public:
         const double u = y * kDrive * drive;
         const double s = u >= 0.0 ? kSatPos * std::tanh (u / kSatPos)
                                   : kSatNeg * std::tanh (u / kSatNeg);
-        return s / kDrive;
+        // The output coupling capacitor, placed where the circuit's is: a
+        // tangent-held string sits statically deflected as long as the key
+        // is down (the flux polynomial makes DC of it), and the asymmetric
+        // stage rectifies its own offset on top. Both belong to the cap.
+        // 10 Hz keeps the measured 30 Hz shelf row inside its band.
+        return input.highpass (s / kDrive);
     }
 
 private:
@@ -230,7 +236,7 @@ private:
     static constexpr double kSatNeg = 2.75;
     static constexpr double kDrive  = 0.87;
 
-    OnePoleD low, high;
+    OnePoleD input, low, high;
     double drive = 1.0;
 };
 
