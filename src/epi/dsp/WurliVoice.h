@@ -452,6 +452,18 @@ public:
         if (++controlCounter >= kControlDecim)
         {
             controlCounter = 0;
+            {
+                const double aG = 1.0 - std::exp (-kControlDecim / (0.045 * fs));
+                const double dG = gapT - gapNow;
+                const double dC = centringT - centring;
+                if (std::abs (dG) > 1.0e-12 || std::abs (dC) > 1.0e-12)
+                {
+                    gapNow   += aG * dG;
+                    centring += aG * dC;
+                    invGap = yScaleReg / std::max (0.3e-3, gapNow);
+                    dcRest = c0 * capLaw (centring);
+                }
+            }
             const double e = sys.energy();
 
             // A reed that has gone non-finite is silenced and the state
@@ -853,9 +865,15 @@ private:
         // carry the register law, exactly as a graduated per-reed gap (set
         // by a tech with a feeler gauge, reed by reed) would produce. See
         // yScaleFor() for the fitted shape.
-        const double gap = std::clamp (cfg.gapMm, 0.3, 0.8) * 1.0e-3;
-        invGap = yScaleFor (reg) / gap;
-        centring = std::clamp (cfg.pickupCentring, -0.5, 0.5);
+        // Moved to, not jumped to: gap and centring shift the electrostatic
+        // operating point, and a step there is a click through the charge
+        // amplifier -- measured at -12 dBFS on a fast GAP sweep. The targets
+        // land here; the control tick walks the working values over.
+        gapT      = std::clamp (cfg.gapMm, 0.3, 0.8) * 1.0e-3;
+        centringT = std::clamp (cfg.pickupCentring, -0.5, 0.5);
+        if (! configured) { gapNow = gapT; centring = centringT; }
+        yScaleReg = yScaleFor (reg);
+        invGap = yScaleReg / gapNow;
         dcRest = c0 * capLaw (centring);
 
         // The y-scale law does DOUBLE DUTY unless corrected: y sets how deep
@@ -927,6 +945,7 @@ private:
         return cf;
     }
     double c0 = 3.0, invGap = 2000.0, centring = 0.0, dcRest = 0.0, outSens = 1.0;
+    double gapT = 0.5e-3, gapNow = 0.5e-3, centringT = 0.0, yScaleReg = 1.0;
     double damperFactor = 1.0;
     double damperEff = 1.0;
     double pedalAmt = 0.0;

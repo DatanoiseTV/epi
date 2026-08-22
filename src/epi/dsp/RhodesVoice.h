@@ -822,8 +822,12 @@ public:
     // iron sees. The bias is what makes it asymmetric, which is the useful part.
     void setCoreSaturation (double sat)
     {
-        satAmt = std::clamp (sat, 0.0, 1.0);
-        satOn  = satAmt > 1.0e-4;
+        // Moved to, not jumped to -- the same Faraday argument as the
+        // voicing screw: the knee's operating values shift the resting flux,
+        // and a step there is a click through the differentiating coil.
+        satAmtT = std::clamp (sat, 0.0, 1.0);
+        if (! configured) satAmt = satAmtT;
+        satOn  = std::max (satAmt, satAmtT) > 1.0e-4;
         updateRestSaturation();
     }
 
@@ -1670,12 +1674,15 @@ private:
         const double a = 1.0 - std::exp (-1.0 / (0.020 * fs));
         const double dO = staticOffsetT - staticOffset;
         const double dG = staticGapT - staticGap;
-        if (std::abs (dO) < 1.0e-12 && std::abs (dG) < 1.0e-12) return;
+        const double dS = satAmtT - satAmt;
+        if (std::abs (dO) < 1.0e-12 && std::abs (dG) < 1.0e-12
+            && std::abs (dS) < 1.0e-9) return;
         staticOffset += a * dO;
         staticGap    += a * dG;
+        satAmt       += a * dS;
         refreshPickup();
     }
-    double satK = 0.0, satAmt = 0.0, satNorm = 1.0, peakFlux = 1.0;
+    double satK = 0.0, satAmt = 0.0, satAmtT = 0.0, satNorm = 1.0, peakFlux = 1.0;
     bool   satOn = false;
 
     // The curve at the resting operating point, and its slope there. A tine
