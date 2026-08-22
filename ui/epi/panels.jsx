@@ -42,11 +42,14 @@ function TinePanel({ inst }) {
         <PKnob id="tipMass" label="TONGUE" />
         <PKnob id="resDamp" label="CLAMP" />
         <PKnob id="tune" label="TUNE" />
+        <PKnob id="bodyMix" label="BODY" />
       </div>
       {/* A solder-tuned steel tongue on a knife-edge clamp: the tongue knob
           moves its thickness with the mass re-solved, the clamp knob files
-          the knife edge, and tuning is the tech's solder move in reverse. */}
-      <div className="note">tongue thickness · knife-edge loss · solder-tuned</div>
+          the knife edge, and tuning is the tech's solder move in reverse.
+          Body couples every reed through the shared bar: hold the pedal and
+          undamped neighbours pick up the strike through the casting. */}
+      <div className="note">tongue thickness · knife-edge loss · pedal-down bar wash</div>
     </div>
   );
   if (cp70) return (
@@ -61,10 +64,14 @@ function TinePanel({ inst }) {
         <PKnob id="tipMass" label="UNISON" />
         <PKnob id="resDamp" label="DECAY" />
         <PKnob id="tune" label="TUNE" />
+        <PKnob id="bodyMix" label="BODY" />
       </div>
       {/* One or two strings per note on a rigid bridge; the unison pair is
-          deliberately uncoupled, because the measurements forbid coupling. */}
-      <div className="note">unison spread · decay trim · stretch-tuned</div>
+          deliberately uncoupled, because the measurements forbid coupling.
+          Body is the harp frame: struck strings shake it, and with the pedal
+          down the strings whose partials coincide ring back -- the octave
+          above a struck note lands ~13 dB over the background wash. */}
+      <div className="note">unison spread · decay trim · pedal-down frame wash</div>
       {shop && <TineWorkshop strings onClose={() => setShop(false)} />}
     </div>
   );

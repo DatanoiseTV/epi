@@ -199,6 +199,7 @@ public:
         sinceStrike = 0.0;
         held = true;
         sounding = true;
+        struckAlive = true;
     }
 
     void noteOff() { held = false; }
@@ -300,6 +301,58 @@ public:
         return force;
     }
 
+    // ---- the frame path: sympathetic resonance --------------------------
+    // The strings all terminate on one bridge bolted to one frame. The
+    // measured -42 dB beat nulls BOUND this coupling, they do not forbid
+    // it: a weak linear spring through the frame preserves superposition
+    // exactly (linearity is what the P3 row tests) and stays under the
+    // measured pull. Read and write go through the same termination weights
+    // -- the reciprocity rule -- so the coupling cannot manufacture energy.
+    // The coupling shape is the termination weight family NORMALISED to
+    // unit length: reciprocity needs the same shape both ways, and the
+    // spring constant should mean the same thing on every voice -- the raw
+    // weights carry the piezo's output scaling, which squared through the
+    // loop made the spring four hundred times stiffer than intended and
+    // rang the coupling itself.
+    // The coupling goes through the STRIKE shapes: order-one magnitudes,
+    // the same family a hammer's force already travels, and reciprocal by
+    // construction. (The first attempt normalised the piezo readout weights
+    // and computed the norm before they were filled -- a guard against
+    // division by zero then turned into a billion-fold amplifier on both
+    // sides of the spring. Order-one shapes need no normalising at all.)
+    double clampDisplacement() const
+    {
+        double u = 0.0;
+        for (int s = 0; s < numStrings; ++s)
+            u += str[s].sys.displacementAt (str[s].strikeShape);
+        return u;
+    }
+
+    void addClampForce (double f)
+    {
+        for (int s = 0; s < numStrings; ++s)
+        {
+            const int n = str[s].sys.numModes();
+            for (int m = 0; m < n; ++m)
+                str[s].sys.addForce (m, f * str[s].strikeShape[m]);
+        }
+    }
+
+    // Woken by the frame, not by a hammer: the voice carries only its
+    // sympathetic mode set -- the low modes a frame can actually drive --
+    // so a pedalled wash costs a tenth of a struck note. A real strike
+    // restores the full set on its way in.
+    bool isStruckVoice() const { return struckAlive && (sounding || hammer.isActive()); }
+
+    void wakeSympathetic()
+    {
+        if (sounding || hammer.isActive()) return;
+        struckAlive = false;
+        for (int s = 0; s < numStrings; ++s)
+            str[s].sys.setNumModes (std::min (str[s].kSymp, str[s].kV));
+        sounding = true;
+    }
+
     void applyDamperIfDue()
     {
         // Dampers stop at A6 = MIDI 93 on the real instrument: the top octave
@@ -318,6 +371,7 @@ private:
     {
         System sys;
         int kV = 0, kH = 0;                       // vertical / horizontal counts
+        int kSymp = 6;                            // frame-drivable low modes
         double strikeShape[kMaxModes] {};
         double outShape[kMaxModes] {};
     };
@@ -345,7 +399,7 @@ private:
         if (! std::isfinite (e)) { for (auto& s : str) s.sys.clear(); sounding = false; return; }
         if (e > peakEnergy) peakEnergy = e;
         if (! hammer.isActive() && e < peakEnergy * 1.0e-10)
-            sounding = false;
+        { sounding = false; struckAlive = false; }
     }
 
     void configure (const Config& cfg)
@@ -426,6 +480,12 @@ private:
             Str& S = str[s];
             S.kV = kV + kH;   // total modes carried
             S.kH = kH;
+            {
+                int ks = 0;
+                for (int k = 1; k <= kV; ++k)
+                    if (k * fs0 * std::sqrt (1.0 + B * k * k) < 1500.0 && ks < 10) ++ks;
+                S.kSymp = std::max (1, ks);
+            }
             S.sys.setNumModes (kV + kH);
 
             for (int k = 1; k <= kV; ++k)
@@ -623,6 +683,7 @@ private:
     static constexpr double kMagOutP   = 0.53;    // level-matched by probe
     static constexpr double kElecOutP  = 8.0e-2;
     int note = 60;
+    bool struckAlive = false;
     int numStrings = 1;
     Str str[2];
     HuntCrossleyHammer hammer;

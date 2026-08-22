@@ -81,6 +81,8 @@ void EpiEngine::prepare (double sampleRate, int)
     wurliTrem.prepare (sampleRate);
     cabinetBL.prepare (sampleRate);
     cabinetBR.prepare (sampleRate);
+    cp70Frame.prepare (sampleRate);
+    wurliFrame.prepare (sampleRate);
     airL.set (0.0, sampleRate);
     airR.set (0.0, sampleRate);
 
@@ -126,6 +128,8 @@ void EpiEngine::reset()
     wurliTrem.reset();
     cabinetBL.reset();
     cabinetBR.reset();
+    cp70Frame.reset();
+    wurliFrame.reset();
     keyDown.fill (false);
     harp.reset();
     action.reset();
@@ -827,18 +831,59 @@ void EpiEngine::processCP70 (float* outL, float* outR, int numSamples,
         const bool anyNoise = action.tick (p.strikeNoise, noiseRng,
                                            noiseForce, kNumTines) > 0;
 
+        // The frame: every string terminates on one bridge on one frame, and
+        // a weak spring through it is the sympathetic path. At full BODY a
+        // struck C4 rings the octave string 19 dB down, the twelfth 26 dB
+        // down, and a non-coincident string 38 dB down -- the partial-
+        // coincidence hierarchy of a real harp, falling out of the string
+        // tuning rather than being placed by hand. Linearity keeps the
+        // superposition row exact whatever the strength.
+        const double frameU = cp70Frame.displacement();
+        const double frameK = 25000.0 * std::clamp (p.bodyMix, 0.0f, 1.0f);
+        double frameReaction = 0.0;
+
         double bus = 0.0;
         int active = 0;
         for (int i = 0; i < kNumTines; ++i)
         {
             auto& v = cp70[i];
-            if (! v.isRinging()) continue;
+            const bool free = pedalDown || keyDown[i];
+            const bool live = v.isRinging()
+                           || (free && frameK > 0.0 && std::abs (frameU) > 1.0e-12);
+            if (! live) continue;
+
+            if (frameK > 0.0 && free)
+            {
+                // FEEDFORWARD, cleanly split: struck strings only PUSH the
+                // frame, sympathetic strings only RECEIVE from it, and no
+                // voice ever sits on both sides of the spring. String Q here
+                // runs to tens of seconds, and any loop through the explicit
+                // one-sample lag pumps exactly those modes -- the grand
+                // plan's own probe rejected the two-way form, and its named
+                // retreat (Bank's structurally stable feedforward) is what
+                // this is.
+                if (v.isStruckVoice())
+                {
+                    double f = frameK * v.clampDisplacement();
+                    if (! std::isfinite (f)) f = 0.0;
+                    frameReaction += f;
+                }
+                else
+                {
+                    v.addClampForce (frameK * frameU);
+                    v.wakeSympathetic();
+                }
+            }
+
             bus += v.process (cfg);
             v.applyDamperIfDue();
             ++active;
             const float amp = static_cast<float> (std::abs (v.tipDisplacement()));
             if (amp > tineBlockPeak[i]) tineBlockPeak[i] = amp;
         }
+        cp70Frame.addForce (frameReaction);
+        cp70Frame.tick();
+        if (! std::isfinite (cp70Frame.displacement())) cp70Frame.reset();
 
         // The mechanism's thump goes to the output dry -- key knock travels
         // through the case on this instrument, not through string coupling,
@@ -1034,19 +1079,51 @@ void EpiEngine::processWurli (float* outL, float* outR, int numSamples,
         const bool anyNoise = action.tick (p.strikeNoise, noiseRng,
                                            noiseForce, kNumTines) > 0;
 
+        // The reed bar as the sympathetic path: same passive spring as the
+        // harp and the string frame. Reeds are inharmonic cantilevers, so
+        // there is no partial-coincidence ladder here -- undamped neighbours
+        // wake by bar-mode proximity instead, 24 to 31 dB under the struck
+        // reed. A heavy casting keeps its wash subtler than the piano's.
+        const double barU = wurliFrame.displacement();
+        const double barK = 50000.0 * std::clamp (p.bodyMix, 0.0f, 1.0f);
+        double barReaction = 0.0;
+
         double dcBus[WurliVoice::kOver] = {};
         double dc[WurliVoice::kOver];
         int active = 0;
         for (int i = 0; i < kNumTines; ++i)
         {
             auto& v = wurli[static_cast<std::size_t> (i)];
-            if (! v.isRinging()) continue;
+            const bool free = pedalDown || keyDown[i];
+            const bool live = v.isRinging()
+                           || (free && barK > 0.0 && std::abs (barU) > 1.0e-12);
+            if (! live) continue;
+
+            if (barK > 0.0 && free)
+            {
+                // Same feedforward split as the string frame.
+                if (v.isStruckVoice())
+                {
+                    double f = barK * v.clampDisplacement();
+                    if (! std::isfinite (f)) f = 0.0;
+                    barReaction += f;
+                }
+                else
+                {
+                    v.addClampForce (barK * barU);
+                    v.wakeSympathetic();
+                }
+            }
+
             v.process (cfg, dc);
             for (int k = 0; k < WurliVoice::kOver; ++k) dcBus[k] += dc[k];
             ++active;
             const float amp = static_cast<float> (std::abs (v.tipDisplacement()));
             if (amp > tineBlockPeak[i]) tineBlockPeak[i] = amp;
         }
+        wurliFrame.addForce (barReaction);
+        wurliFrame.tick();
+        if (! std::isfinite (wurliFrame.displacement())) wurliFrame.reset();
 
         double os[Decimator::kOver];
         const bool electroChain = (p.transducer == 1 || p.transducer == 2);

@@ -347,6 +347,24 @@ public:
 
     bool isSounding() const { return sounding; }
     bool isRinging() const { return sounding || hammer.isActive(); }
+
+    // ---- the reed-bar path: sympathetic resonance -----------------------
+    // Sixty-four reeds bolt to one bar. A struck reed shakes it, and it
+    // shakes the rest; with the dampers lifted the bar's neighbours answer
+    // quietly, which is what a pedalled 200A actually does. Same shape both
+    // directions, so the coupling is a spring and cannot make energy.
+    double clampDisplacement() const { return sys.displacementAt (shapeCl) * clampInv; }
+    void addClampForce (double f)
+    {
+        for (int m = 0; m < kReedModes; ++m) sys.addForce (m, f * shapeCl[m] * clampInv);
+    }
+    bool isStruckVoice() const { return struckAlive && (sounding || hammer.isActive()); }
+    void wakeSympathetic()
+    {
+        if (hammer.isActive() || sounding) return;
+        struckAlive = false;
+        sounding = true;
+    }
     bool isHeld()     const { return held; }
     int  noteNumber() const { return note; }
     int  contactSamples() const { return hammer.contactDurationSamples(); }
@@ -366,6 +384,7 @@ public:
 
     void noteOn (int midiNote, double velocity, const Config& cfg, std::uint32_t seed)
     {
+        struckAlive = true;
         (void) seed;
         if (! configured || midiNote != note) setNote (midiNote, cfg);
         held = true;
@@ -445,7 +464,10 @@ public:
                 reduced = false;
             }
             if (! hammer.isActive() && e < peakEnergy * 1.0e-10)
+            {
                 sounding = false;
+                struckAlive = false;
+            }
         }
 
         const double tip = sys.displacementAt (shapeTip);
@@ -809,12 +831,16 @@ private:
         // near-clamp station, weighted by omega squared and the modal mass.
         {
             const double fr[3] = { reed.f0, reed.f0 * reed.r2, reed.f0 * reed.r3 };
+            double nrm = 0.0;
             for (int m = 0; m < kReedModes; ++m)
             {
+                shapeCl[m] = CantileverModes::shape (m, 0.06);
+                nrm += shapeCl[m] * shapeCl[m];
                 const double w = 2.0 * kPiD * fr[m];
-                shapeContact[m] = CantileverModes::shape (m, 0.06) * w * w
+                shapeContact[m] = shapeCl[m] * w * w
                                 * reed.beamMass * (0.25 + reed.mu);
             }
+            clampInv = 1.0 / std::max (1.0e-9, std::sqrt (nrm));
         }
         configured = true;
     }
@@ -831,6 +857,9 @@ private:
     double tipHist[3] {};
     double cfHist[3] {};
     double shapeContact[64] {};
+    double shapeCl[kReedModes] {};
+    double clampInv = 1.0;
+    bool struckAlive = false;
     const MagneticPickup* field = nullptr;
     int trans = 2;
     double magRest = 0.0;

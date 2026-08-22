@@ -209,6 +209,8 @@ public:
     // Test access: one tine's modal energy.
     double tineEnergy (int i) const { return tines[static_cast<std::size_t> (i)].energy(); }
 
+    double cp70Energy (int i) const { return cp70[static_cast<std::size_t> (i)].modalEnergy(); }
+    double wurliEnergy (int i) const { return wurli[static_cast<std::size_t> (i)].modalEnergy(); }
     int activeVoices() const { return numActive.load (std::memory_order_relaxed); }
 
     // Metering for the UI: destructive read, so the peak resets per tick.
@@ -328,6 +330,10 @@ private:
     // those filters at base rate lands every corner four times low -- which
     // is exactly what the CP-70 was doing before this pair existed.
     Cabinet cabinetBL, cabinetBR;
+    // One frame per instrument family: the sympathetic path. The Rhodes'
+    // harp came first; the string bridge-frame and the reed bar follow the
+    // same passive spring discipline.
+    Harp cp70Frame, wurliFrame;
 
     // Block-rate parameter smoothing for the controls whose consumers take
     // discrete jumps -- tone shelves, drive gains, the cabinet morph, the
