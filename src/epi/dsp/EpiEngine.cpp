@@ -33,7 +33,7 @@ namespace epi
 // every nonlinearity -- so no operating point moves, only the meter.
 static constexpr float kTrimRhodes = 0.66f;
 static constexpr float kTrimCP70   = 3.94f;
-static constexpr float kTrimWurli  = 3.85f;
+static constexpr float kTrimWurli  = 6.38f;
 static constexpr float kTrimGrand  = 75.0f;   // mic-pair units are small. Deliberately ~6 dB under the electrics' bench: a close-miked grand carries a 22 dB attack crest, and matching RMS exactly would put every mf attack into the output rail
 
 void EpiEngine::prepare (double sampleRate, int)
