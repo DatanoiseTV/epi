@@ -44,21 +44,51 @@ namespace epi
 // counts (p, r) on an equivalent orthotropic plate with f_pr = a p^2 + b r^2,
 // where a*b sets the modal density (n = (pi/4)/sqrt(ab)) and a+b the first
 // mode -- a board much denser in p (along the grain) than r, which is the
-// real anisotropy. a = 2.82 and the arc constants below were then fit, by a
-// grid search over exactly these free parameters, so that the per-note
-// conductance pattern reproduces the MEASURED per-note decay pattern -- C4
-// and C5 fundamentals near mobility peaks (their coupled fast components
-// run 23.3 and 33.6 dB/s), A3's in a dip (its trichord's fastest normal
-// mode is only 9.4 dB/s), D#2 clear of the first board mode (it stays
-// gentle), C3's partial band hot (its broadband knee reaches -41 dB by
-// 1.1 s) -- while the REACTIVE pull of each tested fundamental stays within
-// a real instrument's couple of cents (the first search maximised G by
+// real anisotropy. a and the arc constants below were fit, by a random
+// search plus anneal over exactly these free parameters, so that the
+// per-note conductance pattern reproduces the MEASURED per-note decay
+// pattern at the fundamentals AND at the second partials, converted to
+// single-string bridge rates through alpha = 8.686 (T/L) G(f) (the
+// mode-independent loop weight): C4 and C5 fundamentals near mobility peaks
+// (coupled fast components 23.3 and 33.6 dB/s), A3's in a dip (its
+// trichord's fastest normal mode only 9.4 dB/s), D#2 gentle, C3's
+// fundamental modest (its own early rate is just -3.96 dB/s), the second
+// partials of C4/C5/C3 SLOW (measured 4.3 / 13.1 / 4.8 dB/s -- the first
+// fit ignored them, left C4's P2 band 20 dB/s hot, and the radiated
+// envelopes fell to the aftersound a second early across the mid compass),
+// and D#1/A0's low partials slow enough to carry their measured 7.6 / 6.7 s
+// -20 dB times. The REACTIVE pull of each tested fundamental stays within a
+// real instrument's couple of cents (an early search maximised G by
 // stacking antinode modes on one side of C4 and pulled it seven cents flat,
 // which no measured Railsback shows). The exact values are [D]; the
 // constraint set they satisfy is [M] -- which note lands on a peak or a dip
 // is precisely the "real mobility fluctuation" the plan says owns the
 // per-note variance.
 // ---------------------------------------------------------------------------
+// Second-order Butterworth high-pass: the radiation-efficiency collapse
+// below the favoured band, shared by the board readout and the radiator's
+// band-edge guard.
+struct GrandRadiationHp
+{
+    void prepare (double fs, double fc)
+    {
+        const double w = std::tan (kPiD * fc / fs);
+        const double n = 1.0 / (1.0 + std::sqrt (2.0) * w + w * w);
+        b0 = n; b1 = -2.0 * n; b2 = n;
+        a1 = 2.0 * n * (w * w - 1.0);
+        a2 = n * (1.0 - std::sqrt (2.0) * w + w * w);
+        z1 = z2 = 0.0;
+    }
+    double tick (double x)
+    {
+        const double y = b0 * x + z1;
+        z1 = b1 * x - a1 * y + z2;
+        z2 = b2 * x - a2 * y;
+        return y;
+    }
+    double b0 = 1, b1 = 0, b2 = 0, a1 = 0, a2 = 0, z1 = 0, z2 = 0;
+};
+
 class GrandBoard
 {
 public:
@@ -110,8 +140,8 @@ public:
     void fillBridgeShape (double midiNote, double* phi) const
     {
         const double t = std::clamp ((midiNote - 21.0) / 87.0, 0.0, 1.0);
-        const double x = 0.09 + 0.45 * t;
-        const double y = 0.10 + 0.40 * t + 0.10 * t * (1.0 - t);
+        const double x = 0.049 + 0.574 * t;
+        const double y = 0.112 + 0.085 * t - 0.171 * t * (1.0 - t);
         for (int m = 0; m < kModes; ++m)
             phi[m] = phiAmp * std::sin (modeP[m] * kPiD * x)
                             * std::sin (modeR[m] * kPiD * y);
@@ -133,14 +163,52 @@ public:
         for (int m = 0; m < kModes; ++m) sys.addForce (m, phi[m] * force);
     }
 
-    // Once per engine sample, after every voice has exchanged.
-    void tick() { sys.tick(); }
+    // Once per engine sample, after every voice has exchanged. The stereo
+    // readout is computed here so the radiation high-pass (below) carries
+    // its state sample-synchronously.
+    void tick()
+    {
+        sys.tick();
+        outL = hpL.tick (sys.velocityAt (listenL));
+        outR = hpR.tick (sys.velocityAt (listenR));
+    }
 
-    // What a listener hears of the low band: the board's velocity at a fixed
-    // off-bridge point. Stereo readout vectors and the >1.3 kHz radiator are
-    // the next implementation step; this mono tap is enough for the coupled
-    // physics and its tests.
-    double output() const { return sys.velocityAt (listen); }
+    // What a listener hears of the low band: the board's velocity through two
+    // readout vectors, one per channel of the reference mic pair. Three
+    // physical facts are folded in, each measured:
+    //
+    //   - RADIATION EFFICIENCY COLLAPSE below ~200 Hz (Wogram's favoured
+    //     200-2000 Hz band; F&R: bass notes are carried by their upper
+    //     partials). Amplitude falls as f^2/(f^2+fc^2) -- the second-order
+    //     rise of a source small against the wavelength -- applied as an
+    //     output high-pass at kRadFcHz because what matters is the
+    //     frequency of VIBRATION: a first cut weighted each MODE by its own
+    //     natural frequency, and a 27.5 Hz partial then escaped the
+    //     collapse entirely by riding the 75 Hz modes' quasi-static skirts.
+    //     The low bass fundamentals all but vanish from the RADIATED sound
+    //     while still ringing on the string (rows S1, T1, W4-C3).
+    //   - Each channel mixes a COMMON listening point with a SIDE point of
+    //     its own (bass side left, treble side right, the player's image):
+    //     the side responses pick up the modal sign scatter between the two
+    //     positions. The frequency-dependent interchannel PHASE of a real
+    //     mic pair -- each region of the board at its own distance and angle
+    //     from each mic -- is GrandMicPair's job (GrandRadiator.h), applied
+    //     to the summed radiated pair.
+    //   - A note's OWN bridge point lies nearer the bass side point at the
+    //     bass end of the arc and nearer the treble one at the top, so the
+    //     board's share of the channel level difference tracks register
+    //     through shared-mode correlation; the radiator's per-note pan
+    //     (GrandRadiator::panGains) carries the rest of the measured
+    //     +/-3..7 dB ILD line.
+    double outputL() const { return outL; }
+    double outputR() const { return outR; }
+
+    // The radiation collapse corner. Below it the radiated amplitude falls
+    // as (f/fc)^2 -- the second-order rise of a source small against the
+    // wavelength -- applied as an output high-pass because what matters is
+    // the frequency of VIBRATION: a 27.5 Hz string partial forcing a 75 Hz
+    // board mode quasi-statically still radiates like 27.5 Hz.
+    static constexpr double kRadFcHz = 200.0;
 
     double energy() const { return sys.energy(); }
     double modeFrequency (int m) const { return (m >= 0 && m < kModes) ? modeF[m] : 0.0; }
@@ -170,6 +238,9 @@ public:
 private:
     static constexpr double kModalMass = 2.25;   // kg, M/4 of Ege's 9 kg board
     static constexpr double kEta = 0.02;         // measured loss factor
+    static constexpr double kListenScale = 0.18;
+    static constexpr double kMidMix  = 0.62;     // common component
+    static constexpr double kSideMix = 0.50;     // per-channel side component
 
     void buildLadder()
     {
@@ -180,7 +251,7 @@ private:
         for (int p = 1; p <= 40 && n < kModes * 4; ++p)
             for (int r = 1; r <= 8 && n < kModes * 4; ++r)
             {
-                const double f = 2.82 * p * p + 72.18 * r * r;
+                const double f = 2.318 * p * p + 74.73 * r * r;
                 if (f < 1600.0) e[n++] = { f, p, r };
             }
         std::sort (e, e + n, [] (const E& a, const E& b) { return a.f < b.f; });
@@ -190,19 +261,37 @@ private:
             modeP[m] = e[m].p;
             modeR[m] = e[m].r;
         }
-        // Listening point: fixed, off the bridge arc, chosen not to sit on a
-        // low-mode node. The scale folds the board-velocity-to-output level
-        // into a number that lands the low band near the string-force feed.
+        // The mic pair: a common point plus one side point per channel, all
+        // off the bridge arc and clear of low-mode nodes. The side points sit
+        // over the bass and treble ends of the arc so a note's register reads
+        // as level difference; the common:side ratio sets the mid-band
+        // coherence at the measured 0.5..0.65. The scale folds the
+        // board-velocity-to-output level into a number that lands the low
+        // band against the radiator tail.
+        auto shapeAt = [this] (int m, double x, double y)
+        {
+            return std::sin (modeP[m] * kPiD * x) * std::sin (modeR[m] * kPiD * y);
+        };
         for (int m = 0; m < kModes; ++m)
-            listen[m] = 0.35 * std::sin (modeP[m] * kPiD * 0.31)
-                             * std::sin (modeR[m] * kPiD * 0.43);
+        {
+            const double mid = shapeAt (m, 0.33, 0.40);
+            const double bassSide = shapeAt (m, 0.13, 0.32);
+            const double trebSide = shapeAt (m, 0.55, 0.48);
+            listenL[m] = kListenScale * (kMidMix * mid + kSideMix * bassSide);
+            listenR[m] = kListenScale * (kMidMix * mid + kSideMix * trebSide);
+        }
+        hpL.prepare (fs, kRadFcHz);
+        hpR.prepare (fs, kRadFcHz);
+        outL = outR = 0.0;
     }
 
     double fs = 48000.0;
     double phiAmp = 0.0;
     double modeF[kModes] {};
     int    modeP[kModes] {}, modeR[kModes] {};
-    double listen[kModes] {};
+    double listenL[kModes] {}, listenR[kModes] {};
+    GrandRadiationHp hpL, hpR;
+    double outL = 0.0, outR = 0.0;
     System sys;
 };
 

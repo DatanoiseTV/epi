@@ -183,6 +183,7 @@ public:
         double detuneSpread   = 0.5;    // "tipMass" knob: unison spread 0..4 cents
         double dampTrim       = 0.5;    // "resDamp": intrinsic-alpha trim x0.7..1.5
         double detuneCents    = 0.0;    // master tune + bend
+        bool   unaCorda       = false;  // CC67: shifted action
     };
 
     void prepare (double sampleRate)
@@ -197,7 +198,10 @@ public:
     {
         for (auto& s : str) { s.sys.clear(); s.sys.setNumModes (0); }
         hammer.reset();
-        sounding = held = pedal = false;
+        knockFeed = 0.0;
+        sounding = held = false;
+        sostenuto = sympathetic = unaCordaActive = false;
+        pedalV = 0.0;
         controlCounter = 0;
         sinceStrike = 1.0e9;
         peakEnergy = 1.0e-30;
@@ -213,8 +217,10 @@ public:
     void noteOn (int midiNote, double velocity, const Config& cfg,
                  const GrandBoard& board, std::uint32_t seed)
     {
-        if (! configured || midiNote != note) setNote (midiNote, cfg, board);
+        if (! configured || midiNote != note || cfg.unaCorda != unaCordaActive)
+            setNote (midiNote, cfg, board);
         (void) seed;
+        sympathetic = false;
 
         const double vel = std::clamp (velocity, 0.0, 1.0);
         // Real hammers peak at 5-6 m/s; the curve is recalibrated against the
@@ -230,7 +236,30 @@ public:
     }
 
     void noteOff() { held = false; }
-    void setPedal (bool down) { pedal = down; }
+
+    // CC64, continuous: 0 = dampers seated, 1 = fully lifted. The partial
+    // range in between is the half-pedal map (applyDamperIfDue).
+    void setPedal (double value) { pedalV = std::clamp (value, 0.0, 1.0); }
+
+    // CC66: latched by the caller for voices held at the moment the pedal
+    // went down; a latched voice keeps ringing as if held.
+    void setSostenuto (bool latched) { sostenuto = latched; }
+
+    // Sympathetic life: a string with its damper off receives energy through
+    // the shared board even though no hammer has fallen -- and the in-loop
+    // board stops at 1.3 kHz, so it can only receive its coupled prefix.
+    // That is the plan's "sympathetic reduced set": setNumModes(kCoupled) is
+    // not an approximation of the physics, it IS the physics of what the
+    // coupling band can deliver. The full set returns when its own hammer
+    // falls (noteOn always restores it).
+    void openSympathetic (int midiNote, const Config& cfg, const GrandBoard& board)
+    {
+        if (! configured || midiNote != note) setNote (midiNote, cfg, board);
+        for (int s = 0; s < numStrings; ++s)
+            str[s].sys.setNumModes (str[s].kCoupled);
+        sympathetic = true;
+        sounding = true;
+    }
 
     bool isSounding() const { return sounding; }
     bool isRinging() const { return sounding || hammer.isActive(); }
@@ -267,9 +296,11 @@ public:
     }
 
     // One sample: hammer, two-port exchange, tick. Returns the summed
-    // full-band termination force -- the radiator's feed. The audible output
-    // of the coupled band is the BOARD's, which the caller ticks once per
-    // engine sample after every voice has exchanged.
+    // full-band termination force; the knock share of the radiator feed is
+    // read separately (knockOut) so the string-physics rows measure string
+    // state and nothing else. The audible output of the coupled band is the
+    // BOARD's plus the radiator's direct branch; the caller ticks the board
+    // once per engine sample after every voice has exchanged.
     double process (const Config& cfg, GrandBoard& board)
     {
         (void) cfg;
@@ -280,20 +311,42 @@ public:
         // three. The only direct string-to-string interaction there is.
         if (hammer.isActive())
         {
+            // Una corda strikes a subset of the choir (numStruck); the
+            // remaining string keeps a zero strike shape and is driven only
+            // through the bridge, which is Weinreich's whole point: it
+            // starts in antiphase, and its bridge force GROWS over the
+            // first seconds while the struck pair's beat structure flattens.
             double u = 0.0, v = 0.0;
-            for (int s = 0; s < numStrings; ++s)
+            for (int s = 0; s < numStruck; ++s)
             {
                 u += str[s].sys.displacementAt (str[s].strikeShape);
                 v += str[s].sys.velocityAt (str[s].strikeShape);
             }
-            u /= numStrings; v /= numStrings;
+            u /= numStruck; v /= numStruck;
             const double f = hammer.tick (u, v, hammerCfg);
             if (f != 0.0)
             {
-                const double each = f / numStrings;
-                for (int s = 0; s < numStrings; ++s)
+                const double each = f / numStruck;
+                for (int s = 0; s < numStruck; ++s)
                     for (int m = 0; m < str[s].sys.numModes(); ++m)
                         str[s].sys.addForce (m, each * str[s].strikeShape[m]);
+                // The attack knock: a fraction of the hammer force reaches
+                // the bridge through the action and the shanks, not only
+                // through the strings. Bank's measured g ~ 0.2 feeds his
+                // OUT-OF-LOOP radiator, and that is where the full share
+                // goes here too (knockOut, consumed by the radiator's
+                // direct and tail branches, in the same units as the
+                // termination force -- the read shapes carry kOutScale, so
+                // the knock share must too). Only a small share drives the
+                // IN-LOOP board modes: the blow does shake the bridge -- the
+                // 300-400 ms modal ring, velocity- and register-dependent
+                // for free, felt by every open string through the two-port
+                // -- but at full g the thump alone pumped a pedal-opened
+                // neighbour to -16 dB of the struck note's own peak energy,
+                // an order of magnitude past the sympathetic row's band.
+                // External forces both: no bearing on passivity.
+                board.addBridgeForce (phi, kKnockLoopGain * f);
+                knockFeed = kKnockGain * kOutScale * f;
             }
         }
 
@@ -332,16 +385,63 @@ public:
         return force;
     }
 
+    // The knock share of this sample's radiator feed. Read-and-clear, once
+    // per sample, by whoever owns the radiator.
+    double knockOut()
+    {
+        const double k = knockFeed;
+        knockFeed = 0.0;
+        return k;
+    }
+
     void applyDamperIfDue()
     {
-        // Dampers end at F#6 (MIDI 90); the top ~1.5 octaves ring free, as on
-        // any grand. The note above the line ends by energy retirement.
-        if (note > 90) return;
-        if (held || pedal) return;
+        // The damper line: G#6 is the last damped note; from A6 (93) up the
+        // strings ring free, as on the CP-70 and most grands (the plan's row
+        // G1 pins G6 damped, A6 free; open question 8 owns the exact note).
+        // A note above the line ends by energy retirement.
+        if (note > 92) return;
+        if (held || sostenuto) return;
+        if (pedalV >= kPedalFree) return;
+
+        // Half-pedal: CC64 is continuous. The damper's grip interpolates
+        // from seated (the register-dependent damperT60 behind damperFactor)
+        // to free as the pedal rises, with the knee mapped so the 30..70%
+        // span is the partial-damping playing range -- one mapping function,
+        // measured by row G2 to sit strictly between seated and free and to
+        // be monotone in the pedal value.
+        double factor = damperFactor;
+        if (pedalV > kPedalSeated)
+        {
+            // The damping RATE scales with the felt's residual grip, and the
+            // grip collapses much faster than the lift: contact force and
+            // contact area both fall toward liftoff, so the rate goes as
+            // (1 - lift)^3. Measured on row G2: a half pedal then turns C4's
+            // ~220 dB/s seated damping into ~27 dB/s -- audibly and
+            // measurably between seated and free, where the quadratic form
+            // still killed the note within the row's window and the linear
+            // one was indistinguishable from seated.
+            const double lift = (pedalV - kPedalSeated) / (kPedalFree - kPedalSeated);
+            factor = std::pow (damperFactor, (1.0 - lift) * (1.0 - lift) * (1.0 - lift));
+        }
         for (int s = 0; s < numStrings; ++s)
             for (int m = 0; m < str[s].sys.numModes(); ++m)
                 if (str[s].sys.displacement (m) != 0.0)
-                    str[s].sys.scaleMode (m, damperFactor);
+                    str[s].sys.scaleMode (m, factor);
+    }
+
+    // ---- per-string telemetry, for the una corda row ---------------------
+    // The coupled termination-force read of one string: |sum w q| is what
+    // the third, un-struck string pushes into the bridge, and UC1 checks
+    // that it rises over the first seconds.
+    double stringForceRead (int s) const
+    {
+        if (s < 0 || s >= numStrings) return 0.0;
+        const Str& S = str[s];
+        const int nc = std::min (S.kCoupled, S.sys.numModes());
+        double F = 0.0;
+        for (int m = 0; m < nc; ++m) F += S.w[m] * S.sys.displacement (m);
+        return F;
     }
 
 private:
@@ -380,7 +480,12 @@ private:
         const double e = modalEnergy();
         if (! std::isfinite (e)) { for (auto& s : str) s.sys.clear(); sounding = false; return; }
         if (e > peakEnergy) peakEnergy = e;
-        if (! hammer.isActive() && e < peakEnergy * 1.0e-10)
+        // A sympathetically opened voice starts from zero energy on purpose;
+        // retiring it against its own (empty) peak would close it 32 samples
+        // after it opened. It stays live while its damper is off and retires
+        // normally once the damper has taken the energy back out.
+        const bool openSym = sympathetic && (held || sostenuto || pedalV > 0.05);
+        if (! hammer.isActive() && ! openSym && e < peakEnergy * 1.0e-10)
             sounding = false;
     }
 
@@ -398,6 +503,12 @@ private:
         const double modalMass = 0.5 * mu * L;   // pinned-pinned, every mode
 
         numStrings = note <= 39 ? 1 : note <= 51 ? 2 : 3;
+        // Una corda: the action shifts so the hammer meets 2 of 3 strings
+        // (trichord) or 1 of 2 (bichord); a monochord instead meets fresh,
+        // softer felt (K x 0.7, open question 9's default).
+        unaCordaActive = cfg.unaCorda;
+        numStruck = ! unaCordaActive ? numStrings
+                  : numStrings == 3 ? 2 : 1;
 
         // Unison spread: per-note deterministic scatter 0.5-2 c at the
         // default knob (measured splits 0.9-1.9 c; Kirk's preferred 1-2 c
@@ -504,7 +615,8 @@ private:
                 const double z = k * kPiD * patch;
                 const double wp = std::abs (z) < 1e-9 ? 1.0 : std::sin (z) / z;
                 const double skew = horizontal ? kHammerSkew : 1.0;
-                S.strikeShape[idx] = voicing * skew * std::sin (k * kPiD * beta) * wp;
+                const double struck = s < numStruck ? 1.0 : 0.0;
+                S.strikeShape[idx] = struck * voicing * skew * std::sin (k * kPiD * beta) * wp;
             };
 
             // Coupled verticals, then coupled horizontals, then the forced
@@ -533,22 +645,35 @@ private:
         }
 
         // ---- hammer: felt, Hall/Askenfelt anchors ---------------------------
-        // K log-interpolated C2 4e8 -> C4 4.5e9 -> C7 1e12 (N/m^alpha), alpha
-        // 2.3 -> 2.5 -> 3.0, mass 12 g (C1) -> 5 g (C8). Contact targets
-        // ~4 ms at C2, ~2 ms at C4 (T/2, max efficiency), ~1 ms at C7.
+        // K log-interpolated C2 4e8 -> C4 4.5e9 -> C7 1e10-effective (below),
+        // alpha 2.3 -> 2.5 -> 3.0, mass 12 g (C1) -> 5 g (C8). Contact
+        // targets ~4 ms at C2, ~2 ms at C4 (T/2, max efficiency), ~1 ms at
+        // C7 -- and the CONTACT TIMES are the calibration authority, because
+        // the published (K, alpha) pairs are not consistent with them inside
+        // any compression-law contact model: K = 1e12 with alpha = 3 puts a
+        // 6 g hammer's contact resonance at 17 krad/s and the ff contact at
+        // 0.2 ms, five times shorter than the same authors' measured 1 ms
+        // (that 1 ms is the string riding with the hammer through several
+        // reflections, a compliance the quoted K never sees). Measured on
+        // this model, the treble anchor that reproduces the measured contact
+        // graduation is 1e10. Below C2 the graduation continues at the
+        // C2->C4 log slope rather than clamping: a clamped K left A0's
+        // contact SHORTER than C2's (3.4 vs 4 ms, backwards), and with it a
+        // bass spectrum bright enough to put A0's strongest radiated partial
+        // near 500 Hz, which no ff bass recording shows.
         {
             const double m = static_cast<double> (note);
             auto lerp3 = [&] (double a36, double a60, double a96, bool logI)
             {
                 double t, lo, hi;
-                if (m <= 36.0) { t = 0.0; lo = a36; hi = a60; }
-                else if (m <= 60.0) { t = (m - 36.0) / 24.0; lo = a36; hi = a60; }
+                if (m <= 60.0) { t = (m - 36.0) / 24.0; lo = a36; hi = a60; }
                 else { t = std::min (1.0, (m - 60.0) / 36.0); lo = a60; hi = a96; }
                 return logI ? lo * std::pow (hi / lo, t) : lo + (hi - lo) * t;
             };
             hammerCfg.alpha     = lerp3 (2.3, 2.5, 3.0, false);
-            hammerCfg.stiffness = lerp3 (4.0e8, 4.5e9, 1.0e12, true)
-                                * std::pow (12.0, cfg.hammerHardness - 0.5);
+            hammerCfg.stiffness = lerp3 (4.0e8, 4.5e9, 1.0e10, true)
+                                * std::pow (12.0, cfg.hammerHardness - 0.5)
+                                * (unaCordaActive && numStrings == 1 ? 0.7 : 1.0);
             hammerCfg.lambda    = 1.0;   // felt hysteresis stand-in
             hammerCfg.mass      = 0.012 * std::pow (5.0 / 12.0, (m - 24.0) / 84.0)
                                 * (0.6 + 0.8 * cfg.hammerMassNorm);
@@ -645,11 +770,18 @@ private:
     // calibration the plan schedules, done against its own rows.
     static constexpr double kHOffsetCents = 1.8;
     static constexpr double kBridgeFoot = 0.030;   // m, bridge contact length
+    // Half-pedal knee: below 30% the dampers are seated, above 70% free;
+    // the 30..70% span is the partial-damping playing range [D].
+    static constexpr double kPedalSeated = 0.3;
+    static constexpr double kPedalFree   = 0.7;
+    static constexpr double kKnockGain = 0.2;      // hammer-force share, radiated
+    static constexpr double kKnockLoopGain = 0.02; // hammer-force share, in-loop
     static constexpr double kOutScale = 2.0e-3;    // folds the radiator feed level
 
     double fs = 48000.0;
     int note = 60;
     int numStrings = 1;
+    int numStruck = 1;
     Str str[3];
     HuntCrossleyHammer hammer;
     HuntCrossleyHammer::Config hammerCfg;
@@ -657,10 +789,13 @@ private:
     double phi[GrandBoard::kModes] {};
     double Ku = 0.0;
     double damperFactor = 1.0;
+    double knockFeed = 0.0;
     double sinceStrike = 1.0e9;
     double peakEnergy = 1.0e-30;
     int controlCounter = 0;
-    bool sounding = false, held = false, pedal = false, configured = false;
+    double pedalV = 0.0;
+    bool sounding = false, held = false, configured = false;
+    bool sostenuto = false, sympathetic = false, unaCordaActive = false;
 };
 
 } // namespace epi
