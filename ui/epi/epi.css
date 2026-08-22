@@ -415,3 +415,8 @@ html, body {
   display: flex; justify-content: center; gap: 26px;
   padding: 10px 0 4px;
 }
+
+/* Material row: the selector sits under the resonator knobs; the warning
+   states the transducer fact in the panel's own voice, slightly lifted. */
+.matrow { margin-top: 6px; }
+.matrow .note.warn { color: #b08d4a; }

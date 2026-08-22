@@ -627,6 +627,62 @@ static void testNothingGrows()
                 }
 }
 
+
+// Material is physics, not a preset. Selecting a metal re-solves the tine
+// geometry at the same pitch (tuning must hold), adds the metal's internal
+// loss to the clamp's (nylon must die fast), and carries the hard transducer
+// facts: a non-ferromagnetic tine keeps swinging but writes nothing into a
+// magnetic coil.
+static void testMaterialIsPhysicsNotAPreset()
+{
+    MagneticPickup pu; pu.prepare ({});
+
+    // Tuning invariance: every metal lands on pitch, because length re-solves.
+    for (int m : { 2, 4, 6 })   // bronze, titanium, tungsten
+    {
+        RhodesVoice::Config cfg;
+        cfg.material   = static_cast<double> (m);
+        cfg.transducer = 3.0;   // the contact pickup hears every material
+        const auto r = render (60, 0.8, cfg, pu, 1.0);
+        const double cents = r.measuredHz > 0.0
+                           ? 1200.0 * std::log2 (r.measuredHz / noteHz (60)) : -9999.0;
+        CHECK (std::abs (cents) < 25.0, "material %d detunes C4 by %.1f cents", m, cents);
+    }
+
+    // The gate: bronze through the magnetic pickup is silence with the tine
+    // demonstrably swinging; through the contact pickup it is a note.
+    {
+        RhodesVoice::Config cfg;
+        cfg.material = 2.0; cfg.transducer = 0.0;
+        const auto rm = render (57, 0.8, cfg, pu, 0.6);
+        CHECK (rm.tipPeakMm > 0.01, "bronze tine did not swing");
+        CHECK (rm.fluxPeak == 0.0,
+               "bronze wrote %.3e into a magnetic coil; it must write nothing", rm.fluxPeak);
+        cfg.transducer = 3.0;
+        const auto rc = render (57, 0.8, cfg, pu, 0.6);
+        CHECK (rc.fluxPeak > 0.0, "bronze through the contact pickup is silent and should not be");
+    }
+
+    // The loss: nylon's internal eta is two orders above steel, so the tail
+    // must collapse -- tip envelope at 1.5 s down more than 30 dB on steel.
+    {
+        RhodesVoice::Config cfg; cfg.transducer = 3.0;
+        auto tailDb = [&] (int m)
+        {
+            cfg.material = static_cast<double> (m);
+            const auto r = render (48, 0.8, cfg, pu, 1.6);
+            double late = 0.0;
+            for (int i = static_cast<int> (kFs * 1.4); i < static_cast<int> (kFs * 1.6); ++i)
+                late = std::max (late, std::abs (r.tip[static_cast<size_t> (i)]));
+            return 20.0 * std::log10 (std::max (1.0e-30, late));
+        };
+        const double steel = tailDb (0), nylon = tailDb (7);
+        CHECK (nylon < steel - 30.0,
+               "nylon tail is %.1f dB against steel %.1f -- internal loss is not biting",
+               nylon, steel);
+    }
+}
+
 int main()
 {
     testModalPitchAndDecayAreExact();
@@ -644,6 +700,7 @@ int main()
     testHammerContactDuration();
     testTineIsSinusoidalWhilePickupIsNot();
     testGrowlBelongsToTheBass();
+    testMaterialIsPhysicsNotAPreset();
     testNothingGrows();
 
     if (knownGaps > 0)

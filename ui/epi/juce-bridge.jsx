@@ -50,6 +50,11 @@
   // Must match epi::ids::instrumentNames.
   const INSTRUMENTS = ['Tine', 'E-Grand', 'Reed'];
   const PICKUP_SEL  = ['MAGNETIC', 'NATIVE', 'ELECTRO', 'CONTACT'];
+  const MATERIALS   = ['MUSIC WIRE', 'STAINLESS', 'BRONZE', 'BRASS',
+                       'TITANIUM', 'ALUMINIUM', 'TUNGSTEN', 'NYLON'];
+  /* Transducer facts per material: which pickups can hear it at all. */
+  const MAT_FERRO   = [true, true, false, false, false, false, false, false];
+  const MAT_COND    = [true, true, true,  true,  true,  true,  true,  false];
 
   const pct  = (n) => Math.round(n * 100) + '%';
   const msOf = (m) => (n) => { const v = m.to(n); return (v < 10 ? v.toFixed(1) : Math.round(v)) + ' ms'; };
@@ -134,7 +139,7 @@
       const ev = mk();
       sliders[id] = { getNormalisedValue: () => v, setNormalisedValue: (n) => { v = n; ev.fire(); }, valueChangedEvent: ev };
     });
-    [['pickupSel', 1], ['instrument', 0]].forEach(([id, d]) => {
+    [['pickupSel', 1], ['instrument', 0], ['material', 0]].forEach(([id, d]) => {
       let i = d; const ev = mk();
       combos[id] = { getChoiceIndex: () => i, setChoiceIndex: (n) => { i = n; ev.fire(); }, valueChangedEvent: ev };
     });
@@ -327,8 +332,11 @@
   }
 
   global.JuceBridge = { useJuceSlider, useJuceToggle, useJuceChoice, useJuceEvent, useEventRef,
-                        emitNative, PARAMS, INSTRUMENTS, PICKUP_SEL, M };
+                        emitNative, PARAMS, INSTRUMENTS, PICKUP_SEL, MATERIALS, MAT_FERRO, MAT_COND, M };
   global.PARAMS = PARAMS;
   global.INSTRUMENTS = INSTRUMENTS;
   global.PICKUP_SEL = PICKUP_SEL;
+  global.MATERIALS = MATERIALS;
+  global.MAT_FERRO = MAT_FERRO;
+  global.MAT_COND = MAT_COND;
 })(window);

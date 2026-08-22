@@ -154,13 +154,14 @@ public:
         double detuneCents    = 0.0;
         // 0 Magnetic, 1 Native (= magnetic here), 2 Electro, 3 Contact.
         double transducer     = 1.0;
+        double material       = 0.0;  // index into kMaterials; 0 = stock
     };
 
     // Compared byte-for-byte by the engine to decide whether the instrument
     // needs rebuilding, so it must have no padding for that comparison to mean
     // what it says.
     static_assert (std::is_trivially_copyable<Config>::value, "Config must be memcmp-able");
-    static_assert (sizeof (Config) == 13 * sizeof (double), "Config has padding");
+    static_assert (sizeof (Config) == 14 * sizeof (double), "Config has padding");
 
     void prepare (double sampleRate, const MagneticPickup* sharedField)
     {
@@ -600,6 +601,27 @@ public:
         // reuse the same hermite path reconstruction as the coil, and both
         // report a zero rest so the engine's operating-point bookkeeping
         // stays exact.
+        if (trans == 0 && ! matFerro)
+        {
+            // A non-ferromagnetic tine does not magnetise, so it writes
+            // nothing into the coil's flux -- the instrument is silent
+            // through a magnetic pickup, exactly as a real bronze tine
+            // would be. The tine itself keeps swinging (the viz shows it);
+            // the panel explains the silence. Rest is zero so the engine's
+            // operating-point bookkeeping stays exact.
+            satRestVal = 0.0;
+            for (int k = 0; k < kOver; ++k) fluxOut[k] = 0.0;
+            vHist[0] = vHist[1]; vHist[1] = vHist[2]; vHist[2] = vNow;
+            hHist[0] = hHist[1]; hHist[1] = hHist[2]; hHist[2] = hNow;
+            lastTipV = vNow; lastTipH = hNow;
+            if (--traceCount <= 0)
+            {
+                traceCount = traceDecim;
+                traceIdx = (traceIdx + 1) & (kTraceLen - 1);
+                trace[traceIdx] = static_cast<float> (vNow);
+            }
+            return;
+        }
         if (trans == 2)
         {
             const double gE = std::max (0.6e-3, staticGap);
@@ -887,9 +909,19 @@ private:
         // steeply: taking too much off makes the top octaves so light that the
         // hammer overwhelms them.
         const double radius = (0.95 - 0.30 * reg) * 1.0e-3 * geoDia;
-        tineLength = CantileverModes::lengthForFrequency (f0Cut, radius, kSpringSteel) * geoLen;
+        // The selected material. Index 0 is the stock spring steel exactly
+        // (same E and rho; the eta reference below makes its added loss
+        // zero), so the calibrated instrument is untouched. Any other metal
+        // re-solves the geometry at the same pitch: length goes as the
+        // fourth root of E/rho, and the modal mass follows both the density
+        // and the new length -- a light metal swings further for the same
+        // strike and drives the field nonlinearity harder, which is
+        // audible growl, not a filter.
+        const Material& mat = kMaterials[std::clamp (static_cast<int> (cfg.material), 0, kNumMaterials - 1)];
+        matFerro = mat.ferro || static_cast<int> (cfg.material) == 0;
+        tineLength = CantileverModes::lengthForFrequency (f0Cut, radius, mat) * geoLen;
         const double area = kPiD * radius * radius;
-        const double modalMass = std::max (1.0e-8, kSpringSteel.density * area * tineLength * 0.25);
+        const double modalMass = std::max (1.0e-8, mat.density * area * tineLength * 0.25);
 
         // Where the tuning spring sits, as a fraction of the free length, and
         // how heavy it is. Toward the tip it mostly transposes; back toward the
@@ -1046,7 +1078,8 @@ private:
             //
             // T60 = 6.91 / (pi f / Q) = 2.20 Q / f.
             const double q = (m == 0 ? qFundamental : qOvertone);
-            tineT60[m] = 2.1985 * q / std::max (1.0, tineFreq[m]);
+            tineT60[m] = materialT60 (2.1985 * q / std::max (1.0, tineFreq[m]),
+                                      tineFreq[m], mat, kSpringSteel.lossEta);
         }
 
         double trim = 1.0;
@@ -1342,7 +1375,7 @@ private:
         // this term is deliberately small enough that the distinction stays
         // below the level anybody could hear.)
         constexpr double kAxialRestraint = 0.05;
-        stretchEA   = kAxialRestraint * kSpringSteel.youngs * area
+        stretchEA   = kAxialRestraint * mat.youngs * area
                     / std::max (1.0e-4, tineLength);
         // The knob spans zero to twice the nominal restraint, with the
         // default in the middle at the measured value -- the bass glide this
@@ -1585,6 +1618,7 @@ private:
     double geoLen = 1.0, geoDia = 1.0;      // the workshop's trims
     // Resolved transducer: 0 magnetic, 2 electro, 3 contact (native folds in).
     int trans = 0;
+    bool matFerro = true;   // the selected metal is visible to a magnetic pickup
     double shapeContact[kNumModes] {};
     double cfHist[3] {};
     static constexpr double kElectroOut = 2.5e-2;   // level-matched by probe

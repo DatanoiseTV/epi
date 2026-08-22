@@ -160,7 +160,7 @@ struct WurliReed
     // (possible only in the extrapolated top range), the solder is zero and
     // the tongue is taken as ground to pitch, which is also what the factory
     // did to thin the treble.
-    static Solve solve (int midiNote, double targetHz, double thicknessM)
+    static Solve solve (int midiNote, double targetHz, double thicknessM, const Material& mat)
     {
         Solve s;
         const int idx = midiNote - 32;   // reed 1 at MIDI 33 (A1)
@@ -168,12 +168,12 @@ struct WurliReed
 
         // f1 = beta1^2/(2 pi L^2) * sqrt(EI/(rho A)), I/A = t^2/12 for the
         // rectangular section, so f = beta1^2 * t * sqrt(E/rho) / (4 pi sqrt(3) L^2).
-        const double cSteel = std::sqrt (static_cast<double> (kSpringSteel.youngs)
-                                       / static_cast<double> (kSpringSteel.density));
+        const double cSteel = std::sqrt (static_cast<double> (mat.youngs)
+                                       / static_cast<double> (mat.density));
         const double b0 = 1.8751040687119611;
         s.fBare = b0 * b0 * thicknessM * cSteel
                 / (4.0 * kPiD * std::sqrt (3.0) * s.freeLen * s.freeLen);
-        s.beamMass = static_cast<double> (kSpringSteel.density)
+        s.beamMass = static_cast<double> (mat.density)
                    * widthM (idx) * thicknessM * s.freeLen;
 
         if (! (targetHz > 0.0)) return s;
@@ -300,13 +300,14 @@ public:
         double detuneCents    = 0.0;
         // 0 Magnetic, 1 Native (= electrostatic here), 2 Electro, 3 Contact.
         double transducer     = 1.0;
+        double material       = 0.0;  // index into kMaterials; 0 = stock
     };
 
     // Compared byte-for-byte by the engine to decide whether the instrument
     // needs rebuilding, so it must have no padding for that comparison to
     // mean what it says.
     static_assert (std::is_trivially_copyable<Config>::value, "Config must be memcmp-able");
-    static_assert (sizeof (Config) == 10 * sizeof (double), "Config has padding");
+    static_assert (sizeof (Config) == 11 * sizeof (double), "Config has padding");
 
     void prepare (double sampleRate, const MagneticPickup* sharedField = nullptr)
     {
@@ -511,7 +512,9 @@ public:
             // all three -- the Rhodes staircase lesson holds regardless of
             // which law is looking.
             if (trans == 2)
-                dcOut[k] = deltaCPf (vv) * outMod;
+                dcOut[k] = matCond ? deltaCPf (vv) * outMod : 0.0;
+            else if (trans == 0 && ! matFerro)
+                dcOut[k] = 0.0;
             else if (trans == 0)
                 dcOut[k] = (field != nullptr
                              ? (field->flux (static_cast<float> (kMagOffset + vv), kMagGap) - magRest)
@@ -684,7 +687,8 @@ private:
         const double thick = WurliReed::kThicknessEarly
                            + (WurliReed::kThicknessLate - WurliReed::kThicknessEarly)
                              * std::clamp (cfg.tipMassNorm, 0.0, 1.0);
-        reed = WurliReed::solve (note, target, thick);
+        reed = WurliReed::solve (note, target, thick,
+                                 kMaterials[std::clamp (static_cast<int> (cfg.material), 0, kNumMaterials - 1)]);
 
         // Modal mass, tip-normalised: rho*A*L/4 for the bare tongue plus the
         // solder at the tip, which every tip-normalised mode sees in full.
@@ -713,9 +717,14 @@ private:
         // the sustain rows. A short fixed T60 is what the observable actually
         // is: no higher mode is balanced by anything, each one drives the
         // clamp directly at high curvature, and the bolted bar eats it.
-        sys.setMode (0, reed.f0, 2.1985 * q0 / reed.f0, modalMass);
-        sys.setMode (1, f2, 0.040, modalMass);
-        sys.setMode (2, f3, 0.040, modalMass);
+        {
+            const Material& mat = kMaterials[std::clamp (static_cast<int> (cfg.material), 0, kNumMaterials - 1)];
+            matFerro = mat.ferro;
+            matCond  = mat.conductive;
+            sys.setMode (0, reed.f0, materialT60 (2.1985 * q0 / reed.f0, reed.f0, mat, kSpringSteel.lossEta), modalMass);
+            sys.setMode (1, f2, materialT60 (0.040, f2, mat, kSpringSteel.lossEta), modalMass);
+            sys.setMode (2, f3, materialT60 (0.040, f3, mat, kSpringSteel.lossEta), modalMass);
+        }
 
         // ---- strike and readout shapes ----------------------------------
         // The contact patch: identical sinc weights for read and write --
@@ -895,6 +904,7 @@ private:
     double peakEnergy = 1.0e-30;
     int controlCounter = 0;
     bool sounding = false, held = false, reduced = false, configured = false;
+    bool matFerro = true, matCond = true;
 };
 
 } // namespace epi

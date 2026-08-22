@@ -42,13 +42,55 @@ struct Material
     float youngs;    // Pa
     float density;   // kg/m^3
     float lossEta;   // dimensionless internal loss factor
+    bool  ferro = true;      // ferromagnetic: visible to a magnetic pickup
+    bool  conductive = true; // conductive: usable as an electrostatic plate
 };
 
 // Spring steel / music wire: the Rhodes tine and the Wurlitzer reed are both
 // hardened steel. Brass for the Rhodes tonebar.
 inline constexpr Material kSpringSteel { 200.0e9f, 7850.0f, 2.0e-4f };
-inline constexpr Material kBrass       { 100.0e9f, 8500.0f, 8.0e-4f };
+inline constexpr Material kBrass       { 100.0e9f, 8500.0f, 8.0e-4f, false };
 inline constexpr Material kMusicWire   { 200.0e9f, 7850.0f, 1.5e-4f };
+
+// ---------------------------------------------------------------------------
+// The selectable resonator materials. Same physics, different constants: at a
+// fixed pitch the geometry re-solves, so what a material changes is the
+// inharmonicity (B scales as E/rho for a string at fixed pitch and gauge),
+// the modal mass (a light metal swings further for the same strike, driving
+// the transducer nonlinearity harder), and the internal loss floor (eta sets
+// the material-limited Q; the clamp losses on top are the instrument's own).
+// The two flags are transducer facts, not tone: a non-ferromagnetic tine is
+// invisible to a magnetic pickup, and an insulator cannot be the moving plate
+// of an electrostatic one. Loss factors are room-temperature order-of-
+// magnitude values from the damping literature (Lazan; Zener for Al);
+// metals vary by alloy and work state, so these are representative, not
+// certified.
+// ---------------------------------------------------------------------------
+inline constexpr Material kMaterials[] = {
+    { 200.0e9f,  7850.0f, 1.5e-4f, true,  true  },  // 0 music wire (stock)
+    { 200.0e9f,  7800.0f, 3.0e-4f, true,  true  },  // 1 stainless (ferritic 430)
+    { 110.0e9f,  8860.0f, 5.0e-4f, false, true  },  // 2 phosphor bronze
+    { 100.0e9f,  8500.0f, 8.0e-4f, false, true  },  // 3 brass
+    { 114.0e9f,  4430.0f, 2.0e-4f, false, true  },  // 4 titanium Ti-6Al-4V
+    {  69.0e9f,  2700.0f, 1.0e-3f, false, true  },  // 5 aluminium
+    { 411.0e9f, 19300.0f, 3.0e-4f, false, true  },  // 6 tungsten
+    {   4.0e9f,  1140.0f, 2.0e-2f, false, false },  // 7 nylon
+};
+inline constexpr int kNumMaterials = 8;
+
+// A measured T60 is a clamp-limited number: steel's internal loss is
+// negligible against what the mount takes (the comment above), so the
+// calibrated decay IS the clamp. A different material adds its own internal
+// loss on top -- per-mode decay rate sigma = pi * f * eta, so the extra is
+// pi * f * (eta_mat - eta_ref), zero by construction for the stock metal.
+// Rates add; T60s do not.
+inline double materialT60 (double t60Meas, double freqHz, const Material& m, float etaRef)
+{
+    const double dEta  = std::max (0.0, static_cast<double> (m.lossEta) - static_cast<double> (etaRef));
+    const double sigma = 6.9078 / std::max (1.0e-6, t60Meas)
+                       + 3.14159265358979 * freqHz * dEta;
+    return 6.9078 / sigma;
+}
 
 // ---------------------------------------------------------------------------
 // Clamped-free (cantilever) beam.

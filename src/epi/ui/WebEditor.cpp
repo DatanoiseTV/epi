@@ -36,7 +36,7 @@ namespace
     };
     // No bool parameters exist; an empty constexpr array is a compiler
     // extension GCC and MSVC both reject, so there is simply no list.
-    constexpr const char* kChoiceIds[] = { "pickupSel", "instrument" };
+    constexpr const char* kChoiceIds[] = { "pickupSel", "instrument", "material" };
 
     constexpr int kDesignW = 1224;
     constexpr int kDesignH = 768;

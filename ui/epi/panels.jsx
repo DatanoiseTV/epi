@@ -26,6 +26,31 @@ function ActionPanel() {
   );
 }
 
+
+/* ---- MATERIAL: what the resonator is made of ----
+   Index 0 is the calibrated stock metal. The row also states the one hard
+   transducer fact: a non-magnetic metal is invisible to a magnetic pickup,
+   and an insulator cannot be an electrostatic plate. The resonator keeps
+   vibrating either way -- the silence is physics, so the panel says so
+   instead of leaving it to a bug report. */
+function MaterialRow({ inst }) {
+  const [mi] = useJuceChoice('material', MATERIALS);
+  const [tr] = useJuceChoice('pickupSel', PICKUP_SEL);
+  const ferro = MAT_FERRO[mi], cond = MAT_COND[mi];
+  /* Which selected transducer is deaf to this material, per instrument. */
+  let deaf = null;
+  const magnetic = inst === 0 ? tr <= 1 : tr === 0;
+  const electro  = inst === 2 ? (tr === 1 || tr === 2) : tr === 2;
+  if (magnetic && !ferro) deaf = 'a ' + MATERIALS[mi].toLowerCase() + ' resonator is invisible to a magnetic pickup';
+  else if (electro && !cond) deaf = MATERIALS[mi].toLowerCase() + ' cannot be an electrostatic plate';
+  return (
+    <div className="matrow">
+      <PCycle id="material" options={MATERIALS} label="MATERIAL" />
+      {deaf && <div className="note warn">{deaf} -- switch the transducer to hear it</div>}
+    </div>
+  );
+}
+
 /* ---- TINE / STRINGS: the resonator, per instrument ----
    The knobs shown are the ones this instrument's physics can read. The
    CP-70 has no tone bar, no bloom and no magnetics -- showing those
@@ -49,6 +74,7 @@ function TinePanel({ inst }) {
           the knife edge, and tuning is the tech's solder move in reverse.
           Body couples every reed through the shared bar: hold the pedal and
           undamped neighbours pick up the strike through the casting. */}
+      <MaterialRow inst={2} />
       <div className="note">tongue thickness · knife-edge loss · pedal-down bar wash</div>
     </div>
   );
@@ -71,6 +97,7 @@ function TinePanel({ inst }) {
           Body is the harp frame: struck strings shake it, and with the pedal
           down the strings whose partials coincide ring back -- the octave
           above a struck note lands ~13 dB over the background wash. */}
+      <MaterialRow inst={1} />
       <div className="note">unison spread · decay trim · pedal-down frame wash</div>
       {shop && <TineWorkshop strings onClose={() => setShop(false)} />}
     </div>
@@ -95,6 +122,7 @@ function TinePanel({ inst }) {
       {/* Sliding the tuning spring does not only retune the tine: it sits at a
           different fraction of every mode's shape, so it re-voices the
           overtones on the way. */}
+      <MaterialRow inst={0} />
       <div className="note">spring position · tone bar · bloom</div>
       {shop && <TineWorkshop onClose={() => setShop(false)} />}
     </div>

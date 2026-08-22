@@ -137,6 +137,7 @@ public:
         // a POINT sensor, so it gains the coordinate the bridge never had:
         // a position along the string.
         double transducer     = 1.0;
+        double material       = 0.0;  // index into kMaterials; 0 = stock
         double pickupPosNorm  = 0.5;    // fraction of L, mapped 0.08..0.50
         double gapNorm        = 0.35;   // transverse gap for the point pickups
     };
@@ -289,7 +290,9 @@ public:
             {
                 const double t = static_cast<double> (k + 1) / Decimator::kOver;
                 double vv = hermiteP (ypHist[0], ypHist[1], ypHist[2], yp, t);
-                if (trans == 0)
+                if (trans == -1)
+                    os[k] = 0.0;
+                else if (trans == 0)
                     os[k] = (field != nullptr
                               ? (field->flux (static_cast<float> (kMagOffP + vv),
                                               static_cast<float> (pgap)) - magRestP)
@@ -424,7 +427,14 @@ private:
         // The workshop's trims move B as the string physics says: B is
         // proportional to d^2 at constant pitch (the re-tension carries the
         // rest) and to 1/L^2 through the re-cut.
-        const double B = CP70Inharmonicity::at (note) * (geoDia * geoDia) / (geoLen * geoLen);
+        // Material: at fixed pitch and gauge the tension re-solves, and what
+        // survives is B proportional to E/rho -- bronze halves the steel
+        // curve, nylon nearly flattens it. Index 0 is the measured music
+        // wire exactly.
+        const Material& mat = kMaterials[std::clamp (static_cast<int> (cfg.material), 0, kNumMaterials - 1)];
+        const double matB = (static_cast<double> (mat.youngs) / static_cast<double> (mat.density))
+                          / (static_cast<double> (kMusicWire.youngs) / static_cast<double> (kMusicWire.density));
+        const double B = CP70Inharmonicity::at (note) * (geoDia * geoDia) / (geoLen * geoLen) * matB;
 
         // ---- geometry, from the measurements --------------------------------
         // Plain wire from D#4 up: the closed length form (R^2 > 0.999) and the
@@ -437,7 +447,7 @@ private:
         {
             L = 0.6652 * std::pow (2.0, -(note - 60.0) / 13.16) * geoLen;
             const double d = wireDiameter (note) * geoDia;
-            mu = 7850.0 * kPiD * d * d / 4.0;
+            mu = static_cast<double> (mat.density) * kPiD * d * d / 4.0;
         }
         else
         {
@@ -504,7 +514,8 @@ private:
             for (int k = 1; k <= kV; ++k)
             {
                 const double fk = k * fs0 * std::sqrt (1.0 + B * k * k);
-                const double aV = trim * cp70AlphaFast (fk);
+                const double aV = trim * cp70AlphaFast (fk)
+                                + 8.686 * kPiD * fk * std::max (0.0, static_cast<double> (mat.lossEta) - static_cast<double> (kMusicWire.lossEta));
                 S.sys.setMode (k - 1, fk, 60.0 / aV, modalMass);
                 alphaOfMode[s][k - 1] = aV;
 
@@ -547,7 +558,8 @@ private:
                 // only through the hammer's slight skew.
                 const double fk = k * fs0 * std::pow (2.0, 0.75 / 1200.0)
                                 * std::sqrt (1.0 + B * k * k);
-                const double aH = trim * cp70AlphaFast (fk) / rr;
+                const double aH = trim * cp70AlphaFast (fk) / rr
+                                + 8.686 * kPiD * fk * std::max (0.0, static_cast<double> (mat.lossEta) - static_cast<double> (kMusicWire.lossEta));
                 const int idx = kV + k - 1;
                 S.sys.setMode (idx, fk, 60.0 / aH, modalMass);
                 alphaOfMode[s][idx] = aH;
@@ -585,6 +597,16 @@ private:
         {
             const int t = static_cast<int> (cfg.transducer + 0.5);
             trans = (t == 3) ? 1 : t;       // contact IS the piezo here
+            // Transducer facts of the selected material: a bronze string is
+            // invisible to a magnetic pickup, and nylon cannot be the moving
+            // plate of an electrostatic one. The piezo reads force and does
+            // not care. The string keeps vibrating either way -- silence
+            // through the wrong pickup is the physics, and the panel says so.
+            {
+                const Material& mm = kMaterials[std::clamp (static_cast<int> (cfg.material), 0, kNumMaterials - 1)];
+                if ((trans == 0 && ! mm.ferro) || (trans == 2 && ! mm.conductive))
+                    trans = -1;   // transduce nothing
+            }
             const double xp = 0.08 + 0.42 * std::clamp (cfg.pickupPosNorm, 0.0, 1.0);
             pgap = 0.8e-3 + 3.2e-3 * std::clamp (cfg.gapNorm, 0.0, 1.0);
             for (int si = 0; si < 2; ++si)

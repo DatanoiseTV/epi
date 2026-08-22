@@ -68,6 +68,11 @@ namespace epi::ids
     inline constexpr const char* coilSat    = "coilSat";    // 0..1 core saturation
 
     // Clavinet pickup switching. Order must match epi::PickupSelect.
+    inline const juce::StringArray materialNames {
+        // Index 0 is the calibrated stock metal for every instrument.
+        "Music Wire", "Stainless", "Bronze", "Brass",
+        "Titanium", "Aluminium", "Tungsten", "Nylon" };
+
     inline const juce::StringArray pickupSelNames {
         // Order is state: index 1 has been the stored default since the
         // parameter existed, so NATIVE lives there and old sessions keep
@@ -82,6 +87,7 @@ namespace epi::ids
     inline constexpr const char* tremRate    = "tremRate";    // Hz
     inline constexpr const char* tremDepth   = "tremDepth";   // 0..1
     inline constexpr const char* clarity     = "clarity";     // -12..+12 dB air
+    inline constexpr const char* material    = "material";    // choice: resonator metal
     inline constexpr const char* tremStereo  = "tremStereo";  // 0..1
     inline constexpr const char* cabMix      = "cabMix";      // 0..1
     inline constexpr const char* phaserMix   = "phaserMix";   // 0..1
@@ -230,6 +236,12 @@ namespace epi::ids
         // where "clarity" actually lives.
         add (std::make_unique<P> (juce::ParameterID { clarity, 1 }, "Clarity",
                                    juce::NormalisableRange<float> { -12.0f, 12.0f, 0.0f }, 0.0f));
+
+        // What the tine, string, or reed is made of. Index 0 is the stock
+        // metal and the exact calibrated instrument; appended at the end
+        // because hosts index AU parameters by position.
+        add (std::make_unique<Pc> (juce::ParameterID { material, 1 }, "Material",
+                                   materialNames, 0));
 
         return { params.begin(), params.end() };
     }

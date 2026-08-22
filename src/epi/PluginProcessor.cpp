@@ -109,6 +109,7 @@ epi::EngineParams EpiAudioProcessor::buildEngineParams() const
     p.trebleDb    = raw (treble);
     p.clarityDb   = raw (clarity);
     p.transducer  = static_cast<int> (raw (pickupSel));
+    p.material    = static_cast<int> (raw (material));
     p.tremRate    = raw (tremRate);
     p.tremDepth   = raw (tremDepth);
     p.tremStereo  = raw (tremStereo);

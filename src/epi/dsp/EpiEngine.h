@@ -82,6 +82,8 @@ struct EngineParams
     // the transducer makes the timbre; this is that fact handed to the
     // player.
     int   transducer  = 1;
+    // What the resonator is made of: index into kMaterials, 0 = stock.
+    int   material    = 0;
     float tremRate    = 5.5f;
     float tremDepth   = 0.0f;
     float tremStereo  = 1.0f;   // 1 = the Rhodes panner, 0 = amplitude tremolo
@@ -277,9 +279,15 @@ private:
     void publishField();
 
     double fs = 48000.0;
-    // Instrument crossfade-through-silence state.
-    int    activeInst = 0;
+    // Instrument crossfade-through-silence state. Notes that arrive while
+    // the old instrument fades belong to the NEW one -- they are parked
+    // here and replayed the moment the seam passes, so a switch never
+    // swallows the first phrase.
+    int    activeInst = -1;   // -1: snap to the first block's instrument
     double instGain   = 1.0;
+    static constexpr int kMaxPending = 32;
+    NoteEvent pendingNotes[kMaxPending];
+    int       numPending = 0;
 
     MagneticPickup field;
     // Heap, not std::array: eighty-eight voices weigh megabytes, and tests

@@ -180,6 +180,7 @@ RhodesVoice::Config EpiEngine::rhodesConfig (const EngineParams& p) const
     c.detuneCents    = static_cast<double> (p.tuneCents)
                      + 100.0 * static_cast<double> (bendSemis);
     c.transducer = static_cast<double> (p.transducer);
+    c.material   = static_cast<double> (p.material);
     return c;
 }
 
@@ -198,6 +199,7 @@ CP70Voice::Config EpiEngine::cp70Config (const EngineParams& p) const
     c.detuneCents    = static_cast<double> (p.tuneCents)
                      + 100.0 * static_cast<double> (bendSemis);
     c.transducer    = static_cast<double> (p.transducer);
+    c.material      = static_cast<double> (p.material);
     // The point pickups gain the coordinate the bridge never had: position
     // along the string from the height knob, gap from the gap knob.
     c.pickupPosNorm = 0.5 + 0.5 * static_cast<double> (p.pickupPos);
@@ -224,6 +226,7 @@ WurliVoice::Config EpiEngine::wurliConfig (const EngineParams& p) const
     c.detuneCents    = static_cast<double> (p.tuneCents)
                      + 100.0 * static_cast<double> (bendSemis);
     c.transducer = static_cast<double> (p.transducer);
+    c.material   = static_cast<double> (p.material);
     return c;
 }
 
@@ -341,6 +344,24 @@ void EpiEngine::process (float* outL, float* outR, int numSamples,
     // running instrument out over a few milliseconds, clear its voices at
     // the bottom (so a switch back does not resurrect stale tails), then
     // fade the new one in.
+    if (activeInst < 0)
+        activeInst = p.instrument;   // first block: no fade, nothing to fade from
+
+    // Park note events for the incoming instrument while the outgoing one
+    // drains. Global events (pedal, all-notes-off) pass through -- they act
+    // on every bank at once.
+    if (p.instrument != activeInst && events != nullptr && numEvents > 0)
+    {
+        for (int i = 0; i < numEvents; ++i)
+            if ((events[i].type == NoteEvent::noteOn || events[i].type == NoteEvent::noteOff)
+                 && numPending < kMaxPending)
+            {
+                pendingNotes[numPending] = events[i];
+                pendingNotes[numPending].offset = 0;
+                ++numPending;
+            }
+    }
+
     if (p.instrument != activeInst && instGain <= 1.0e-3)
     {
         if (activeInst == 0) { for (auto& v : tines) v.reset(); harp.reset(); }
@@ -361,6 +382,12 @@ void EpiEngine::process (float* outL, float* outR, int numSamples,
     }
     EngineParams pa = p;
     pa.instrument = activeInst;
+    if (p.instrument == activeInst && numPending > 0)
+    {
+        for (int i = 0; i < numPending; ++i)
+            handleEvent (pendingNotes[i], pa);
+        numPending = 0;
+    }
     processActive (outL, outR, numSamples, pa, events, numEvents);
     const double target = (p.instrument == activeInst) ? 1.0 : 0.0;
     const double aRamp = 1.0 - std::exp (-1.0 / (0.0015 * fs));
