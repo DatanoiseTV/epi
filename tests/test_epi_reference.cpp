@@ -1165,10 +1165,13 @@ static void sectionCP70()
                 if (w < pk * 0.1) { t20 = static_cast<double> (i) / kFs; break; }
             }
             // The plan's own designated calibration row: it is where the
-            // evidence-free strike position and the hammer spectrum meet the
-            // measured envelope, and the plan says to expect it to fail
-            // first. Bounded so it cannot degrade into a click while it
-            // waits for its calibration session.
+            // strike position and the hammer spectrum meet the measured
+            // envelope. Calibrated: the C5 fundamental takes the plain-wire
+            // decay law (the wound-bass 6.5 dB/s floor does not apply to a
+            // plain string), and the unison spread follows a constant beat
+            // RATE across the compass, so C5's pair no longer drops a beat
+            // null through the -20 dB line at 1.4 s. Kept bounded so it
+            // cannot degrade into a click unnoticed.
             row ("P2", (std::string ("-20 dB time, MIDI ") + std::to_string (r.midi)).c_str(),
                  fmt ("%.1f s +/-40%%", r.want),
                  t20 > 0.0 ? fmt ("%.2f s", t20) : std::string (">render"),

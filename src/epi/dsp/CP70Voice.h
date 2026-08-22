@@ -107,9 +107,22 @@ inline double cp70StretchCents (int midi)
 // mixes registers (a low note's high partial dies faster than a high note's
 // at the same frequency), and the audible cost of trusting it was an attack
 // band that fell away twice too fast.
-inline double cp70AlphaFast (double f)
+// `plainWire` selects the string construction the mode lives on. The 6.5
+// dB/s floor below 800 Hz is the fast component of the WOUND-bass mixture:
+// every reference partial under 800 Hz comes from a wound string (the lowest
+// plain fundamental is D#4 at 311 Hz, and plain notes put their measured
+// sub-kHz energy only in their own fundamentals), and a winding dissipates
+// by inter-turn friction that a plain wire simply does not have. Applied to
+// a plain treble fundamental the floor doubled the decay: the reference C5
+// FF's -20 dB time is 2.60 s, which after the attack crest needs the 524 Hz
+// fundamental near 3 dB/s -- the polynomial's own value there -- where the
+// wound floor forced 6.5 and the model died at 1.40 s. Plain wire therefore
+// takes the polynomial at every frequency; the floor and its crossfade
+// belong to the wound strings that produced them.
+inline double cp70AlphaFast (double f, bool plainWire = false)
 {
     const double poly = 0.6 * (0.393 + 9.23e-3 * f - 1.275e-7 * f * f);
+    if (plainWire) return std::max (0.5, poly);
     if (f >= 1200.0) return std::max (0.5, poly);
     if (f <= 800.0) return 6.5;
     const double t = (f - 800.0) / 400.0;
@@ -128,7 +141,7 @@ public:
         double hammerMassNorm = 0.5;
         double escapementNorm = 0.4;
         double damperGrip     = 0.6;
-        double detuneSpread   = 0.5;    // "tipMass" knob: unison spread 0..5 cents
+        double detuneSpread   = 0.5;    // "tipMass" knob: unison beat 0..~0.4 Hz (cents scale as 1/f0)
         double dampTrim       = 0.5;    // "resDamp": global alpha trim x0.7..1.5
         double detuneCents    = 0.0;    // master tune + bend
         // The transducer swap. 0 Magnetic, 1 Native (= the piezo bridge),
@@ -463,13 +476,21 @@ private:
 
         numStrings = note >= 43 ? 2 : 1;
 
-        // Unison spread: nominal 1.0 cent at the default knob, deterministic
-        // per-note scatter. Measured directly: the reference D3's fundamental
-        // ripples with a ~9.5 second beat period, which is 1.2 cents between
-        // the pair -- the earlier nominal put the null at half that time and
-        // the engine's bass envelope dipped where the recording is smooth.
+        // Unison spread: a constant BEAT RATE across the compass, not constant
+        // cents. A tuner pulls a unison until the beat is slow enough, and the
+        // beat is heard in hertz -- so the cents between the pair shrink as
+        // 1/f0. The measured detunes say exactly that: A#2 1.93 c (0.13 Hz),
+        // D3 1.05 c (0.089 Hz), F3 ~1.5 c (0.15 Hz), A3 ~0.5 c (0.064 Hz) --
+        // near-constant tenths of a hertz while the cents fall by 4x. The
+        // anchor is the reference D3's directly measured ~9.5 s fundamental
+        // beat period (0.105 Hz, 1.24 cents). The earlier flat ~1 cent law
+        // held that in the bass but put C5's pair 1.17 c apart -- a 0.35 Hz
+        // beat whose first null at 1.41 s punched the broadband envelope
+        // through -20 dB and halved the measured -20 dB time against the
+        // reference C5 FF sample, which shows no such early null.
         const double spreadCents = 4.0 * cfg.detuneSpread * cfg.detuneSpread
-                                 * (0.7 + 0.6 * (((note * 2654435761u) & 255u) / 255.0));
+                                 * (0.7 + 0.6 * (((note * 2654435761u) & 255u) / 255.0))
+                                 * (1731.2 * 0.105 / f0);   // cents of a 0.105 Hz beat at f0
 
         // Mode budget: everything under fs/pi vertically; horizontal only
         // below 1.3 kHz where the measured double decay lives.
@@ -514,7 +535,10 @@ private:
             for (int k = 1; k <= kV; ++k)
             {
                 const double fk = k * fs0 * std::sqrt (1.0 + B * k * k);
-                const double aV = trim * cp70AlphaFast (fk)
+                // Vertical (fast) polarisation: the plain-wire law above
+                // D#4, the wound mixture below it -- the same construction
+                // boundary the geometry branch already draws.
+                const double aV = trim * cp70AlphaFast (fk, note >= 63)
                                 + 8.686 * kPiD * fk * std::max (0.0, static_cast<double> (mat.lossEta) - static_cast<double> (kMusicWire.lossEta));
                 S.sys.setMode (k - 1, fk, 60.0 / aV, modalMass);
                 alphaOfMode[s][k - 1] = aV;
@@ -558,6 +582,13 @@ private:
                 // only through the hammer's slight skew.
                 const double fk = k * fs0 * std::pow (2.0, 0.75 / 1200.0)
                                 * std::sqrt (1.0 + B * k * k);
+                // The slow polarisation keeps the wound-mixture law on every
+                // note: the doublet ratio r and the slow-member rates are
+                // direct fits of measured slow components at these
+                // frequencies (all on wound strings -- above C5 the research
+                // found no separable slow member at all), so the plain-wire
+                // correction to the FAST law must not stretch them; launched
+                // at tp^2 they are inaudibly far down on plain notes anyway.
                 const double aH = trim * cp70AlphaFast (fk) / rr
                                 + 8.686 * kPiD * fk * std::max (0.0, static_cast<double> (mat.lossEta) - static_cast<double> (kMusicWire.lossEta));
                 const int idx = kV + k - 1;
