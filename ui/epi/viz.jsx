@@ -153,7 +153,11 @@ function VizCard() {
         prevEnv[i] = env[i];
         strikeT[i] += dt;
       }
-      scale = peak > scale ? peak : scale + (peak - scale) * Math.min(1, dt * 0.6);
+      /* The reference must hold still while a note rings: if it decays
+         with the struck string, every sympathetic level is re-normalised
+         upward as the note fades and the wash appears to swell. Slow
+         release keeps ratios honest within a note's lifetime. */
+      scale = peak > scale ? peak : scale + (peak - scale) * Math.min(1, dt * 0.12);
       const inv = 1 / Math.max(scale, 1e-6);
 
       /* Master tune, in cents, read straight off the relay -- the drawn
@@ -216,6 +220,12 @@ function VizCard() {
         const a = e > 0 ? Math.min(1, Math.max(0, (20 * Math.log10(e) + VZ_RANGE) / VZ_RANGE)) : 0;
         const down = isDown(i);
         const sym = a > 0.02 && !down && strikeT[i] > 0.5;
+        /* Sympathetic brightness gets its own mapping: a 45 dB window with
+           a gamma of 1.6, so the octave partner (-19 dB) reads clearly,
+           the twelfth (-26 dB) noticeably dimmer, and the -38 dB wash as
+           the faint shimmer it actually is -- the flat 62 dB window put
+           near-inaudible strings at 40% brightness. */
+        const ws = sym ? Math.pow(Math.max(0, (20 * Math.log10(Math.max(e, 1e-9)) + 45) / 45), 1.6) : 0;
         const active = a > 0.02 ? Math.min(1, a * 1.4) : 0;
 
         /* Physical swing: microns to millimetres, millimetres to pixels
@@ -255,7 +265,7 @@ function VizCard() {
         // The BAND is the one deliberately non-physical stroke: it floors at
         // a sliver whenever the colour mapping says the rod is alive, so the
         // pedal wash reads on screen the way it reads in the room.
-        const bandA = Math.max(A, sym || down ? a * 1.6 : 0);
+        const bandA = Math.max(A, down ? a * 1.6 : sym ? ws * 1.6 : 0);
         if (bandA > 0.15) {
           ctx.beginPath();
           for (let s = 0; s <= segs; s++) {
@@ -271,7 +281,7 @@ function VizCard() {
           /* Sympathetic band opacity tracks the measured level, so two
              strings ringing 12 dB apart read 12 dB apart on screen. */
           ctx.fillStyle = sym
-            ? 'rgba(216,205,176,' + Math.min(0.3, 0.02 + a * 0.24).toFixed(3) + ')'
+            ? 'rgba(216,205,176,' + Math.min(0.3, 0.02 + ws * 0.24).toFixed(3) + ')'
             : 'rgba(202,164,94,' + Math.min(0.3, 0.06 + bandA * 0.045).toFixed(3) + ')';
           ctx.fill();
         }
@@ -297,8 +307,10 @@ function VizCard() {
              different temperatures and the wash shows its actual ratios --
              the octave partner bright, the twelfth dimmer, the background
              a shade over rest. */
-          const w = a;
-          ctx.strokeStyle = 'rgb(' + Math.round(93 + w * 123) + ',' + Math.round(87 + w * 118) + ',' + Math.round(73 + w * 103) + ')';
+          const w = ws;
+          /* Lerp FROM the resting stroke, not from a darker steel: a faint
+             sympathetic string must sit just above rest, never below it. */
+          ctx.strokeStyle = 'rgb(' + Math.round(143 + w * 73) + ',' + Math.round(136 + w * 69) + ',' + Math.round(120 + w * 56) + ')';
           ctx.shadowColor = '#d8cba8';
           ctx.shadowBlur = VZ_GLOW * 14 * w;
         } else {
@@ -320,7 +332,7 @@ function VizCard() {
         }
 
         const mag = Math.hypot(sx, sy);
-        railPts.push({ x: tipX + (sx / mag) * gap, y: tipY - (sy / mag) * gap, w: sym ? 0 : active, sw: sym ? a : 0 });
+        railPts.push({ x: tipX + (sx / mag) * gap, y: tipY - (sy / mag) * gap, w: sym ? 0 : active, sw: ws });
       }
 
       /* the pickup rail (bridge, for the CP-70) beyond the tips */
