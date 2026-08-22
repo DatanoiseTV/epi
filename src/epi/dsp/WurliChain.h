@@ -115,6 +115,12 @@ public:
     void setDrive (double d)
     {
         driveGain = 0.25 * std::pow (40.0, std::clamp (d, 0.0, 1.0));
+        // Loudness make-up for the drive knob -- but never above the stock
+        // image. Dividing by a small driveGain would raise the collector
+        // rails' image at the output, and a real input attenuator cannot do
+        // that: below stock the knob behaves as the volume pot it physically
+        // is, and the clipped ceiling stays where the +15 V supply puts it.
+        makeup = 1.0 / std::max (driveGain, 0.25 * std::pow (40.0, kStockDrive));
     }
 
     // The real 200A has no tone controls -- volume and vibrato only. These
@@ -140,7 +146,7 @@ public:
                      : kSatNeg * std::tanh (y / kSatNeg);
 
         y = miller.lowpass (y);
-        y /= driveGain;
+        y *= makeup;
         if (bassGain != 0.0) y += bassGain * bassLp.lowpass (y);
         if (trebGain != 0.0) y += trebGain * trebHp.highpass (y);
         return y;
@@ -154,6 +160,7 @@ private:
     OnePoleD input, miller, bassLp, trebHp;
     double bassGain = 0.0, trebGain = 0.0;
     double driveGain = 0.25 * std::pow (40.0, kStockDrive);
+    double makeup    = 1.0 / (0.25 * std::pow (40.0, kStockDrive));
 };
 
 // ---------------------------------------------------------------------------

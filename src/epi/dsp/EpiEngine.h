@@ -266,6 +266,9 @@ private:
     RhodesVoice::Config rhodesConfig (const EngineParams& p) const;
     CP70Voice::Config cp70Config (const EngineParams& p) const;
     WurliVoice::Config wurliConfig (const EngineParams& p) const;
+    void processActive (float* outL, float* outR, int numSamples,
+                        const EngineParams& p,
+                        const NoteEvent* events, int numEvents);
     void processWurli (float* outL, float* outR, int numSamples,
                        const EngineParams& p, const NoteEvent* events, int numEvents);
     void processCP70 (float* outL, float* outR, int numSamples,
@@ -274,6 +277,9 @@ private:
     void publishField();
 
     double fs = 48000.0;
+    // Instrument crossfade-through-silence state.
+    int    activeInst = 0;
+    double instGain   = 1.0;
 
     MagneticPickup field;
     // Heap, not std::array: eighty-eight voices weigh megabytes, and tests

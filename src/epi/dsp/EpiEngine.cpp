@@ -335,6 +335,63 @@ void EpiEngine::process (float* outL, float* outR, int numSamples,
                          const EngineParams& p,
                          const NoteEvent* events, int numEvents)
 {
+    // Switching the instrument mid-stream cuts between three unrelated
+    // signal chains -- different levels, different DC states -- and the
+    // seam is a click. So the switch goes through silence: fade the
+    // running instrument out over a few milliseconds, clear its voices at
+    // the bottom (so a switch back does not resurrect stale tails), then
+    // fade the new one in.
+    if (p.instrument != activeInst && instGain <= 1.0e-3)
+    {
+        if (activeInst == 0) { for (auto& v : tines) v.reset(); harp.reset(); }
+        if (activeInst == 1) { for (auto& v : cp70)  v.reset(); cp70Frame.reset(); }
+        if (activeInst == 2) { for (auto& v : wurli) v.reset(); wurliFrame.reset(); }
+        // The chain stages freeze mid-signal when their instrument stops
+        // running -- the coil was measured thawing a two-second-old ring as
+        // a half-scale burst on the way back in. Everything stateful between
+        // the voices and the shared effects gets cleared while the output is
+        // provably at silence. The room stays: it runs in every path, so its
+        // tail is continuous and real.
+        coil.reset(); preamp.reset();
+        cabinetL.reset(); cabinetR.reset(); cabinetBL.reset(); cabinetBR.reset();
+        wurliPre.reset();
+        decimL.reset(); decimR.reset();
+        phaserL.reset(); phaserR.reset();
+        activeInst = p.instrument;
+    }
+    EngineParams pa = p;
+    pa.instrument = activeInst;
+    processActive (outL, outR, numSamples, pa, events, numEvents);
+    const double target = (p.instrument == activeInst) ? 1.0 : 0.0;
+    const double aRamp = 1.0 - std::exp (-1.0 / (0.0015 * fs));
+    // The output rail: transparent below 0.85, bounded at 1.0. Every real
+    // output stage has a supply ceiling; without one here, a fortissimo
+    // bass bark -- rail-limited inside the Wurlitzer preamp exactly as the
+    // circuit says -- gets carried past digital full scale by the loudness
+    // trims and hard-clips in the host, which is nobody's circuit. The knee
+    // starts far above every calibrated level, so it only touches the
+    // extremes it exists for.
+    auto rail = [] (float x) -> float
+    {
+        constexpr float a = 0.85f, s = 0.15f;
+        const float ax = std::fabs (x);
+        if (ax <= a) return x;
+        const float y = a + s * std::tanh ((ax - a) / s);
+        return x < 0.0f ? -y : y;
+    };
+    for (int n = 0; n < numSamples; ++n)
+    {
+        instGain += (target - instGain) * aRamp;
+        const float g = static_cast<float> (instGain);
+        outL[n] = rail (outL[n] * g);
+        outR[n] = rail (outR[n] * g);
+    }
+}
+
+void EpiEngine::processActive (float* outL, float* outR, int numSamples,
+                               const EngineParams& p,
+                               const NoteEvent* events, int numEvents)
+{
     if (p.instrument == 1)
     {
         processCP70 (outL, outR, numSamples, p, events, numEvents);
