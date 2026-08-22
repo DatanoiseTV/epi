@@ -271,7 +271,7 @@ static void sectionReed()
             for (int n = 33; n <= 96; ++n)
             {
                 const double t = tm == 0 ? WurliReed::kThicknessEarly : WurliReed::kThicknessLate;
-                const auto s = WurliReed::solve (n, noteHz (n), t);
+                const auto s = WurliReed::solve (n, noteHz (n), t, kSpringSteel);
                 worst = std::max (worst, std::abs (1200.0 * std::log2 (s.f0 / noteHz (n))));
                 if (s.ground) ++muZero;
             }
@@ -288,11 +288,11 @@ static void sectionReed()
     //
     // (b) Through the full reference chain: the preamp's asymmetric clip
     // gives each harmonic an amplitude-DEPENDENT phase, and as the note
-    // decays that phase drifts -- a real micro-chirp of up to ~0.3 cent on
+    // decays that phase drifts -- a real micro-chirp of up to ~0.25 cent on
     // the partials whose clipped amplitude is passing through a fold (k =
-    // 9-11 at this level). Physical, bounded, and carried as a known gap:
-    // whether a real 200A's preamp does the same at DI level is an A/B
-    // nobody has published.
+    // 7-9 at this level, all of them 60+ dB below H2 while they fold).
+    // Physical, bounded, and carried as a known gap: whether a real 200A's
+    // preamp does the same at DI level is an A/B nobody has published.
     {
         auto worstDev = [] (const std::vector<double>& x, int kMax, double& f0Out)
         {
@@ -303,7 +303,28 @@ static void sectionReed()
             for (int k = 2; k <= kMax; ++k)
             {
                 const an::Envelope e = an::heterodyne (x, kFs, k * f0, f0);
-                const double got = an::partialFrequency (e, k * f0, 1.0, 2.6);
+
+                // A memoryless transducer's harmonic coefficients are
+                // Chebyshev-series terms in the decaying drive amplitude, and
+                // a coefficient can pass through ZERO inside the window (the
+                // capacitance law's k = 8 does, 55 dB down, at this level).
+                // At the null the partial has no phase; the pi step across it
+                // reads as ~1 cent of fake drift in the unweighted phase fit.
+                // A real partial tracker drops a partial when it dies, so
+                // this fit does the same: end the window where the envelope
+                // first collapses 40 dB below its value at the window start,
+                // and skip the partial if that leaves under 0.6 s to fit.
+                double tb = 2.6;
+                double a0 = 0.0;
+                for (std::size_t i = 0; i < e.z.size(); ++i)
+                {
+                    const double t = e.time (i);
+                    if (t < 1.0) continue;
+                    if (a0 == 0.0) a0 = std::abs (e.z[i]);
+                    else if (t <= 2.6 && std::abs (e.z[i]) < 0.01 * a0) { tb = t; break; }
+                }
+                if (tb - 1.0 < 0.6) continue;
+                const double got = an::partialFrequency (e, k * f0, 1.0, tb);
                 if (got <= 0.0) continue;
                 worst = std::max (worst, std::abs (1200.0 * std::log2 (got / (k * f0))));
             }
@@ -499,12 +520,15 @@ static void sectionBark()
     heading ("V. Bark: velocity growth and register law");
 
     // V1: A1 harmonic energy vs level. pp and the growth calibrate the
-    // y-scale; the ff endpoint carries the model's one structural gap: the
-    // capacitance law's bounded far-side lobe leaves a fundamental floor the
-    // measurement does not show, so the bark ceiling sits near +16 dB where
-    // the recording reaches +26.7. (The recording's own chain -- open-back
-    // speakers rolling off 55 Hz -- may carry part of that difference; the
-    // reference row stays at the plan's number.)
+    // y-scale; the ff endpoint reaches the recording's number since the
+    // capacitance law's far field went even (see capLaw in WurliVoice.h):
+    // the previous odd-tailed turnover rode a square wave between unequal
+    // rails and ceilinged near +18 dB, and before that the monotone knee
+    // stuck at +5. Two constants own the endpoint: the even law kills the
+    // fundamental floor, and w = 0.20 keeps the plane-crossing spikes low
+    // enough that the preamp's +2 V rail does not clip the harmonic energy
+    // away again (at w = 0.10 the taller spikes cost 7 dB of measured
+    // bark). The gap() bounds are kept as a ratchet, not a live gap.
     RenderOpts pp; pp.vel = 0.2;  pp.seconds = 1.2;
     RenderOpts ff; ff.vel = 1.0;  ff.seconds = 1.2;
     const double bPp = barkDb (renderWurli (33, pp), noteHz (33));

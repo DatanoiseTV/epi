@@ -548,27 +548,41 @@ public:
     // harmonics 2-7. That fundamental collapse is the turnover's signature:
     // past the plane the capacitance falls again, so each crossing makes a
     // narrow C pulse and a deep swing produces TWO pulses per cycle --
-    // frequency-doubled energy, fundamental cancelled. So the stand-in is
-    // the turnover itself:
+    // frequency-doubled energy, fundamental cancelled.
     //
-    //   g(y) = y / sqrt((1 - y)^2 + w^2)
+    // The second stand-in, g(y) = y/sqrt((1-y)^2 + w^2), had the turnover
+    // but the wrong FAR FIELD: it tends to +1 past the plane and -1 on the
+    // near side, so a deep swing still rode a square wave between unequal
+    // rails and the measured ff bark ceilinged near +18 dB (the fundamental
+    // floor the V1 row used to carry as its gap). A capacitance has no such
+    // odd tail: C falls toward zero with DISTANCE from the plane on either
+    // side, so the perturbation's far field is even -- both extremes of a
+    // deep swing see (almost) the same vanishing C and contribute (almost)
+    // nothing at the fundamental. The stand-in is therefore the regularised
+    // reciprocal of the distance to the plane itself:
     //
-    // which matches y/(1-y) through second order at small y (the P2
-    // asymmetry and the small-signal law are untouched), peaks smoothly at
-    // the plane with height ~1/w, and falls beyond. w = 0.10 puts the peak
-    // at 10x the rest capacitance -- the slot's lateral clearance (tens of
-    // microns against the half-millimetre gap) standing in for the vanished
-    // vertical gap -- and is a V1-calibration constant: the measured ff bark
-    // grows with 1/w and this value is where the growth flattens out.
-    // Plate CONTACT stays a fault, not an operating point: the law is smooth
-    // and bounded everywhere, and its maximum slope is ~1/w^2, far below the
-    // knee's 278, which also eases the aliasing the oversampling has to
-    // remove.
+    //   g(y) = n * ( 1/sqrt(d^2 + w^2) - 1/sqrt(1 + w^2) ),   d = 1 - y
+    //   n    = (1 + w^2)^{3/2}   (unit small-signal slope at y = 0)
+    //
+    // which IS y/(1-y) wherever |d| >> w (not just to second order -- the
+    // small-signal law, the P2 asymmetry and the sensitivity anchor are
+    // untouched), peaks smoothly at the plane with height ~1/w, and decays
+    // toward the even far field beyond. w = 0.20 is the V1-calibration
+    // constant standing in for the slot's lateral clearance: it sets the
+    // peak (~5x the rest capacitance) and thereby how hard the spike train
+    // drives the preamp's +2 V rail -- at 0.10 the taller spikes clip 7 dB
+    // of harmonic energy off the measured A1 ff bark, at 0.20 the measured
+    // bark lands on the recording's +26.7 dB. Plate CONTACT stays a fault,
+    // not an operating point: the law is smooth and bounded everywhere, and
+    // its maximum slope is ~1/w^2 = 25, far below the knee's 278, which
+    // also eases the aliasing the oversampling has to remove.
     static double capLaw (double y)
     {
-        constexpr double w = 0.10;
+        constexpr double w = 0.20;
+        constexpr double norm = 1.0606601717798212;   // (1 + w^2)^{3/2}
+        constexpr double rest = 0.98058067569092022;  // 1/sqrt(1 + w^2)
         const double d = 1.0 - y;
-        return y / std::sqrt (d * d + w * w);
+        return norm * (1.0 / std::sqrt (d * d + w * w) - rest);
     }
 
     void refresh (const Config& cfg) { configure (cfg); }
@@ -613,7 +627,7 @@ private:
     static constexpr double kYBase       = 0.587;
     static constexpr double kCliffPos    = 0.40;   // register position of the cliff
     static constexpr double kCliffWidth  = 0.05;
-    static constexpr double kCliffDepth  = 1.10;   // natural log units
+    static constexpr double kCliffDepth  = 0.90;   // natural log units
     static constexpr double kTrebleSlope = 2.50;   // ln per register unit past the cliff
 
     double yScaleFor (double reg) const
