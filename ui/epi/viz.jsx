@@ -268,7 +268,11 @@ function VizCard() {
             ctx.lineTo(x + (tipX - x) * u - ee, baseY + (tipY - baseY) * u);
           }
           ctx.closePath();
-          ctx.fillStyle = 'rgba(' + (sym ? '150,143,125' : '202,164,94') + ',' + Math.min(0.3, 0.06 + bandA * 0.045).toFixed(3) + ')';
+          /* Sympathetic band opacity tracks the measured level, so two
+             strings ringing 12 dB apart read 12 dB apart on screen. */
+          ctx.fillStyle = sym
+            ? 'rgba(216,205,176,' + Math.min(0.3, 0.02 + a * 0.24).toFixed(3) + ')'
+            : 'rgba(202,164,94,' + Math.min(0.3, 0.06 + bandA * 0.045).toFixed(3) + ')';
           ctx.fill();
         }
 
@@ -287,8 +291,18 @@ function VizCard() {
           ctx.strokeStyle = 'rgb(' + Math.round(143 + w * 87) + ',' + Math.round(136 + w * 61) + ',' + Math.round(120 + w * 12) + ')';
           ctx.shadowColor = '#caa45e';
           ctx.shadowBlur = VZ_GLOW * 22 * w * Math.min(1, A / 3);
+        } else if (sym) {
+          /* Not a flag: the colour rides the same dB mapping as the struck
+             gold, but toward a cool silver, so struck and sympathetic are
+             different temperatures and the wash shows its actual ratios --
+             the octave partner bright, the twelfth dimmer, the background
+             a shade over rest. */
+          const w = a;
+          ctx.strokeStyle = 'rgb(' + Math.round(93 + w * 123) + ',' + Math.round(87 + w * 118) + ',' + Math.round(73 + w * 103) + ')';
+          ctx.shadowColor = '#d8cba8';
+          ctx.shadowBlur = VZ_GLOW * 14 * w;
         } else {
-          ctx.strokeStyle = sym ? '#96907d' : '#8f8878';
+          ctx.strokeStyle = '#8f8878';
           ctx.shadowBlur = 0;
         }
         ctx.stroke();
@@ -306,7 +320,7 @@ function VizCard() {
         }
 
         const mag = Math.hypot(sx, sy);
-        railPts.push({ x: tipX + (sx / mag) * gap, y: tipY - (sy / mag) * gap, w: sym ? 0 : active });
+        railPts.push({ x: tipX + (sx / mag) * gap, y: tipY - (sy / mag) * gap, w: sym ? 0 : active, sw: sym ? a : 0 });
       }
 
       /* the pickup rail (bridge, for the CP-70) beyond the tips */
@@ -323,6 +337,11 @@ function VizCard() {
           ctx.fillStyle = 'rgb(' + Math.round(122 + w * 108) + ',' + Math.round(106 + w * 101) + ',' + Math.round(68 + w * 74) + ')';
           ctx.shadowColor = '#caa45e';
           ctx.shadowBlur = 10 * w;
+        } else if (r.sw > 0) {
+          const w = r.sw;
+          ctx.fillStyle = 'rgb(' + Math.round(122 + w * 94) + ',' + Math.round(106 + w * 99) + ',' + Math.round(68 + w * 108) + ')';
+          ctx.shadowColor = '#d8cba8';
+          ctx.shadowBlur = 7 * w;
         } else {
           ctx.fillStyle = '#7a6a44';
           ctx.shadowBlur = 0;

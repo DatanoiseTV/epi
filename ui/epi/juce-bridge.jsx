@@ -202,7 +202,13 @@
       chord.forEach((i) => { mockKeys[i >> 5] |= (1 << (i & 31)); });
       for (let i = 0; i < 88; i++) {
         const near = 1 - i / 87;
-        const own = chord.includes(i) ? 1 : 0.05 + 0.10 * Math.abs(Math.sin(i * 1.7 + t));
+        /* The measured sympathetic hierarchy at full BODY: octave partner
+           -19 dB under the struck string, twelfth -26 dB, everything else
+           a -38 dB wash. The mock shows the ratios the engine produces. */
+        let own = 0.012 + 0.006 * Math.abs(Math.sin(i * 1.7 + t));
+        if (chord.includes(i)) own = 1;
+        else if (chord.includes(i - 12)) own = 0.11;
+        else if (chord.includes(i - 19)) own = 0.05;
         harp.push(env * own * (0.06 + 0.94 * near * near) * 3000);
       }
 
