@@ -592,6 +592,14 @@ static void sectionG()
     // is the same fact as A5 seen broadband, and the same underlying cause: a
     // bass tine swings across the curved part of the field and a treble tine
     // does not.
+    //
+    // Where the remaining distance lives, measured: at 0.3 s a hard A1's
+    // H2 rides ABOVE its fundamental and H3 is healthy, but H6 sits at
+    // -46 dB where the measured centroid implies -25 to -30 -- the harmonic
+    // ladder falls too fast with order. A real bass note's sizzle is H6-H15,
+    // and those come from the pole's sharp features (the flat's edge, the
+    // wedge) which the field map smooths over far off-axis. The fix is a
+    // field map with honest far structure, not a gain anywhere.
     {
         const auto& lo = render (33, kHard, 2.0);          // A1, 55 Hz
         const auto& hi = render (kUpper.midi, kHard, 2.0); // E5, 659 Hz
