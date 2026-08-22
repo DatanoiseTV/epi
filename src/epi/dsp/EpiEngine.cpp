@@ -292,7 +292,14 @@ ClavinetVoice::Config EpiEngine::clavConfig (const EngineParams& p) const
     // The tangent's rest distance from the string: the let-off knob's honest
     // Clavinet meaning (EURASIP's d).
     c.escapementNorm = p.escapement;
-    c.damperGrip     = p.damperGrip;
+    // The yarn knob is the aging variable: the measured source says release
+    // is short "with an instrument in mint condition, with an effective
+    // yarn damper", so the shared default (0.6) must mean mint-ish here --
+    // x^0.32 lands it at 0.85, where the release is the brief thup with a
+    // hint of the three-semitone drop, and the bottom of the knob still
+    // reaches compressed old wool with the drop hanging out, as on an aged
+    // instrument.
+    c.damperGrip     = std::pow (std::clamp (static_cast<double> (p.damperGrip), 0.0, 1.0), 0.32);
     // The shared knobs' DEFAULTS must land on the voice's calibrated
     // operating points (gap 0.5, damp trim 0.5), or the default patch
     // plays a different instrument than the one the suite verified --
