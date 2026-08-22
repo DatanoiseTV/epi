@@ -50,3 +50,16 @@ target_include_directories(epi_wurli_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_features(epi_wurli_tests PRIVATE cxx_std_20)
 add_test(NAME epi_wurli COMMAND epi_wurli_tests)
 set_tests_properties(epi_wurli PROPERTIES TIMEOUT 900)
+
+# ---------------------------------------------------------------------------
+# Epi Clavinet D6 reference rows. Struck-and-held string + twin bar pickups +
+# tone rockers and preamp, measured against docs/clavinet-implementation-plan.md
+# section 8. Framework-free and engine-free: it drives ClavinetVoice and the
+# ClavinetChain classes directly, so it builds with no JUCE and runs before
+# the engine integration exists.
+# ---------------------------------------------------------------------------
+add_executable(epi_clavinet_tests test_epi_clavinet.cpp)
+target_include_directories(epi_clavinet_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_features(epi_clavinet_tests PRIVATE cxx_std_20)
+add_test(NAME epi_clavinet COMMAND epi_clavinet_tests)
+set_tests_properties(epi_clavinet PROPERTIES TIMEOUT 900)
