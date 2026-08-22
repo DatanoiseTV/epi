@@ -154,6 +154,7 @@ void EpiEngine::reset()
     room.reset();
     pedalDown = false;
     pedalAmount = 0.0;
+    unaCorda = false;
     coil.reset();
     decimL.reset();
     decimR.reset();
@@ -262,6 +263,7 @@ GrandVoice::Config EpiEngine::grandConfig (const EngineParams& p) const
     c.dampTrim       = p.resDamp;
     c.detuneCents    = static_cast<double> (p.tuneCents)
                      + 100.0 * static_cast<double> (bendSemis);
+    c.unaCorda       = unaCorda;
     return c;
 }
 
@@ -362,6 +364,20 @@ void EpiEngine::handleEvent (const NoteEvent& e, const EngineParams& p)
         case NoteEvent::sustainOff: setPedalAmount (0.0); break;
         case NoteEvent::sustain:
             setPedalAmount (static_cast<double> (e.velocity));
+            break;
+
+        case NoteEvent::sostenuto:
+        {
+            // The piano rule: only the keys down at the moment the pedal
+            // falls are caught; releasing it frees them all.
+            const bool down = e.velocity > 0.5f;
+            for (int i = 0; i < kNumTines; ++i)
+                grand[static_cast<std::size_t> (i)].setSostenuto (down && keyDown[i]);
+            break;
+        }
+
+        case NoteEvent::soft:
+            unaCorda = e.velocity > 0.5f;
             break;
     }
 }

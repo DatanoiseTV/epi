@@ -152,6 +152,12 @@ void EpiAudioProcessor::collectEvents (juce::MidiBuffer& midi)
             events.push_back ({ t, epi::NoteEvent::noteOff, m.getNoteNumber(), 0.0f });
         else if (m.isAllNotesOff() || m.isAllSoundOff())
             events.push_back ({ t, epi::NoteEvent::allNotesOff, 0, 0.0f });
+        else if (m.isController() && m.getControllerNumber() == 66)
+            events.push_back ({ t, epi::NoteEvent::sostenuto, 0,
+                                m.getControllerValue() >= 64 ? 1.0f : 0.0f });
+        else if (m.isController() && m.getControllerNumber() == 67)
+            events.push_back ({ t, epi::NoteEvent::soft, 0,
+                                m.getControllerValue() >= 64 ? 1.0f : 0.0f });
         else if (m.isController() && m.getControllerNumber() == 64)
         {
             // The full CC64 value, not the on/off half: the damper felt is a

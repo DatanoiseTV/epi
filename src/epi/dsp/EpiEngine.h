@@ -109,7 +109,11 @@ struct NoteEvent
 {
     // sustain carries a continuous CC64 value in `velocity`: the damper is
     // a contact term, so half-pedal is a physical statement, not a switch.
-    enum Type { noteOn, noteOff, allNotesOff, sustainOn, sustainOff, sustain };
+    // sostenuto latches the keys held at press (grand only -- the electrics
+    // never had the middle pedal); soft is the una corda shift, also the
+    // grand's. Both carry on/off in `velocity` (>0.5 = down).
+    enum Type { noteOn, noteOff, allNotesOff, sustainOn, sustainOff, sustain,
+                sostenuto, soft };
     int   offset   = 0;
     Type  type     = noteOn;
     int   note     = 60;
@@ -326,6 +330,7 @@ private:
     Room room;
     float lastSpaceSize = -1.0f;
 
+    bool   unaCorda    = false;   // CC67, grand only
     bool   pedalDown   = false;   // engaged at all -- gates the sympathetic path
     double pedalAmount = 0.0;     // continuous CC64, 0 = up, 1 = fully down
 
