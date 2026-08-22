@@ -613,27 +613,6 @@ public:
         // reuse the same hermite path reconstruction as the coil, and both
         // report a zero rest so the engine's operating-point bookkeeping
         // stays exact.
-        if (trans == 0 && ! matFerro)
-        {
-            // A non-ferromagnetic tine does not magnetise, so it writes
-            // nothing into the coil's flux -- the instrument is silent
-            // through a magnetic pickup, exactly as a real bronze tine
-            // would be. The tine itself keeps swinging (the viz shows it);
-            // the panel explains the silence. Rest is zero so the engine's
-            // operating-point bookkeeping stays exact.
-            satRestVal = 0.0;
-            for (int k = 0; k < kOver; ++k) fluxOut[k] = 0.0;
-            vHist[0] = vHist[1]; vHist[1] = vHist[2]; vHist[2] = vNow;
-            hHist[0] = hHist[1]; hHist[1] = hHist[2]; hHist[2] = hNow;
-            lastTipV = vNow; lastTipH = hNow;
-            if (--traceCount <= 0)
-            {
-                traceCount = traceDecim;
-                traceIdx = (traceIdx + 1) & (kTraceLen - 1);
-                trace[traceIdx] = static_cast<float> (vNow);
-            }
-            return;
-        }
         if (trans == 2)
         {
             const double gE = std::max (0.6e-3, staticGap);
@@ -745,6 +724,16 @@ public:
             lastTipV = vNow;
             lastTipH = hNow;
 
+
+            // A bare conductor speaks faintly through eddy currents; a
+            // ferromagnet in full; an insulator not at all. Scaled about the
+            // rest point so the engine's operating-point bookkeeping holds.
+            if (magCouple != 1.0)
+            {
+                const double r0 = satRestVal;
+                for (int k = 0; k < kOver; ++k)
+                    fluxOut[k] = r0 + (fluxOut[k] - r0) * magCouple;
+            }
             if (--traceCount <= 0)
             {
                 traceCount = traceDecim;
@@ -789,6 +778,16 @@ public:
             fluxOut[k] = satOn ? saturate (phi) : phi;
         }
 
+
+        // A bare conductor speaks faintly through eddy currents; a
+        // ferromagnet in full; an insulator not at all. Scaled about the
+        // rest point so the engine's operating-point bookkeeping holds.
+        if (magCouple != 1.0)
+        {
+            const double r0 = satRestVal;
+            for (int k = 0; k < kOver; ++k)
+                fluxOut[k] = r0 + (fluxOut[k] - r0) * magCouple;
+        }
         vHist[0] = vHist[1]; vHist[1] = vHist[2]; vHist[2] = vNow;
         hHist[0] = hHist[1]; hHist[1] = hHist[2]; hHist[2] = hNow;
 
@@ -930,7 +929,7 @@ private:
         // strike and drives the field nonlinearity harder, which is
         // audible growl, not a filter.
         const Material& mat = kMaterials[std::clamp (static_cast<int> (cfg.material), 0, kNumMaterials - 1)];
-        matFerro = mat.ferro || static_cast<int> (cfg.material) == 0;
+        magCouple = magneticCoupling (mat);
         tineLength = CantileverModes::lengthForFrequency (f0Cut, radius, mat) * geoLen;
         const double area = kPiD * radius * radius;
         const double modalMass = std::max (1.0e-8, mat.density * area * tineLength * 0.25);
@@ -1645,7 +1644,7 @@ private:
     double geoLen = 1.0, geoDia = 1.0;      // the workshop's trims
     // Resolved transducer: 0 magnetic, 2 electro, 3 contact (native folds in).
     int trans = 0;
-    bool matFerro = true;   // the selected metal is visible to a magnetic pickup
+    double magCouple = 1.0;   // ferro = 1; bare conductor = faint eddy signal
     double shapeContact[kNumModes] {};
     double cfHist[3] {};
     static constexpr double kElectroOut = 2.5e-2;   // level-matched by probe

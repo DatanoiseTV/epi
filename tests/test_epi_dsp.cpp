@@ -645,16 +645,26 @@ static void testMaterialIsPhysicsNotAPreset()
         CHECK (std::abs (cents) < 25.0, "material %d detunes C4 by %.1f cents", m, cents);
     }
 
-    // The gate: bronze through the magnetic pickup is silence with the tine
-    // demonstrably swinging; through the contact pickup it is a note.
+    // The coupling: bronze through the magnetic pickup is the faint eddy
+    // signal of a bare conductor -- present, and 25 to 45 dB under steel,
+    // the bronze-acoustic-string fact -- while the contact pickup hears it
+    // in full. Titanium, a famously poor conductor, sits far fainter still.
     {
         RhodesVoice::Config cfg;
-        cfg.material = 2.0; cfg.transducer = 0.0;
+        cfg.transducer = 0.0;
+        const auto rs = render (57, 0.8, cfg, pu, 0.6);   // steel reference
+        cfg.material = 2.0;
         const auto rm = render (57, 0.8, cfg, pu, 0.6);
         CHECK (rm.tipPeakMm > 0.01, "bronze tine did not swing");
-        CHECK (rm.fluxPeak == 0.0,
-               "bronze wrote %.3e into a magnetic coil; it must write nothing", rm.fluxPeak);
-        cfg.transducer = 3.0;
+        const double rel = 20.0 * std::log10 (std::max (1.0e-12, rm.fluxPeak)
+                                            / std::max (1.0e-12, rs.fluxPeak));
+        CHECK (rel > -45.0 && rel < -25.0,
+               "bronze eddy signal is %.1f dB under steel; the fact says 25 to 45", -rel);
+        cfg.material = 4.0;   // titanium
+        const auto rt = render (57, 0.8, cfg, pu, 0.6);
+        CHECK (rt.fluxPeak < rm.fluxPeak * 0.2,
+               "titanium (a poor conductor) should sit far under bronze in a coil");
+        cfg.material = 2.0; cfg.transducer = 3.0;
         const auto rc = render (57, 0.8, cfg, pu, 0.6);
         CHECK (rc.fluxPeak > 0.0, "bronze through the contact pickup is silent and should not be");
     }

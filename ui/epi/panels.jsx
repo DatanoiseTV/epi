@@ -41,7 +41,9 @@ function MaterialRow({ inst }) {
   let deaf = null;
   const magnetic = inst === 0 ? tr <= 1 : tr === 0;
   const electro  = inst === 2 ? (tr === 1 || tr === 2) : tr === 2;
-  if (magnetic && !ferro) deaf = 'a ' + MATERIALS[mi].toLowerCase() + ' resonator is invisible to a magnetic pickup';
+  if (magnetic && !ferro) deaf = cond
+    ? 'a ' + MATERIALS[mi].toLowerCase() + ' resonator reaches a magnetic pickup only as a faint eddy signal'
+    : 'an insulator is silent through a magnetic pickup';
   else if (electro && !cond) deaf = MATERIALS[mi].toLowerCase() + ' cannot be an electrostatic plate';
   return (
     <div className="matrow">

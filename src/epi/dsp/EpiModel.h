@@ -42,8 +42,9 @@ struct Material
     float youngs;    // Pa
     float density;   // kg/m^3
     float lossEta;   // dimensionless internal loss factor
-    bool  ferro = true;      // ferromagnetic: visible to a magnetic pickup
+    bool  ferro = true;      // ferromagnetic: fully visible to a magnetic pickup
     bool  conductive = true; // conductive: usable as an electrostatic plate
+    float sigmaRel = 0.1f;   // electrical conductivity relative to copper
 };
 
 // Spring steel / music wire: the Rhodes tine and the Wurlitzer reed are both
@@ -67,16 +68,29 @@ inline constexpr Material kMusicWire   { 200.0e9f, 7850.0f, 1.5e-4f };
 // certified.
 // ---------------------------------------------------------------------------
 inline constexpr Material kMaterials[] = {
-    { 200.0e9f,  7850.0f, 1.5e-4f, true,  true  },  // 0 music wire (stock)
-    { 200.0e9f,  7800.0f, 3.0e-4f, true,  true  },  // 1 stainless (ferritic 430)
-    { 110.0e9f,  8860.0f, 5.0e-4f, false, true  },  // 2 phosphor bronze
-    { 100.0e9f,  8500.0f, 8.0e-4f, false, true  },  // 3 brass
-    { 114.0e9f,  4430.0f, 2.0e-4f, false, true  },  // 4 titanium Ti-6Al-4V
-    {  69.0e9f,  2700.0f, 1.0e-3f, false, true  },  // 5 aluminium
-    { 411.0e9f, 19300.0f, 3.0e-4f, false, true  },  // 6 tungsten
-    {   4.0e9f,  1140.0f, 2.0e-2f, false, false },  // 7 nylon
+    { 200.0e9f,  7850.0f, 1.5e-4f, true,  true,  0.10f },  // 0 music wire (stock)
+    { 200.0e9f,  7800.0f, 3.0e-4f, true,  true,  0.03f },  // 1 stainless (ferritic 430)
+    { 110.0e9f,  8860.0f, 5.0e-4f, false, true,  0.15f },  // 2 phosphor bronze
+    { 100.0e9f,  8500.0f, 8.0e-4f, false, true,  0.28f },  // 3 brass
+    { 114.0e9f,  4430.0f, 2.0e-4f, false, true,  0.01f },  // 4 titanium Ti-6Al-4V
+    {  69.0e9f,  2700.0f, 1.0e-3f, false, true,  0.61f },  // 5 aluminium
+    { 411.0e9f, 19300.0f, 3.0e-4f, false, true,  0.31f },  // 6 tungsten
+    {   4.0e9f,  1140.0f, 2.0e-2f, false, false, 0.0f  },  // 7 nylon
 };
 inline constexpr int kNumMaterials = 8;
+
+// What a magnetic pickup hears from a material: a ferromagnet couples in
+// full; a bare CONDUCTOR still speaks faintly through the eddy currents its
+// motion drives in the pole's field -- the reason bronze acoustic strings
+// are nearly-but-not-quite silent on a magnetic soundhole pickup. Order-of-
+// magnitude coupling scaled by conductivity: aluminium lands near -25 dB
+// against steel, bronze near -37, titanium (a famously poor conductor) is
+// effectively gone. An insulator is exactly gone.
+inline double magneticCoupling (const Material& m)
+{
+    if (m.ferro) return 1.0;
+    return 0.092 * static_cast<double> (m.sigmaRel);
+}
 
 // A measured T60 is a clamp-limited number: steel's internal loss is
 // negligible against what the mount takes (the comment above), so the

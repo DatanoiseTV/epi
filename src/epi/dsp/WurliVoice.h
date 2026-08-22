@@ -513,12 +513,10 @@ public:
             // which law is looking.
             if (trans == 2)
                 dcOut[k] = matCond ? deltaCPf (vv) * outMod : 0.0;
-            else if (trans == 0 && ! matFerro)
-                dcOut[k] = 0.0;
             else if (trans == 0)
                 dcOut[k] = (field != nullptr
                              ? (field->flux (static_cast<float> (kMagOffset + vv), kMagGap) - magRest)
-                             : 0.0) * kMagOut * outMod;
+                             : 0.0) * kMagOut * outMod * magCoupleW;
             else
                 dcOut[k] = kContactOut
                          * hermite (cfHist[0], cfHist[1], cfHist[2], cfNow, t) * outMod;
@@ -735,6 +733,7 @@ private:
             const Material& mat = kMaterials[std::clamp (static_cast<int> (cfg.material), 0, kNumMaterials - 1)];
             matFerro = mat.ferro;
             matCond  = mat.conductive;
+            magCoupleW = magneticCoupling (mat);
             sys.setMode (0, reed.f0, materialT60 (2.1985 * q0 / reed.f0, reed.f0, mat, kSpringSteel.lossEta), modalMass);
             sys.setMode (1, f2, materialT60 (0.040, f2, mat, kSpringSteel.lossEta), modalMass);
             sys.setMode (2, f3, materialT60 (0.040, f3, mat, kSpringSteel.lossEta), modalMass);
@@ -936,6 +935,7 @@ private:
     int controlCounter = 0;
     bool sounding = false, held = false, reduced = false, configured = false;
     bool matFerro = true, matCond = true;
+    double magCoupleW = 1.0;
 };
 
 } // namespace epi

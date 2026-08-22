@@ -309,7 +309,7 @@ public:
                     os[k] = (field != nullptr
                               ? (field->flux (static_cast<float> (kMagOffP + vv),
                                               static_cast<float> (pgap)) - magRestP)
-                              : 0.0) * kMagOutP;
+                              : 0.0) * kMagOutP * magScaleP;
                 else
                 {
                     vv = std::min (vv, 0.85 * pgap);
@@ -628,15 +628,17 @@ private:
         {
             const int t = static_cast<int> (cfg.transducer + 0.5);
             trans = (t == 3) ? 1 : t;       // contact IS the piezo here
-            // Transducer facts of the selected material: a bronze string is
-            // invisible to a magnetic pickup, and nylon cannot be the moving
-            // plate of an electrostatic one. The piezo reads force and does
-            // not care. The string keeps vibrating either way -- silence
-            // through the wrong pickup is the physics, and the panel says so.
+            // Transducer facts of the selected material: a bare-conductor
+            // string speaks only faintly through a magnetic pickup (eddy
+            // currents -- the bronze-acoustic-string fact), and nylon cannot
+            // be the moving plate of an electrostatic one at all. The piezo
+            // reads force and does not care. The string keeps vibrating
+            // either way, and the panel says what the pickup can hear.
             {
                 const Material& mm = kMaterials[std::clamp (static_cast<int> (cfg.material), 0, kNumMaterials - 1)];
-                if ((trans == 0 && ! mm.ferro) || (trans == 2 && ! mm.conductive))
-                    trans = -1;   // transduce nothing
+                magScaleP = magneticCoupling (mm);
+                if (trans == 2 && ! mm.conductive)
+                    trans = -1;   // an insulator transduces nothing here
             }
             const double xp = 0.08 + 0.42 * std::clamp (cfg.pickupPosNorm, 0.0, 1.0);
             pgap = 0.8e-3 + 3.2e-3 * std::clamp (cfg.gapNorm, 0.0, 1.0);
@@ -759,6 +761,7 @@ private:
     double damperFactor = 1.0;
     double damperEff = 1.0;
     double pedalAmt = 0.0;
+    double magScaleP = 1.0;   // eddy-scaled magnetic coupling of the material
     double sinceStrike = 1.0e9;
     double peakEnergy = 1.0e-30;
     int controlCounter = 0;
