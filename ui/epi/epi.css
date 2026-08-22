@@ -422,7 +422,7 @@ html, body {
 .matrow .note.warn { color: #b08d4a; }
 
 /* Clavinet rockers: four latching switches in a row. */
-.wsrockers { display: flex; gap: 6px; justify-content: center; }
+.wsrockers { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; }
 .wsrocker { padding: 6px 10px; font-size: 9px; letter-spacing: .12em;
   background: #17140f; color: var(--mute); border: 1px solid #2c271d;
   border-radius: 4px; cursor: pointer; }
