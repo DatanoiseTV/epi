@@ -555,6 +555,36 @@ static void sectionBark()
     row ("V2", "register fall is monotonic", "E3 > Db4 > Db5",
          fmt2 ("%.1f > %.1f > ...", bE3, bDb4),
          (bE3 > bDb4 && bDb4 > bDb5) ? Verdict::pass : Verdict::fail);
+
+    // V3: the register LEVEL response. The bark rows are ratios, so they
+    // cannot see the absolute per-note level -- and the y-scale law does
+    // double duty (swing into the nonlinearity AND volts per metre), so a
+    // bark refit once dragged the unfenced C4-A4 region 18-22 dB below A2
+    // at the engine bench while every V row still passed. A factory-voiced
+    // 200A plays evenly across the compass; the even-loudness output
+    // normalisation in WurliVoice.h (outSens) owns that, and this row fences
+    // it: RMS of C4 and A4 relative to A2 at the bench velocity, bounds a
+    // wide +/-5 dB around the voiced response so calibration can breathe
+    // but an order-of-magnitude sag can never ship silently again.
+    {
+        auto benchRms = [] (int note)
+        {
+            RenderOpts o; o.vel = 0.7; o.seconds = 2.0;
+            const auto x = renderWurli (note, o);
+            double acc = 0.0;
+            const std::size_t s0 = static_cast<std::size_t> (0.1 * kFs);
+            for (std::size_t i = s0; i < x.size(); ++i) acc += x[i] * x[i];
+            return 20.0 * std::log10 (std::max (1.0e-15,
+                       std::sqrt (acc / static_cast<double> (x.size() - s0))));
+        };
+        const double a2 = benchRms (45);
+        const double c4 = benchRms (60) - a2;
+        const double a4 = benchRms (69) - a2;
+        row ("V3", "C4 level rel A2 (even voicing)", "-4 dB +/-5",
+             fmt ("%.1f dB", c4), within (c4, -9.0, 1.0));
+        row ("V3", "A4 level rel A2 (even voicing)", "-3 dB +/-5",
+             fmt ("%.1f dB", a4), within (a4, -8.0, 2.0));
+    }
 }
 
 // ===========================================================================

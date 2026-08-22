@@ -531,7 +531,7 @@ public:
     // with a synthetic trajectory.
     double deltaCPf (double tipMetres) const
     {
-        return c0 * capLaw (tipMetres * invGap + centring) - dcRest;
+        return (c0 * capLaw (tipMetres * invGap + centring) - dcRest) * outSens;
     }
 
     // The capacitance modulation law, bounded through the plate plane.
@@ -859,6 +859,23 @@ private:
         centring = std::clamp (cfg.pickupCentring, -0.5, 0.5);
         dcRest = c0 * capLaw (centring);
 
+        // The y-scale law does DOUBLE DUTY unless corrected: y sets how deep
+        // the swing drives the nonlinearity (the bark register law, which is
+        // the V2 measurement), but the same factor is the small-signal
+        // volts-per-metre sensitivity, so the fitted bark fall silently
+        // dragged the mid and treble LEVEL down an order of magnitude --
+        // measured at the engine bench as a 12-14 dB C4/A4 sag against the
+        // tine where a factory-voiced 200A plays evenly across the compass.
+        // A real tech voices gap and pickup trim together for even loudness;
+        // the bark graduation lives in the dimensionless swing, the loudness
+        // voicing in the output weight. So the transduced output is
+        // normalised back to the bass shelf's sensitivity: y keeps the
+        // fitted register law (every bark and tuning row is a ratio and does
+        // not move), and the per-note level is even, leaving the audible
+        // register shape to the shared highpass and c0 -- the circuit's own
+        // graduation. Owned by the V3 level-fence row.
+        outSens = yScaleFor (0.0) / yScaleFor (reg);
+
         {
             const int t = static_cast<int> (cfg.transducer + 0.5);
             trans = (t == 1) ? 2 : t;   // native IS the electrostatic law
@@ -910,7 +927,7 @@ private:
         cfHist[0] = cfHist[1]; cfHist[1] = cfHist[2]; cfHist[2] = cf;
         return cf;
     }
-    double c0 = 3.0, invGap = 2000.0, centring = 0.0, dcRest = 0.0;
+    double c0 = 3.0, invGap = 2000.0, centring = 0.0, dcRest = 0.0, outSens = 1.0;
     double damperFactor = 1.0;
     double damperEff = 1.0;
     double pedalAmt = 0.0;
