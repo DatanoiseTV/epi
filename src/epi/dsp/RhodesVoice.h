@@ -1242,7 +1242,16 @@ private:
         // to the other.
         const double phiStrike = shapeMode[0][kStrike];
         const double effTineMass = modalMass / std::max (1.0e-6, phiStrike * phiStrike);
-        hammerCfg.mass = std::clamp (0.30 * effTineMass, 0.00060, 0.0060)
+        // The ceiling is graduated, because the instrument's hammers are:
+        // heavier arms in the bass, lighter toward the treble. A flat 6 gram
+        // ceiling starved the bottom octaves -- a bass strike point sits so
+        // close to the clamp that its effective mass runs to a kilogram, the
+        // hammer only delivers its bounce impulse, and that impulse scales
+        // with the hammer's own mass. Measured: the flat cap held the whole
+        // compass inside a 4x swing span where Shear & Wright's tracking
+        // spans more than an order of magnitude.
+        const double capKg = 0.012 - 0.008 * reg;
+        hammerCfg.mass = std::clamp (0.30 * effTineMass, 0.00060, capKg)
                        * (0.6 + 0.8 * cfg.hammerMassNorm);
         hammerCfg.alpha     = 1.85 + 0.5 * cfg.hammerHardness;
         // Deliberately NOT graduated across the keyboard. A Rhodes hammer tip

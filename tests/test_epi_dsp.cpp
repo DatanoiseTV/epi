@@ -565,16 +565,15 @@ static void testGrowlBelongsToTheBass()
            "playing harder did not add growl in the bass: %.1f dB loud vs %.1f dB soft",
            bassLoud, bassSoft);
 
-    // The register half of the same behaviour is not right yet, and it is a
-    // consequence of the contact problem below rather than a separate one.
-    // Keeping the treble collision in a sane regime meant graduating the
-    // hammer against the tine's effective mass, and that flattened the swing
-    // across the compass -- every note now moves about the same couple of
-    // millimetres, where a real bass tine moves several times further than a
-    // mid one. Growl is a function of how far the tine runs off the pole face,
-    // so an even swing gives an even growl. It comes back when the contact is
-    // quadratised and the hammer can be graduated the way the instrument does
-    // it, by mass alone.
+    // Mostly recovered by the mass-graduated hammer ceiling: the ordering is
+    // now correct (bass above mid) and the swing spans the compass, but the
+    // margin sits under 2 dB where "markedly richer" wants 3. The remaining
+    // distance is a genuine ceiling, not a tuning knob: pushing the bass
+    // hammer past ~12 g effective drives the tine beyond ~5 mm, where the
+    // stretch nonlinearity pulls the note tens of cents sharp and the swing
+    // runs off the pole face -- growl against swing is non-monotone and 12 g
+    // sits at its peak. More growl needs a field map that stays curved
+    // further off-axis, not a heavier hammer.
     KNOWN_GAP (bassLoud - midLoud > 3.0,
                "the bass is not growlier than the middle: %.1f dB vs %.1f dB",
                bassLoud, midLoud);
