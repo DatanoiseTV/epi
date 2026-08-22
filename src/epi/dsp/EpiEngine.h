@@ -102,7 +102,9 @@ struct EngineParams
 // Sample-accurate note events, already flattened from MIDI by the caller.
 struct NoteEvent
 {
-    enum Type { noteOn, noteOff, allNotesOff, sustainOn, sustainOff };
+    // sustain carries a continuous CC64 value in `velocity`: the damper is
+    // a contact term, so half-pedal is a physical statement, not a switch.
+    enum Type { noteOn, noteOff, allNotesOff, sustainOn, sustainOff, sustain };
     int   offset   = 0;
     Type  type     = noteOn;
     int   note     = 60;
@@ -304,7 +306,17 @@ private:
     Room room;
     float lastSpaceSize = -1.0f;
 
-    bool pedalDown = false;
+    bool   pedalDown   = false;   // engaged at all -- gates the sympathetic path
+    double pedalAmount = 0.0;     // continuous CC64, 0 = up, 1 = fully down
+
+    void setPedalAmount (double a)
+    {
+        pedalAmount = std::clamp (a, 0.0, 1.0);
+        pedalDown = pedalAmount > 0.01;
+        for (auto& v : tines) v.setPedal (pedalAmount);
+        for (auto& v : cp70)  v.setPedal (pedalAmount);
+        for (auto& v : wurli) v.setPedal (pedalAmount);
+    }
     float bendSemis = 0.0f;
     float expression = 1.0f;
     std::uint32_t seed = 0x2545f491u;

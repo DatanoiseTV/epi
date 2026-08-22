@@ -155,7 +155,8 @@ public:
     {
         for (auto& s : str) { s.sys.clear(); s.sys.setNumModes (0); }
         hammer.reset();
-        sounding = held = pedal = false;
+        sounding = held = false;
+        pedalAmt = 0.0; damperEff = damperFactor;
         controlCounter = 0;
         sinceStrike = 1.0e9;
         peakEnergy = 1.0e-30;
@@ -203,7 +204,19 @@ public:
     }
 
     void noteOff() { held = false; }
-    void setPedal (bool down) { pedal = down; }
+    // Half-pedal: CC64 arrives as a continuous value, and the damper is a
+    // contact damping term, so felt pressure scales the DECAY RATE. Pedal
+    // travel lifts the rail linearly, which reduces the felt COMPRESSION
+    // linearly -- but felt pushes back as compression^2.5 (the same
+    // hammer-felt exponent class as Chaigne-Askenfelt), and without that
+    // curve the whole audible half-pedal zone crushes into the last
+    // quarter of travel. Fully down the exponent is zero and the damper
+    // vanishes; fully up it is the measured grip.
+    void setPedal (double amount)
+    {
+        pedalAmt = std::clamp (amount, 0.0, 1.0);
+        damperEff = std::pow (damperFactor, std::pow (1.0 - pedalAmt, 2.5));
+    }
 
     bool isSounding() const { return sounding; }
     bool isRinging() const { return sounding || hammer.isActive(); }
@@ -359,11 +372,11 @@ public:
         // rings free, exactly as on an acoustic grand. Key-up above that line
         // changes nothing; the note ends by energy retirement.
         if (note > 93) return;
-        if (held || pedal) return;
+        if (held || pedalAmt >= 1.0) return;
         for (int s = 0; s < numStrings; ++s)
             for (int m = 0; m < str[s].sys.numModes(); ++m)
                 if (str[s].sys.displacement (m) != 0.0)
-                    str[s].sys.scaleMode (m, damperFactor);
+                    str[s].sys.scaleMode (m, damperEff);
     }
 
 private:
@@ -622,6 +635,7 @@ private:
         const double grip = std::clamp (cfg.damperGrip, 0.0, 1.0);
         const double damperT60 = (0.30 - 0.24 * grip) * (1.0 + 1.4 * (1.0 - reg));
         damperFactor = std::exp (-3.0 * std::log (10.0) / (damperT60 * fs));
+        damperEff = std::pow (damperFactor, std::pow (1.0 - pedalAmt, 2.5));
 
         configured = true;
     }
@@ -690,10 +704,12 @@ private:
     HuntCrossleyHammer::Config hammerCfg;
     double alphaOfMode[2][kMaxModes] {};
     double damperFactor = 1.0;
+    double damperEff = 1.0;
+    double pedalAmt = 0.0;
     double sinceStrike = 1.0e9;
     double peakEnergy = 1.0e-30;
     int controlCounter = 0;
-    bool sounding = false, held = false, pedal = false, configured = false;
+    bool sounding = false, held = false, configured = false;
 };
 
 } // namespace epi

@@ -135,6 +135,7 @@ void EpiEngine::reset()
     action.reset();
     room.reset();
     pedalDown = false;
+    pedalAmount = 0.0;
     coil.reset();
     decimL.reset();
     decimR.reset();
@@ -250,9 +251,9 @@ void EpiEngine::handleEvent (const NoteEvent& e, const EngineParams& p)
                 rebuildTine (i, rhodesConfig (p));
                 tineCfgVersion[i] = cfgVersion;
             }
-            tines[i].setPedal (pedalDown);
-            cp70[i].setPedal (pedalDown);
-            wurli[static_cast<std::size_t> (i)].setPedal (pedalDown);
+            tines[i].setPedal (pedalAmount);
+            cp70[i].setPedal (pedalAmount);
+            wurli[static_cast<std::size_t> (i)].setPedal (pedalAmount);
             if (p.instrument == 2)
             {
                 if (wurliCfgVersion[static_cast<std::size_t> (i)] != cfgVersion)
@@ -301,24 +302,16 @@ void EpiEngine::handleEvent (const NoteEvent& e, const EngineParams& p)
             // releases every key into a pedal that keeps them all ringing:
             // the hanging-notes report, verbatim. Stop means stop.
             keyDown.fill (false);
-            pedalDown = false;
-            for (auto& v : tines) { v.setPedal (false); v.noteOff(); }
-            for (auto& v : cp70)  { v.setPedal (false); v.noteOff(); }
-            for (auto& v : wurli) { v.setPedal (false); v.noteOff(); }
+            setPedalAmount (0.0);
+            for (auto& v : tines) v.noteOff();
+            for (auto& v : cp70)  v.noteOff();
+            for (auto& v : wurli) v.noteOff();
             break;
 
-        case NoteEvent::sustainOn:
-            pedalDown = true;
-            for (auto& v : tines) v.setPedal (true);
-            for (auto& v : cp70) v.setPedal (true);
-            for (auto& v : wurli) v.setPedal (true);
-            break;
-
-        case NoteEvent::sustainOff:
-            pedalDown = false;
-            for (auto& v : tines) v.setPedal (false);
-            for (auto& v : cp70) v.setPedal (false);
-            for (auto& v : wurli) v.setPedal (false);
+        case NoteEvent::sustainOn:  setPedalAmount (1.0); break;
+        case NoteEvent::sustainOff: setPedalAmount (0.0); break;
+        case NoteEvent::sustain:
+            setPedalAmount (static_cast<double> (e.velocity));
             break;
     }
 }

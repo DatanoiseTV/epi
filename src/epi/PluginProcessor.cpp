@@ -151,10 +151,14 @@ void EpiAudioProcessor::collectEvents (juce::MidiBuffer& midi)
             events.push_back ({ t, epi::NoteEvent::noteOff, m.getNoteNumber(), 0.0f });
         else if (m.isAllNotesOff() || m.isAllSoundOff())
             events.push_back ({ t, epi::NoteEvent::allNotesOff, 0, 0.0f });
-        else if (m.isSustainPedalOn())
-            events.push_back ({ t, epi::NoteEvent::sustainOn, 0, 0.0f });
-        else if (m.isSustainPedalOff())
-            events.push_back ({ t, epi::NoteEvent::sustainOff, 0, 0.0f });
+        else if (m.isController() && m.getControllerNumber() == 64)
+        {
+            // The full CC64 value, not the on/off half: the damper felt is a
+            // contact damping term, so pedal depth scales the decay rate and
+            // half-pedalling works the way a real damper rail does.
+            events.push_back ({ t, epi::NoteEvent::sustain, 0,
+                                static_cast<float> (m.getControllerValue()) / 127.0f });
+        }
         else if (m.isPitchWheel())
         {
             // Bend is applied at block rate; it does not need a sample-accurate

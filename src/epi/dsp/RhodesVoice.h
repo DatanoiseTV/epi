@@ -178,7 +178,8 @@ public:
         sys.clear();
         sys.setNumModes (kNumModes);
         hammer.reset();
-        sounding = held = pedal = false;
+        sounding = held = false;
+        pedalAmt = 0.0; damperEff = damperFactor;
         controlCounter = 0;
         fadeLeft = 0;
         pendingNote = -1;
@@ -333,7 +334,19 @@ public:
     }
 
     void noteOff() { held = false; }
-    void setPedal (bool down) { pedal = down; }
+    // Half-pedal: CC64 arrives as a continuous value, and the damper is a
+    // contact damping term, so felt pressure scales the DECAY RATE. Pedal
+    // travel lifts the rail linearly, which reduces the felt COMPRESSION
+    // linearly -- but felt pushes back as compression^2.5 (the same
+    // hammer-felt exponent class as Chaigne-Askenfelt), and without that
+    // curve the whole audible half-pedal zone crushes into the last
+    // quarter of travel. Fully down the exponent is zero and the damper
+    // vanishes; fully up it is the measured grip.
+    void setPedal (double amount)
+    {
+        pedalAmt = std::clamp (amount, 0.0, 1.0);
+        damperEff = std::pow (damperFactor, std::pow (1.0 - pedalAmt, 2.5));
+    }
 
     // ---- audio ------------------------------------------------------------
     // Advances the mechanics one sample and writes kOver oversampled flux
@@ -430,8 +443,8 @@ public:
         {
             glidePickup();
             sys.tick();
-            if (! held && ! pedal && sys.displacement (kV0) != 0.0)
-                sys.scaleMode (kV0, damperFactor);
+            if (! held && pedalAmt < 1.0 && sys.displacement (kV0) != 0.0)
+                sys.scaleMode (kV0, damperEff);
 
             const double vNow = sys.displacement (kV0) * shapeTipV[kV0];
             if (! std::isfinite (vNow)) { recover (fluxOut); return; }
@@ -484,7 +497,7 @@ public:
         updateStretchTerm(); EPI_CHK ("updateStretchTerm");
         sys.tick();         EPI_CHK ("sys.tick");
 
-        if (! held && ! pedal) { applyDamper(); EPI_CHK ("applyDamper"); }
+        if (! held && pedalAmt < 1.0) { applyDamper(); EPI_CHK ("applyDamper"); }
 
         if (++controlCounter >= kControlDecim)
         {
@@ -1257,6 +1270,7 @@ private:
         const double grip = std::clamp (cfg.damperGrip, 0.0, 1.0);
         const double damperT60 = (0.30 - 0.24 * grip) * (1.0 + 1.4 * (1.0 - reg));
         damperFactor = std::exp (-3.0 * std::log (10.0) / (damperT60 * fs));
+        damperEff = std::pow (damperFactor, std::pow (1.0 - pedalAmt, 2.5));
 
         // ---- pickup placement -----------------------------------------------------
         // Moved to, not jumped to.
@@ -1526,7 +1540,7 @@ private:
         for (int i = 0; i < kNumModes; ++i)
         {
             const double u = sys.displacement (i);
-            if (u != 0.0) sys.scaleMode (i, damperFactor);
+            if (u != 0.0) sys.scaleMode (i, damperEff);
         }
 
         // And the quadratised terms have to be told, because they carry their
@@ -1565,6 +1579,8 @@ private:
     double stretchEA = 0.0, stretchGain = 0.5;
     bool   jointActive = false;
     double damperFactor = 1.0;
+    double damperEff = 1.0;
+    double pedalAmt = 0.0;
     double tineLength = 0.1;
     double geoLen = 1.0, geoDia = 1.0;      // the workshop's trims
     // Resolved transducer: 0 magnetic, 2 electro, 3 contact (native folds in).
@@ -1671,7 +1687,7 @@ private:
     bool   reduced = false;
 
     int  note = 60;
-    bool sounding = false, held = false, pedal = false, configured = false;
+    bool sounding = false, held = false, configured = false;
     double lastTipV = 0.0, lastTipH = 0.0;
     double vHist[3] {}, hHist[3] {};
     float  trace[kTraceLen] {};

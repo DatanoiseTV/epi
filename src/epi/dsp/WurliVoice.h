@@ -323,7 +323,8 @@ public:
         sys.clear();
         sys.setNumModes (kReedModes);
         hammer.reset();
-        sounding = held = pedal = false;
+        sounding = held = false;
+        pedalAmt = 0.0; damperEff = damperFactor;
         controlCounter = 0;
         peakEnergy = 1.0e-30;
         beatPhase = 0.0;
@@ -401,7 +402,19 @@ public:
     }
 
     void noteOff() { held = false; }
-    void setPedal (bool down) { pedal = down; }
+    // Half-pedal: CC64 arrives as a continuous value, and the damper is a
+    // contact damping term, so felt pressure scales the DECAY RATE. Pedal
+    // travel lifts the rail linearly, which reduces the felt COMPRESSION
+    // linearly -- but felt pushes back as compression^2.5 (the same
+    // hammer-felt exponent class as Chaigne-Askenfelt), and without that
+    // curve the whole audible half-pedal zone crushes into the last
+    // quarter of travel. Fully down the exponent is zero and the damper
+    // vanishes; fully up it is the measured grip.
+    void setPedal (double amount)
+    {
+        pedalAmt = std::clamp (amount, 0.0, 1.0);
+        damperEff = std::pow (damperFactor, std::pow (1.0 - pedalAmt, 2.5));
+    }
 
     // One sample of mechanics, four subsamples of transduction. Writes kOver
     // capacitance perturbations DC_n = C0n * y/(1-y) in picofarads, relative
@@ -433,7 +446,7 @@ public:
 
         sys.tick();
 
-        if (! held && ! pedal) applyDamper();
+        if (! held && pedalAmt < 1.0) applyDamper();
 
         if (++controlCounter >= kControlDecim)
         {
@@ -661,7 +674,7 @@ private:
     {
         for (int m = 0; m < sys.numModes(); ++m)
             if (sys.displacement (m) != 0.0)
-                sys.scaleMode (m, damperFactor);
+                sys.scaleMode (m, damperEff);
     }
 
     void configure (const Config& cfg)
@@ -802,6 +815,7 @@ private:
         const double grip = std::clamp (cfg.damperGrip, 0.0, 1.0);
         const double damperT60 = (0.30 - 0.24 * grip) * (1.0 + 1.4 * (1.0 - reg));
         damperFactor = std::exp (-3.0 * std::log (10.0) / (damperT60 * fs));
+        damperEff = std::pow (damperFactor, std::pow (1.0 - pedalAmt, 2.5));
 
         // ---- transducer -------------------------------------------------
         // Per-reed rest capacitance, ~3.5 pF bass to ~2 pF treble, folded
@@ -875,10 +889,12 @@ private:
     }
     double c0 = 3.0, invGap = 2000.0, centring = 0.0, dcRest = 0.0;
     double damperFactor = 1.0;
+    double damperEff = 1.0;
+    double pedalAmt = 0.0;
     double beatDelta = 2.4, beatDepth = 0.08, beatPhase = 0.0;
     double peakEnergy = 1.0e-30;
     int controlCounter = 0;
-    bool sounding = false, held = false, pedal = false, reduced = false, configured = false;
+    bool sounding = false, held = false, reduced = false, configured = false;
 };
 
 } // namespace epi
