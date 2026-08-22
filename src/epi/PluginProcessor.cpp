@@ -259,6 +259,7 @@ juce::ValueTree EpiAudioProcessor::buildModsTree (bool always) const
     for (const auto& m : stringMods)
         if (m[0] != 1.0f || m[1] != 1.0f) { modded = true; break; }
     if (cabMods != kCabDefaults) modded = true;
+    if (micMods != kMicDefaults) modded = true;
     if (! modded && ! always) return {};
 
     juce::StringArray ls, ds, hs, gs, ws, sl, sd, cs;
@@ -279,6 +280,8 @@ juce::ValueTree EpiAudioProcessor::buildModsTree (bool always) const
         sd.add (juce::String (m[1], 6));
     }
     for (float v : cabMods) cs.add (juce::String (v, 6));
+    juce::StringArray ms;
+    for (float v : micMods) ms.add (juce::String (v, 6));
 
     juce::ValueTree mods ("TineMods");
     mods.setProperty ("len",  ls.joinIntoString (","), nullptr);
@@ -289,6 +292,7 @@ juce::ValueTree EpiAudioProcessor::buildModsTree (bool always) const
     mods.setProperty ("slen", sl.joinIntoString (","), nullptr);
     mods.setProperty ("sdia", sd.joinIntoString (","), nullptr);
     mods.setProperty ("cab",  cs.joinIntoString (","), nullptr);
+    mods.setProperty ("mic",  ms.joinIntoString (","), nullptr);
     return mods;
 }
 
@@ -301,6 +305,7 @@ void EpiAudioProcessor::applyModsTree (const juce::ValueTree& mods)
     resetPickupMods();
     resetStringMods();
     resetCabMods();
+    resetMicMods();
     if (! mods.isValid()) return;
 
     juce::StringArray ls, ds, hs, gs, ws, sl, sd, cs;
@@ -312,6 +317,8 @@ void EpiAudioProcessor::applyModsTree (const juce::ValueTree& mods)
     sl.addTokens (mods["slen"].toString(), ",", "");
     sd.addTokens (mods["sdia"].toString(), ",", "");
     cs.addTokens (mods["cab"].toString(), ",", "");
+    juce::StringArray msv;
+    msv.addTokens (mods["mic"].toString(), ",", "");
     for (int i = 0; i < epi::EpiEngine::kNumTines; ++i)
     {
         setTineMod (i,
@@ -329,6 +336,10 @@ void EpiAudioProcessor::applyModsTree (const juce::ValueTree& mods)
         setCabMod ({ cs[0].getFloatValue(), cs[1].getFloatValue(),
                      cs[2].getFloatValue(), cs[3].getFloatValue(),
                      cs[4].getFloatValue() });
+    if (msv.size() == 5)
+        setMicMod ({ msv[0].getFloatValue(), msv[1].getFloatValue(),
+                     msv[2].getFloatValue(), msv[3].getFloatValue(),
+                     msv[4].getFloatValue() });
 }
 
 void EpiAudioProcessor::snapshotCurrentParams()

@@ -296,6 +296,20 @@ public:
         for (auto& a : stR) a.z1 = a.z2 = 0.0;
     }
 
+    // A wider pair decorrelates from lower down: the cascade's base scales
+    // inversely with the spread. Unity is the calibrated pair.
+    void setSpread (double spread)
+    {
+        const double s = std::clamp (spread, 0.25, 2.0);
+        for (int i = 0; i < kStages; ++i)
+        {
+            const double fL = (kBaseHz / s) * std::pow (kStep, i);
+            const double fR = fL * std::pow (kStep, 0.45);
+            set (stL[i], fL);
+            set (stR[i], fR);
+        }
+    }
+
     void tick (double& l, double& r)
     {
         for (auto& a : stL) l = a.tick (l);

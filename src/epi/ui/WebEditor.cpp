@@ -199,6 +199,25 @@ WebEditor::WebEditor (::EpiAudioProcessor& proc)
             })
         .withEventListener (juce::Identifier { "cab_mod_reset" },
             [&proc = epiProcessor] (juce::var) { proc.resetCabMods(); })
+        .withNativeFunction (juce::Identifier { "getMicMods" },
+            [&proc = epiProcessor] (const juce::Array<juce::var>&, auto complete)
+            {
+                juce::Array<juce::var> flat;
+                for (float v : proc.getMicMods()) flat.add (juce::var (static_cast<double> (v)));
+                complete (juce::var (flat));
+            })
+        .withEventListener (juce::Identifier { "mic_mod" },
+            [&proc = epiProcessor] (juce::var payload)
+            {
+                proc.setMicMod ({
+                    static_cast<float> (static_cast<double> (payload.getProperty ("spread", 1.0))),
+                    static_cast<float> (static_cast<double> (payload.getProperty ("bias", 0.0))),
+                    static_cast<float> (static_cast<double> (payload.getProperty ("dist", 0.0))),
+                    static_cast<float> (static_cast<double> (payload.getProperty ("lvlL", 1.0))),
+                    static_cast<float> (static_cast<double> (payload.getProperty ("lvlR", 1.0))) });
+            })
+        .withEventListener (juce::Identifier { "mic_mod_reset" },
+            [&proc = epiProcessor] (juce::var) { proc.resetMicMods(); })
         .withEventListener (juce::Identifier { "ui_note" },
             [&proc = epiProcessor] (juce::var payload)
             {

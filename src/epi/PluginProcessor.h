@@ -121,9 +121,18 @@ public:
         cabMods = v;
         engine.setCabMod (v[0], v[1], v[2], v[3], v[4]);
     }
+    void setMicMod (const std::array<float, 5>& v)
+    {
+        micMods = v;
+        engine.setMicMod (v[0], v[1], v[2], v[3], v[4]);
+    }
+    void resetMicMods() { setMicMod (kMicDefaults); }
+    const std::array<float, 5>& getMicMods() const { return micMods; }
     void resetCabMods() { setCabMod (kCabDefaults); }
     const std::array<float, 5>& getCabMods() const { return cabMods; }
     static constexpr std::array<float, 5> kCabDefaults { 0.74f, 0.59f, 0.5f, 0.25f, 0.5f };
+    // spread, balance, distance, level L, level R -- the calibrated pair.
+    static constexpr std::array<float, 5> kMicDefaults { 1.0f, 0.0f, 0.0f, 1.0f, 1.0f };
 
     void pushUiNote (int note, float velocity, bool on)
     {
@@ -169,6 +178,7 @@ private:
     }();
 
     std::array<float, 5> cabMods = kCabDefaults;
+    std::array<float, 5> micMods = kMicDefaults;
 
     struct UiNote { int note; float velocity; bool on; };
     static constexpr unsigned kUiNoteCap = 64;

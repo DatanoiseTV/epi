@@ -154,7 +154,12 @@ function PickupPanel({ inst }) {
   const mm = (JuceBridge.PARAMS.pickupPos.map.to(pos) * 2).toFixed(2) + ' mm';
   if (gpiano) return (
     <div className="panel f-pickup">
-      <PHead title="Mics" meta="PAIR" />
+      <div className="phead">
+        <h2>Mics</h2>
+        <span className="hrule" />
+        <button className="wsopen" onClick={() => setShop(true)} title="Pair placement, spread and trims">STUDIO</button>
+        <span className="hmeta">PAIR</span>
+      </div>
       {/* A spaced pair over the board: bass strings left, treble right, the
           board's own interchannel phase in between. Nothing to voice -- no
           magnet, no gap, no supply. The sound is voiced at the hammer and
@@ -162,6 +167,7 @@ function PickupPanel({ inst }) {
       <div className="note">
         spaced pair · bass left, treble right · voiced at the hammer
       </div>
+      {shop && <MicStudio onClose={() => setShop(false)} />}
     </div>
   );
   if (wurli) return (

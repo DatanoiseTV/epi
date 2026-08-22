@@ -496,4 +496,91 @@ function CabinetWorkshop({ onClose }) {
   );
 }
 
-Object.assign(window, { TineWorkshop, PickupWorkshop, CabinetWorkshop });
+
+/* ============================================================
+   Mic Studio -- the grand's bench.
+   Spread scales the measured bass-left ILD line and lowers the
+   onset of the interchannel phase, balance walks the whole
+   image, distance is the lid's high-band shadow as the pair
+   backs off the rim, and the two trims are the mixer's own.
+   Defaults are exactly the calibrated pair the suite measured.
+   ============================================================ */
+const WSM_DEFAULTS = [1.0, 0.0, 0.0, 1.0, 1.0];
+const WSM_KNOBS = [
+  ['spread', 'SPREAD',   (x) => (0.25 + 1.75 * x).toFixed(2) + 'x'],
+  ['bias',   'BALANCE',  (x) => ((x - 0.5) * 10).toFixed(1) + ' dB'],
+  ['dist',   'DISTANCE', (x) => (0.3 + 2.2 * x).toFixed(1) + ' m'],
+  ['lvlL',   'MIC L',    (x) => (40 * Math.log10(0.25 + 1.75 * x) / 2).toFixed(1) + ' dB'],
+  ['lvlR',   'MIC R',    (x) => (40 * Math.log10(0.25 + 1.75 * x) / 2).toFixed(1) + ' dB'],
+];
+/* Engine units per knob: spread 0.25..2 (norm x), bias -1..1, dist 0..1,
+   levels 0.25..2. The knob stores normalised 0..1 and maps on push. */
+const wsmToEngine = (v) => ({
+  spread: 0.25 + 1.75 * v[0],
+  bias:   (v[1] - 0.5) * 2,
+  dist:   v[2],
+  lvlL:   0.25 + 1.75 * v[3],
+  lvlR:   0.25 + 1.75 * v[4],
+});
+const wsmFromEngine = (e) => [
+  (e[0] - 0.25) / 1.75,
+  e[1] / 2 + 0.5,
+  e[2],
+  (e[3] - 0.25) / 1.75,
+  (e[4] - 0.25) / 1.75,
+];
+const WSM_TEMPLATES = [
+  ['CALIBRATED', [ (1 - 0.25) / 1.75, 0.5, 0.0, (1 - 0.25) / 1.75, (1 - 0.25) / 1.75 ]],
+  ['WIDE PAIR',  [ (1.7 - 0.25) / 1.75, 0.5, 0.05, (1 - 0.25) / 1.75, (1 - 0.25) / 1.75 ]],
+  ['CLOSE LID',  [ (0.8 - 0.25) / 1.75, 0.5, 0.0, (1.1 - 0.25) / 1.75, (1.1 - 0.25) / 1.75 ]],
+  ['PAST THE RIM', [ (1.2 - 0.25) / 1.75, 0.5, 0.75, (0.9 - 0.25) / 1.75, (0.9 - 0.25) / 1.75 ]],
+];
+
+function MicStudio({ onClose }) {
+  const [v, setV] = useState(null);
+
+  useEffect(() => {
+    let alive = true;
+    try {
+      Juce.getNativeFunction('getMicMods')().then((a) => {
+        if (!alive) return;
+        const flat = a ? Array.from(a).map(Number) : [];
+        setV(flat.length === 5 ? wsmFromEngine(flat) : WSM_DEFAULTS.slice());
+      });
+    } catch (_) { setV(WSM_DEFAULTS.slice()); }
+    return () => { alive = false; };
+  }, []);
+
+  if (!v) return null;
+
+  const push = (arr) => {
+    setV(arr);
+    JuceBridge.emitNative('mic_mod', wsmToEngine(arr));
+  };
+
+  return (
+    <WsModal title="Mic Studio" onClose={onClose}
+             onReset={() => { JuceBridge.emitNative('mic_mod_reset'); setV(wsmFromEngine([1, 0, 0, 1, 1])); }}>
+      <div className="wstools">
+        <span className="wstoollabel">PLACEMENTS</span>
+        {WSM_TEMPLATES.map(([n, t]) => (
+          <button key={n} className="wschip" onClick={() => push(t.slice())}>{n}</button>
+        ))}
+      </div>
+      <div className="wscabknobs">
+        {WSM_KNOBS.map(([, label, fmt], k) => (
+          <Knob key={label} value={v[k]} size="lg" label={label} format={fmt}
+                defaultValue={wsmFromEngine([1, 0, 0, 1, 1])[k]}
+                onChange={(nv) => { const c = v.slice(); c[k] = nv; push(c); }} />
+        ))}
+      </div>
+      <div className="wsnote">
+        SPREAD WIDENS THE PAIR AND DEEPENS THE BASS-LEFT IMAGE · DISTANCE IS THE
+        LID SHADOW, NOT A TONE CONTROL · DEFAULTS ARE THE CALIBRATED PAIR ·
+        SAVED WITH THE PROJECT AND YOUR PRESETS
+      </div>
+    </WsModal>
+  );
+}
+
+Object.assign(window, { TineWorkshop, PickupWorkshop, CabinetWorkshop, MicStudio });

@@ -924,6 +924,27 @@ void EpiEngine::processGrand (float* outL, float* outR, int numSamples,
     const float gain0 = sm.gain;
     sm.gain = gain1;
 
+    if (micDirty.exchange (false, std::memory_order_acq_rel))
+    {
+        const double sp = std::clamp (static_cast<double> (micSpread.load (std::memory_order_relaxed)), 0.25, 2.0);
+        const double bi = std::clamp (static_cast<double> (micBias.load (std::memory_order_relaxed)), -1.0, 1.0);
+        for (int i = 0; i < kNumTines; ++i)
+        {
+            // The calibrated ILD line, scaled by the pair's spread and walked
+            // by the balance -- the same law panGains encodes at sp=1, bi=0.
+            const double t = static_cast<double> (i) / 87.0;
+            const double ildDb = std::clamp ((5.6 - 17.6 * t) * sp, -7.0 * sp, 7.0 * sp)
+                               + 5.0 * bi;
+            const double g = std::pow (10.0, std::clamp (ildDb, -12.0, 12.0) / 40.0);
+            grandPanL[static_cast<std::size_t> (i)] = g;
+            grandPanR[static_cast<std::size_t> (i)] = 1.0 / g;
+        }
+        grandMics.setSpread (sp);
+        micGL = std::clamp (static_cast<double> (micLvlL.load (std::memory_order_relaxed)), 0.25, 2.0);
+        micGR = std::clamp (static_cast<double> (micLvlR.load (std::memory_order_relaxed)), 0.25, 2.0);
+        micLidAmt = std::clamp (static_cast<double> (micDist.load (std::memory_order_relaxed)), 0.0, 1.0);
+    }
+
     // Sympathetic life, the grand way: with the pedal lifted the undamped
     // strings listen to the shared board through their coupled prefix --
     // openSympathetic IS that physics (the in-loop board stops at 1.3 kHz,
@@ -967,6 +988,20 @@ void EpiEngine::processGrand (float* outL, float* outR, int numSamples,
         double l = grandBoard.outputL() + tl;
         double r = grandBoard.outputR() + tr;
         grandMics.tick (l, r);
+        // The lid shadow: past the rim the board's high band falls off-axis.
+        // A one-pole at 4 kHz crossfaded by distance -- about -6 dB at the
+        // top of the range, which is the lid's own geometry, not a tone
+        // control.
+        if (micLidAmt > 0.0)
+        {
+            const double a = 1.0 - std::exp (-2.0 * kPiD * 4000.0 / fs);
+            micLidL += (l - micLidL) * a;
+            micLidR += (r - micLidR) * a;
+            l += micLidAmt * (micLidL - l);
+            r += micLidAmt * (micLidR - r);
+        }
+        l *= micGL;
+        r *= micGR;
 
         if (p.clarityDb != 0.0f || sm.air != 0.0f)
         {

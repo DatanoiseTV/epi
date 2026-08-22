@@ -193,6 +193,22 @@ public:
         cabDirty.store (true, std::memory_order_release);
     }
 
+    // The mic studio: the grand's bench. Spread scales the measured ILD
+    // line (a wider pair sees a steeper bass-left image) and lowers the
+    // onset of the interchannel phase; balance walks the whole image;
+    // distance is the lid's high-frequency shadow as the pair backs off the
+    // rim; the two level trims are the mixer's own. Defaults are exactly
+    // the calibrated pair the grand suite measured.
+    void setMicMod (float spread, float bias, float dist, float lvlL, float lvlR)
+    {
+        micSpread.store (spread, std::memory_order_relaxed);
+        micBias.store (bias, std::memory_order_relaxed);
+        micDist.store (dist, std::memory_order_relaxed);
+        micLvlL.store (lvlL, std::memory_order_relaxed);
+        micLvlR.store (lvlR, std::memory_order_relaxed);
+        micDirty.store (true, std::memory_order_release);
+    }
+
     // The string workshop: the CP-70's own bench. Same discipline as the
     // tines: atomics, a dirty flag, the bounded priority rebuild.
     void setStringMod (int i, float lenScale, float diaScale)
@@ -457,6 +473,11 @@ private:
     std::atomic<float> cabBox { 0.74f }, cabCone { 0.59f }, cabDist { 0.5f },
                        cabAngle { 0.25f }, cabSusp { 0.5f };
     std::atomic<bool> cabDirty { false };
+    std::atomic<float> micSpread { 1.0f }, micBias { 0.0f }, micDist { 0.0f },
+                       micLvlL { 1.0f }, micLvlR { 1.0f };
+    std::atomic<bool> micDirty { false };
+    double micGL = 1.0, micGR = 1.0, micLidAmt = 0.0;
+    double micLidL = 0.0, micLidR = 0.0;   // one-pole states for the lid shadow
     float lastCoilSat = -1.0f;
     // How many times the output chain had to be rebuilt. Reported by tests.
     std::atomic<int> recoveries { 0 };
