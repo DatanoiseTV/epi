@@ -565,15 +565,12 @@ static void testGrowlBelongsToTheBass()
            "playing harder did not add growl in the bass: %.1f dB loud vs %.1f dB soft",
            bassLoud, bassSoft);
 
-    // Mostly recovered by the mass-graduated hammer ceiling: the ordering is
-    // now correct (bass above mid) and the swing spans the compass, but the
-    // margin sits under 2 dB where "markedly richer" wants 3. The remaining
-    // distance is a genuine ceiling, not a tuning knob: pushing the bass
-    // hammer past ~12 g effective drives the tine beyond ~5 mm, where the
-    // stretch nonlinearity pulls the note tens of cents sharp and the swing
-    // runs off the pole face -- growl against swing is non-monotone and 12 g
-    // sits at its peak. More growl needs a field map that stays curved
-    // further off-axis, not a heavier hammer.
+    // Recovered by two pieces of the action's own physics: the hammer
+    // ceiling graduated by mass over the bass third (nine grams at the
+    // bottom, the calibrated six by mid-keyboard), and the let-off gravity
+    // tax on the strike velocity, which keeps soft blows inside the pole's
+    // flat while fortissimo pays a fraction of a percent. The reference
+    // suite's A/F rows fence both constants from the other side.
     KNOWN_GAP (bassLoud - midLoud > 3.0,
                "the bass is not growlier than the middle: %.1f dB vs %.1f dB",
                bassLoud, midLoud);

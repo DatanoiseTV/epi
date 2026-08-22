@@ -324,7 +324,19 @@ public:
         // long bass tine whips far enough to strike a closer hammer twice.
         const double reg = registerPosition();
         const double escMm = (6.4 - 5.6 * reg) * (0.4 + 1.2 * cfg.escapementNorm);
-        hammer.strike (v, escMm * 1.0e-3);
+        // After escapement the hammer is in free flight UPWARD through the
+        // let-off gap, and gravity taxes it a fixed energy: v' = sqrt(v^2 -
+        // 2 g h). The height that matters is the CENTRE OF GRAVITY's rise,
+        // a bit under half the tip's let-off through the pivot arc. A fortissimo
+        // blow pays a fraction of a percent; a pianissimo one loses a
+        // seventh of its speed across a bass let-off, which is why soft
+        // playing on the real instrument stays inside the pole's flat and
+        // clean of growl -- and, played softly enough with the let-off
+        // opened right up, the hammer fails to arrive, as a real key can.
+        const double vEsc2 = 2.0 * 9.81 * 0.42 * escMm * 1.0e-3;
+        const double vEff = std::sqrt (std::max (0.0, v * v - vEsc2));
+        if (vEff <= 1.0e-3) return;   // the hammer never reached the tine
+        hammer.strike (vEff, escMm * 1.0e-3);
 
         noteHz = 440.0 * std::pow (2.0, (static_cast<double> (midiNote) - 69.0) / 12.0);
         traceDecim = std::max (1, static_cast<int> (fs / (noteHz * kTraceLen / 4.0)));
@@ -1250,7 +1262,13 @@ private:
         // with the hammer's own mass. Measured: the flat cap held the whole
         // compass inside a 4x swing span where Shear & Wright's tracking
         // spans more than an order of magnitude.
-        const double capKg = 0.012 - 0.008 * reg;
+        // Graded over the bass third only: nine grams at the bottom falling
+        // to the calibrated six by a third of the way up. The rows fence it
+        // from both sides -- the settled-tuning row caps the very bottom
+        // near nine (a heavier arm swings the tine far enough that the
+        // stretch sharpness has not settled by 350 ms), and E3's measured
+        // velocity-swing ceiling pins the midrange to its original mass.
+        const double capKg = 0.006 + 0.003 * std::max (0.0, 1.0 - reg / 0.30);
         hammerCfg.mass = std::clamp (0.30 * effTineMass, 0.00060, capKg)
                        * (0.6 + 0.8 * cfg.hammerMassNorm);
         hammerCfg.alpha     = 1.85 + 0.5 * cfg.hammerHardness;
