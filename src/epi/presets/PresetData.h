@@ -508,6 +508,61 @@ inline constexpr ParamValue kStageGrand[] = {
 // ---------------------------------------------------------------------------
 // The bank, grouped by instrument: Tine, its workshop, E-Grand, Reed, Grand.
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Clav (4). The reference is the D6-style stock voicing: both pickups, the
+// Medium rocker, drive at the circuit's own level. Departures say from what.
+// ---------------------------------------------------------------------------
+
+// The stock instrument: both bars, Medium, moderate drive, dry.
+inline constexpr ParamValue kClavClassic[] = {
+    { "instrument", 4.0f },
+    { "clavSwitch", 2.0f }, { "clavMed", 1.0f },
+    { "preampDrive", 0.30f }, { "spaceMix", 0.06f },
+};
+
+// The funk cut: bridge pickup alone, Treble rocker, a harder tangent --
+// the percussive end of the instrument.
+inline constexpr ParamValue kClavFunk[] = {
+    { "instrument", 4.0f },
+    { "clavSwitch", 1.0f }, { "clavMed", 0.0f }, { "clavTreb", 1.0f },
+    { "hammerHard", 0.65f }, { "preampDrive", 0.38f },
+    { "spaceMix", 0.05f },
+};
+
+// Out of phase: the switch position that keeps only what the two taps do
+// not share -- hollow, nasal, unmistakable.
+inline constexpr ParamValue kClavPhaseCut[] = {
+    { "instrument", 4.0f },
+    { "clavSwitch", 3.0f }, { "clavMed", 1.0f },
+    { "preampDrive", 0.34f }, { "spaceMix", 0.06f },
+};
+
+// Through the classic sweeping filter, the seventies rig.
+inline constexpr ParamValue kClavPhaser[] = {
+    { "instrument", 4.0f },
+    { "clavSwitch", 1.0f }, { "clavTreb", 1.0f }, { "clavMed", 0.0f },
+    { "preampDrive", 0.36f },
+    { "phaserMix", 0.65f }, { "phaserRate", 0.55f }, { "phaserDepth", 0.75f },
+    { "spaceMix", 0.05f },
+};
+
+// Soft rocker, center pickup, gentle drive: the mellow end.
+inline constexpr ParamValue kClavVelvet[] = {
+    { "instrument", 4.0f },
+    { "clavSwitch", 0.0f }, { "clavMed", 0.0f }, { "clavSoft", 1.0f },
+    { "hammerHard", 0.35f }, { "preampDrive", 0.22f },
+    { "spaceMix", 0.10f }, { "spaceSize", 0.45f },
+};
+
+// Brilliant into real drive: the aggressive lead voice.
+inline constexpr ParamValue kClavBiting[] = {
+    { "instrument", 4.0f },
+    { "clavSwitch", 2.0f }, { "clavMed", 0.0f }, { "clavBrill", 1.0f },
+    { "preampDrive", 0.55f },
+    { "spaceMix", 0.05f },
+};
+
 inline constexpr Preset kPresets[] = {
     { "Suitcase",      0, kSuitcase,     std::size (kSuitcase) },
     { "Stage DI",      0, kStageDI,      std::size (kStageDI) },
@@ -552,6 +607,13 @@ inline constexpr Preset kPresets[] = {
     { "Wide Cinema",   3, kWideCinema,   std::size (kWideCinema) },
     { "Felt Grand",    3, kFeltGrand,    std::size (kFeltGrand) },
     { "Stage Grand",   3, kStageGrand,   std::size (kStageGrand) },
+
+    { "Clav Classic",  4, kClavClassic,  std::size (kClavClassic) },
+    { "Clav Funk",     4, kClavFunk,     std::size (kClavFunk) },
+    { "Phase Cut",     4, kClavPhaseCut, std::size (kClavPhaseCut) },
+    { "Clav Phaser",   4, kClavPhaser,   std::size (kClavPhaser) },
+    { "Velvet Clav",   4, kClavVelvet,   std::size (kClavVelvet) },
+    { "Biting Clav",   4, kClavBiting,   std::size (kClavBiting) },
 };
 
 inline constexpr std::size_t kNumPresets = std::size (kPresets);
