@@ -552,7 +552,7 @@ inline constexpr ParamValue kClavVelvet[] = {
     { "instrument", 4.0f },
     { "clavSwitch", 0.0f }, { "clavMed", 0.0f }, { "clavSoft", 1.0f },
     { "hammerHard", 0.35f }, { "preampDrive", 0.22f },
-    { "spaceMix", 0.10f }, { "spaceSize", 0.45f },
+    { "spaceMix", 0.10f }, { "spaceSize", 0.45f }, { "outGain", 2.5f },
 };
 
 // Brilliant into real drive: the aggressive lead voice.

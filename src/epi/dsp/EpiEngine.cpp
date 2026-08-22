@@ -96,8 +96,11 @@ void EpiEngine::prepare (double sampleRate, int)
     for (int i = 0; i < kNumTines; ++i)
         clav[static_cast<std::size_t> (i)].prepare (sampleRate);
     clavCfgVersion.fill (0);
-    clavTone.prepare (sampleRate);
-    clavPre.prepare (sampleRate);
+    // The stack and preamp run at the oversampled rate, as calibrated:
+    // the saturation's harmonics must exist above base Nyquist BEFORE the
+    // decimator, or they fold.
+    clavTone.prepare (sampleRate * ClavinetVoice::kOver);
+    clavPre.prepare (sampleRate * ClavinetVoice::kOver);
     clavKnock.prepare (sampleRate);
 
     wurliBus.prepare (sampleRate * WurliVoice::kOver);
@@ -159,8 +162,8 @@ void EpiEngine::reset()
     grandRad.prepare (fs);
     grandMics.prepare (fs);
     for (auto& v : clav) v.reset();
-    clavTone.prepare (fs);
-    clavPre.prepare (fs);
+    clavTone.prepare (fs * ClavinetVoice::kOver);
+    clavPre.prepare (fs * ClavinetVoice::kOver);
     clavKnock.reset();
     keyDown.fill (false);
     harp.reset();
@@ -290,9 +293,15 @@ ClavinetVoice::Config EpiEngine::clavConfig (const EngineParams& p) const
     // Clavinet meaning (EURASIP's d).
     c.escapementNorm = p.escapement;
     c.damperGrip     = p.damperGrip;
-    c.gapNorm        = std::clamp (p.pickupDist, 0.0f, 1.0f);
+    // The shared knobs' DEFAULTS must land on the voice's calibrated
+    // operating points (gap 0.5, damp trim 0.5), or the default patch
+    // plays a different instrument than the one the suite verified --
+    // measured as a +15 dB high-harmonic plateau from the tighter gap
+    // driving the preamp knee. x^0.66 maps the shared default 0.35 onto
+    // 0.5 and keeps both endpoints.
+    c.gapNorm        = std::pow (std::clamp (static_cast<double> (p.pickupDist), 0.0, 1.0), 0.66);
     c.pickupSel      = static_cast<double> (p.clavSwitch);
-    c.dampTrim       = p.resDamp;
+    c.dampTrim       = std::pow (std::clamp (static_cast<double> (p.resDamp), 0.0, 1.0), 0.66);
     c.detuneCents    = static_cast<double> (p.tuneCents)
                      + 100.0 * static_cast<double> (bendSemis);
     c.transducer     = static_cast<double> (p.transducer);
@@ -486,8 +495,8 @@ void EpiEngine::process (float* outL, float* outR, int numSamples,
         if (activeInst == 4)
         {
             for (auto& v : clav) v.reset();
-            clavTone.prepare (fs);
-            clavPre.prepare (fs);
+            clavTone.prepare (fs * ClavinetVoice::kOver);
+            clavPre.prepare (fs * ClavinetVoice::kOver);
             clavKnock.reset();
         }
         // The chain stages freeze mid-signal when their instrument stops
@@ -1162,7 +1171,9 @@ void EpiEngine::processClav (float* outL, float* outR, int numSamples,
         airR.set (sm.air, fs);
     }
     clavTone.setRockers (p.clavSoft, p.clavMed, p.clavTreb, p.clavBrill);
-    clavPre.setDrive (0.25 + 3.75 * static_cast<double> (std::clamp (sm.drive, 0.0f, 1.0f)));
+    // Fitted through (0.30, 1.0) and (1.0, 4.0): the default knob sits at
+    // the circuit's own calibrated level, full is four times it.
+    clavPre.setDrive (0.552 * std::pow (7.25, static_cast<double> (std::clamp (sm.drive, 0.0f, 1.0f))));
     phaserL.setParams (p.phaserRate, p.phaserDepth, p.phaserFb, p.phaserMix);
     phaserR.setParams (p.phaserRate, p.phaserDepth, p.phaserFb, p.phaserMix);
     if (std::abs (p.spaceSize - lastSpaceSize) > 1.0e-4f)
@@ -1202,10 +1213,15 @@ void EpiEngine::processClav (float* outL, float* outR, int numSamples,
             if (amp > tineBlockPeak[i]) tineBlockPeak[i] = amp;
         }
         // The knock reaches the pickups acoustically through the frame, not
-        // through the string clamp: chain-level, pre tone stack.
-        double y = decimL.process (os) + clavKnock.process() * p.strikeNoise;
-        y = clavTone.process (y);
-        y = clavPre.process (y);
+        // through the string clamp: onto the bus pre tone stack (held across
+        // the oversampled frames -- it lives below 1.2 kHz). Stack and
+        // preamp run per oversampled frame, as calibrated, so the
+        // saturation's harmonics exist before the decimator, not folded
+        // under it.
+        const double kn = clavKnock.process() * p.strikeNoise;
+        for (int k = 0; k < ClavinetVoice::kOver; ++k)
+            os[k] = clavPre.process (clavTone.process (os[k] + kn));
+        double y = decimL.process (os);
 
         double l = y, r = y;
         if (p.clarityDb != 0.0f || sm.air != 0.0f)
