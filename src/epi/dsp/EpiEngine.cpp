@@ -34,6 +34,7 @@ namespace epi
 static constexpr float kTrimRhodes = 0.66f;
 static constexpr float kTrimCP70   = 3.94f;
 static constexpr float kTrimWurli  = 3.85f;
+static constexpr float kTrimGrand  = 75.0f;   // mic-pair units are small. Deliberately ~6 dB under the electrics' bench: a close-miked grand carries a 22 dB attack crest, and matching RMS exactly would put every mf attack into the output rail
 
 void EpiEngine::prepare (double sampleRate, int)
 {
@@ -76,6 +77,19 @@ void EpiEngine::prepare (double sampleRate, int)
         wurli[i].setNote (kLoNote + i, WurliVoice::Config {});
     }
     wurliCfgVersion.fill (0);
+
+    if (grand.size() != static_cast<std::size_t> (kNumTines))
+        grand.resize (static_cast<std::size_t> (kNumTines));
+    grandBoard.prepare (sampleRate);
+    for (int i = 0; i < kNumTines; ++i)
+    {
+        grand[i].prepare (sampleRate);
+        GrandRadiator::panGains (kLoNote + i, grandPanL[i], grandPanR[i]);
+    }
+    grandCfgVersion.fill (0);
+    grandRad.prepare (sampleRate);
+    grandMics.prepare (sampleRate);
+
     wurliBus.prepare (sampleRate * WurliVoice::kOver);
     wurliPre.prepare (sampleRate * WurliVoice::kOver);
     wurliTrem.prepare (sampleRate);
@@ -130,6 +144,10 @@ void EpiEngine::reset()
     cabinetBR.reset();
     cp70Frame.reset();
     wurliFrame.reset();
+    for (auto& v : grand) v.reset();
+    grandBoard.prepare (fs);
+    grandRad.prepare (fs);
+    grandMics.prepare (fs);
     keyDown.fill (false);
     harp.reset();
     action.reset();
@@ -230,6 +248,23 @@ WurliVoice::Config EpiEngine::wurliConfig (const EngineParams& p) const
     return c;
 }
 
+GrandVoice::Config EpiEngine::grandConfig (const EngineParams& p) const
+{
+    GrandVoice::Config c;
+    c.hammerHardness = p.hammerHard;
+    c.hammerMassNorm = p.hammerMass;
+    c.escapementNorm = p.escapement;
+    c.damperGrip     = p.damperGrip;
+    // The grand meanings of the shared resonator knobs: the "spring" knob is
+    // the unison spread (the tuner's hairsbreadth between the three strings),
+    // the damping trim scales the strings' intrinsic loss.
+    c.detuneSpread   = p.tipMass;
+    c.dampTrim       = p.resDamp;
+    c.detuneCents    = static_cast<double> (p.tuneCents)
+                     + 100.0 * static_cast<double> (bendSemis);
+    return c;
+}
+
 void EpiEngine::handleEvent (const NoteEvent& e, const EngineParams& p)
 {
     switch (e.type)
@@ -257,7 +292,17 @@ void EpiEngine::handleEvent (const NoteEvent& e, const EngineParams& p)
             tines[i].setPedal (pedalAmount);
             cp70[i].setPedal (pedalAmount);
             wurli[static_cast<std::size_t> (i)].setPedal (pedalAmount);
-            if (p.instrument == 2)
+            grand[static_cast<std::size_t> (i)].setPedal (pedalAmount);
+            if (p.instrument == 3)
+            {
+                if (grandCfgVersion[static_cast<std::size_t> (i)] != cfgVersion)
+                {
+                    grand[static_cast<std::size_t> (i)].setNote (kLoNote + i, grandConfig (p), grandBoard);
+                    grandCfgVersion[static_cast<std::size_t> (i)] = cfgVersion;
+                }
+                grand[static_cast<std::size_t> (i)].noteOn (e.note, vel, grandConfig (p), grandBoard, seed);
+            }
+            else if (p.instrument == 2)
             {
                 if (wurliCfgVersion[static_cast<std::size_t> (i)] != cfgVersion)
                 {
@@ -294,6 +339,7 @@ void EpiEngine::handleEvent (const NoteEvent& e, const EngineParams& p)
             tines[i].noteOff();
             cp70[i].noteOff();
             wurli[static_cast<std::size_t> (i)].noteOff();
+            grand[static_cast<std::size_t> (i)].noteOff();
             action.release (i, static_cast<double> (i) / (kNumTines - 1));
             break;
         }
@@ -309,6 +355,7 @@ void EpiEngine::handleEvent (const NoteEvent& e, const EngineParams& p)
             for (auto& v : tines) v.noteOff();
             for (auto& v : cp70)  v.noteOff();
             for (auto& v : wurli) v.noteOff();
+            for (auto& v : grand) v.noteOff();
             break;
 
         case NoteEvent::sustainOn:  setPedalAmount (1.0); break;
@@ -367,6 +414,13 @@ void EpiEngine::process (float* outL, float* outR, int numSamples,
         if (activeInst == 0) { for (auto& v : tines) v.reset(); harp.reset(); }
         if (activeInst == 1) { for (auto& v : cp70)  v.reset(); cp70Frame.reset(); }
         if (activeInst == 2) { for (auto& v : wurli) v.reset(); wurliFrame.reset(); }
+        if (activeInst == 3)
+        {
+            for (auto& v : grand) v.reset();
+            grandBoard.prepare (fs);
+            grandRad.prepare (fs);
+            grandMics.prepare (fs);
+        }
         // The chain stages freeze mid-signal when their instrument stops
         // running -- the coil was measured thawing a two-second-old ring as
         // a half-scale burst on the way back in. Everything stateful between
@@ -427,6 +481,11 @@ void EpiEngine::processActive (float* outL, float* outR, int numSamples,
     if (p.instrument == 2)
     {
         processWurli (outL, outR, numSamples, p, events, numEvents);
+        return;
+    }
+    if (p.instrument == 3)
+    {
+        processGrand (outL, outR, numSamples, p, events, numEvents);
         return;
     }
 
@@ -796,6 +855,169 @@ void EpiEngine::processActive (float* outL, float* outR, int numSamples,
     vOffset.store (p.pickupPos, std::memory_order_relaxed);
     vVibL.store (lastVibL, std::memory_order_relaxed);
     vVibR.store (lastVibR, std::memory_order_relaxed);
+}
+
+
+void EpiEngine::processGrand (float* outL, float* outR, int numSamples,
+                              const EngineParams& p,
+                              const NoteEvent* events, int numEvents)
+{
+    const auto cfg = grandConfig (p);
+    if (std::memcmp (&cfg, &lastGrandCfg, sizeof cfg) != 0)
+    {
+        lastGrandCfg = cfg;
+        ++cfgVersion;
+    }
+    // The board's one global scalar: BODY trims the string-to-board coupling
+    // about the fitted mobility, x0.7 at zero to x2.8 full -- neutral at the
+    // default quarter.
+    grandBoard.configure ({ std::pow (4.0, static_cast<double> (std::clamp (p.bodyMix, 0.0f, 1.0f))) * 0.707 });
+
+    // Rebuilds, sounding first, bounded -- a grand voice is the heaviest
+    // rebuild in the plugin (up to ~130 modes over three strings).
+    {
+        int budget = 6;
+        for (int pass = 0; pass < 2 && budget > 0; ++pass)
+            for (int i = 0; i < kNumTines && budget > 0; ++i)
+            {
+                if (grandCfgVersion[static_cast<std::size_t> (i)] == cfgVersion) continue;
+                const bool live = grand[static_cast<std::size_t> (i)].isRinging() || pedalDown || keyDown[i];
+                if (pass == 0 && ! live) continue;
+                grand[static_cast<std::size_t> (i)].setNote (kLoNote + i, cfg, grandBoard);
+                grandCfgVersion[static_cast<std::size_t> (i)] = cfgVersion;
+                --budget;
+            }
+    }
+
+    {
+        const float k = smoothK (numSamples);
+        sm.step (sm.air, p.clarityDb, k);
+        airL.set (sm.air, fs);
+        airR.set (sm.air, fs);
+    }
+    phaserL.setParams (p.phaserRate, p.phaserDepth, p.phaserFb, p.phaserMix);
+    phaserR.setParams (p.phaserRate, p.phaserDepth, p.phaserFb, p.phaserMix);
+    if (std::abs (p.spaceSize - lastSpaceSize) > 1.0e-4f)
+    {
+        lastSpaceSize = p.spaceSize;
+        room.setSize (p.spaceSize);
+    }
+
+    const float gain1 = p.outGainLin * kTrimGrand;
+    if (sm.gain < -0.5f) sm.gain = gain1;
+    const float gain0 = sm.gain;
+    sm.gain = gain1;
+
+    // Sympathetic life, the grand way: with the pedal lifted the undamped
+    // strings listen to the shared board through their coupled prefix --
+    // openSympathetic IS that physics (the in-loop board stops at 1.3 kHz,
+    // so the reduced set is what the coupling band can deliver). Woken once
+    // per block, when the board actually carries something.
+    if (pedalDown
+        && std::abs (grandBoard.outputL()) + std::abs (grandBoard.outputR()) > 1.0e-9)
+    {
+        for (int i = 0; i < kNumTines; ++i)
+            if (! grand[static_cast<std::size_t> (i)].isRinging())
+                grand[static_cast<std::size_t> (i)].openSympathetic (kLoNote + i, cfg, grandBoard);
+    }
+
+    float pL = 0.0f, pR = 0.0f;
+    int nextEvent = 0;
+
+    for (int n = 0; n < numSamples; ++n)
+    {
+        while (nextEvent < numEvents && events[nextEvent].offset <= n)
+            handleEvent (events[nextEvent++], p);
+
+        int active = 0;
+        for (int i = 0; i < kNumTines; ++i)
+        {
+            auto& v = grand[static_cast<std::size_t> (i)];
+            if (! v.isRinging()) continue;
+            // The calibrated render order from the grand suite: termination
+            // force plus the action knock into the radiator; the board is
+            // driven inside the voice.
+            const double f = v.process (cfg, grandBoard) + v.knockOut();
+            v.applyDamperIfDue();
+            grandRad.push (f, grandPanL[static_cast<std::size_t> (i)],
+                              grandPanR[static_cast<std::size_t> (i)]);
+            ++active;
+            const float amp = static_cast<float> (std::abs (f)) * 0.02f;
+            if (amp > tineBlockPeak[i]) tineBlockPeak[i] = amp;
+        }
+        grandBoard.tick();
+        double tl = 0.0, tr = 0.0;
+        grandRad.tick (tl, tr);
+        double l = grandBoard.outputL() + tl;
+        double r = grandBoard.outputR() + tr;
+        grandMics.tick (l, r);
+
+        if (p.clarityDb != 0.0f || sm.air != 0.0f)
+        {
+            l = airL.process (l);
+            r = airR.process (r);
+        }
+        if (p.phaserMix > 0.0f)
+        {
+            l = phaserL.process (l);
+            r = phaserR.process (r);
+        }
+        if (p.spaceMix > 0.0f)
+        {
+            double wl = 0.0, wr = 0.0;
+            room.process (l, r, wl, wr);
+            const double mix = std::clamp (static_cast<double> (p.spaceMix), 0.0, 1.0);
+            l += mix * wl;
+            r += mix * wr;
+        }
+
+        if (! std::isfinite (l) || ! std::isfinite (r))
+        {
+            for (auto& v : grand) v.reset();
+            grandBoard.prepare (fs);
+            grandRad.prepare (fs);
+            grandMics.prepare (fs);
+            room.reset();
+            l = r = 0.0;
+            ++recoveries;
+        }
+
+        const float g = gain0 + (gain1 - gain0) * (static_cast<float> (n + 1) / static_cast<float> (numSamples));
+        const float fl = static_cast<float> (l) * g;
+        const float fr = static_cast<float> (r) * g;
+        outL[n] = fl;
+        outR[n] = fr;
+        pL = std::max (pL, std::abs (fl));
+        pR = std::max (pR, std::abs (fr));
+        if (n == numSamples - 1) numActive.store (active, std::memory_order_relaxed);
+    }
+
+    for (int i = 0; i < kNumTines; ++i)
+    {
+        vTineTip[i].store (tineBlockPeak[i], std::memory_order_relaxed);
+        tineBlockPeak[i] = 0.0f;
+    }
+    for (int w = 0; w < kKeyWords; ++w)
+    {
+        std::uint32_t bits = 0;
+        for (int b = 0; b < 32; ++b)
+        {
+            const int i = w * 32 + b;
+            if (i < kNumTines && keyDown[i]) bits |= (1u << b);
+        }
+        vKeys[w].store (bits, std::memory_order_relaxed);
+    }
+    vPedal.store (pedalDown, std::memory_order_relaxed);
+
+    while (nextEvent < numEvents) handleEvent (events[nextEvent++], p);
+
+    auto bump = [] (std::atomic<float>& a, float v)
+    {
+        const float cur = a.load (std::memory_order_relaxed);
+        if (v > cur) a.store (v, std::memory_order_relaxed);
+    };
+    bump (peakL, pL);
+    bump (peakR, pR);
 }
 
 // One CP-70 course, built to the configuration and its own steel.

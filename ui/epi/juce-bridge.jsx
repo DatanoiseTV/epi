@@ -48,7 +48,7 @@
   /* Choice lists. Order must match the C++ StringArrays in
      src/epi/ParameterIDs.h. */
   // Must match epi::ids::instrumentNames.
-  const INSTRUMENTS = ['Tine', 'E-Grand', 'Reed'];
+  const INSTRUMENTS = ['Tine', 'E-Grand', 'Reed', 'Grand'];
   const PICKUP_SEL  = ['MAGNETIC', 'NATIVE', 'ELECTRO', 'CONTACT'];
   const MATERIALS   = ['MUSIC WIRE', 'STAINLESS', 'BRONZE', 'BRASS',
                        'TITANIUM', 'ALUMINIUM', 'TUNGSTEN', 'NYLON'];

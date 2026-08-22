@@ -56,10 +56,26 @@ function MaterialRow({ inst }) {
    CP-70 has no tone bar, no bloom and no magnetics -- showing those
    knobs would be showing dead controls. */
 function TinePanel({ inst }) {
-  const cp70 = inst === 1, wurli = inst === 2;
+  const cp70 = inst === 1, wurli = inst === 2, gpiano = inst === 3;
   const [tune] = useJuceSlider('tune');
   const [shop, setShop] = useState(false);
   const a4 = (440 * Math.pow(2, JuceBridge.PARAMS.tune.map.to(tune) / 1200)).toFixed(1) + ' Hz';
+  if (gpiano) return (
+    <div className="panel f-tine">
+      <PHead title="Strings" meta={a4} />
+      <div className="krow">
+        <PKnob id="tipMass" label="UNISON" />
+        <PKnob id="resDamp" label="DECAY" />
+        <PKnob id="tune" label="TUNE" />
+        <PKnob id="bodyMix" label="BODY" />
+      </div>
+      {/* Three strings per note on a fitted soundboard. Unison is the
+          tuner's hairsbreadth between them; body trims the string-to-board
+          coupling about the measured mobility; the pedal opens every
+          undamped string to the board. */}
+      <div className="note">unison hairsbreadth · board coupling · pedal-open board wash</div>
+    </div>
+  );
   if (wurli) return (
     <div className="panel f-tine">
       <PHead title="Reed" meta={a4} />
@@ -131,11 +147,23 @@ function TinePanel({ inst }) {
 
 /* ---- PICKUP: where the sound is actually made ---- */
 function PickupPanel({ inst }) {
-  const cp70 = inst === 1, wurli = inst === 2;
+  const cp70 = inst === 1, wurli = inst === 2, gpiano = inst === 3;
   const [pos] = useJuceSlider('pickupPos');
   const [sat] = useJuceSlider('coilSat');
   const [shop, setShop] = useState(false);
   const mm = (JuceBridge.PARAMS.pickupPos.map.to(pos) * 2).toFixed(2) + ' mm';
+  if (gpiano) return (
+    <div className="panel f-pickup">
+      <PHead title="Mics" meta="PAIR" />
+      {/* A spaced pair over the board: bass strings left, treble right, the
+          board's own interchannel phase in between. Nothing to voice -- no
+          magnet, no gap, no supply. The sound is voiced at the hammer and
+          the board. */}
+      <div className="note">
+        spaced pair · bass left, treble right · voiced at the hammer
+      </div>
+    </div>
+  );
   if (wurli) return (
     <div className="panel f-pickup">
       <PHead title="Pickup" meta={Math.round(100 + 100 * sat) + ' V'} />
@@ -195,9 +223,21 @@ function PickupPanel({ inst }) {
 }
 
 /* ---- AMP: preamp, tone stack, and the panner ---- */
-function AmpPanel() {
+function AmpPanel({ inst }) {
   const [depth] = useJuceSlider('tremDepth');
   const [shop, setShop] = useState(false);
+  if (inst === 3) return (
+    <div className="panel f-amp">
+      <PHead title="Air" />
+      {/* The grand has no amplifier: the mics feed the desk. Clarity is the
+          one tone control on this path; drive, cabinet and tremolo belong to
+          the electrics and would be dead knobs here. */}
+      <div className="krow">
+        <PKnob id="clarity" label="CLARITY" />
+      </div>
+      <div className="note">mics to the desk · no amp in the path</div>
+    </div>
+  );
   return (
     <div className="panel f-amp">
       <div className="phead">

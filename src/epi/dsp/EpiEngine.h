@@ -15,6 +15,9 @@
 #include "ActionNoise.h"
 #include "CP70Voice.h"
 #include "WurliVoice.h"
+#include "GrandVoice.h"
+#include "GrandBoard.h"
+#include "GrandRadiator.h"
 #include "WurliChain.h"
 
 #include <vector>
@@ -268,10 +271,13 @@ private:
     RhodesVoice::Config rhodesConfig (const EngineParams& p) const;
     CP70Voice::Config cp70Config (const EngineParams& p) const;
     WurliVoice::Config wurliConfig (const EngineParams& p) const;
+    GrandVoice::Config grandConfig (const EngineParams& p) const;
     void processActive (float* outL, float* outR, int numSamples,
                         const EngineParams& p,
                         const NoteEvent* events, int numEvents);
     void processWurli (float* outL, float* outR, int numSamples,
+                       const EngineParams& p, const NoteEvent* events, int numEvents);
+    void processGrand (float* outL, float* outR, int numSamples,
                        const EngineParams& p, const NoteEvent* events, int numEvents);
     void processCP70 (float* outL, float* outR, int numSamples,
                       const EngineParams& p,
@@ -330,6 +336,7 @@ private:
         for (auto& v : tines) v.setPedal (pedalAmount);
         for (auto& v : cp70)  v.setPedal (pedalAmount);
         for (auto& v : wurli) v.setPedal (pedalAmount);
+        for (auto& v : grand) v.setPedal (pedalAmount);
     }
     float bendSemis = 0.0f;
     float expression = 1.0f;
@@ -341,6 +348,7 @@ private:
     RhodesVoice::Config lastCfg { -1.0e30 };
     CP70Voice::Config lastCP70Cfg { -1.0e30 };
     WurliVoice::Config lastWurliCfg { -1.0e30 };
+    GrandVoice::Config lastGrandCfg { -1.0e30 };
     // Which configuration each tine has been built to. A knob being turned
     // changes the configuration every block, and rebuilding all eighty-eight
     // every time is what pushed blocks past their deadline.
@@ -348,6 +356,17 @@ private:
     std::array<std::uint32_t, kNumTines> tineCfgVersion {};
     std::array<std::uint32_t, kNumTines> wurliCfgVersion {};
     std::vector<WurliVoice> wurli;
+    // The grand: eighty-eight voices on one soundboard, radiated through a
+    // mic pair. Render order is the calibrated one from the grand suite:
+    // voices push termination force and knock into the radiator, the board
+    // ticks, the radiator ticks, board readout and radiator sum, mic pair
+    // last. Pan gains per note are the radiator's own bass-left law.
+    std::array<std::uint32_t, kNumTines> grandCfgVersion {};
+    std::vector<GrandVoice> grand;
+    GrandBoard    grandBoard;
+    GrandRadiator grandRad;
+    GrandMicPair  grandMics;
+    std::array<double, kNumTines> grandPanL {}, grandPanR {};
     WurliPickupBus wurliBus;
     WurliPreamp   wurliPre;
     WurliTremolo  wurliTrem;

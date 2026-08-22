@@ -138,7 +138,8 @@ function VizCard() {
       const L = lv.current || {};
       const H = L.harp || [], K = L.keys || [];
       const isDown = (i) => ((K[i >> 5] || 0) & (1 << (i & 31))) !== 0;
-      const mode = modeRef.current;          // 0 tines, 1 strings, 2 reeds
+      const raw = modeRef.current;           // 0 tines, 1 strings, 2 reeds, 3 grand
+      const mode = raw === 3 ? 1 : raw;      // the grand draws as strings
       const tineMode = mode !== 1;
 
       let peak = 1e-6;
@@ -410,7 +411,7 @@ function VizCard() {
     };
   }, []);
 
-  const modes = ['TINES', 'STRINGS', 'REEDS'];
+  const modes = ['TINES', 'STRINGS', 'REEDS', 'GRAND'];
   return (
     <div className="vizcard">
       <canvas ref={cvsRef} style={{ width: VZ_W, height: VZ_H }}
@@ -423,7 +424,7 @@ function VizCard() {
                     onClick={() => setInstIdx(i)}>{m}</button>
           ))}
         </div>
-        <span className="viz-note">{instIdx === 1 ? 'E-GRAND · PIEZO BRIDGE' : instIdx === 2 ? 'REED · ELECTROSTATIC BAR' : 'TINE · MAGNETIC PICKUPS'} · HAMMER ACTION</span>
+        <span className="viz-note">{instIdx === 1 ? 'E-GRAND · PIEZO BRIDGE' : instIdx === 2 ? 'REED · ELECTROSTATIC BAR' : instIdx === 3 ? 'GRAND · SOUNDBOARD · MIC PAIR' : 'TINE · MAGNETIC PICKUPS'} · HAMMER ACTION</span>
       </div>
       <div className="viz-hint">CLICK KEYS OR PLAY A – ; ON YOUR KEYBOARD</div>
       <PedalLamp />

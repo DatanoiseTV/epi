@@ -50,7 +50,7 @@ function App() {
           <ActionPanel />
           <TinePanel inst={instIdx} />
           <PickupPanel inst={instIdx} />
-          <AmpPanel />
+          <AmpPanel inst={instIdx} />
           <FxPanel />
         </div>
         <div className="footer">
