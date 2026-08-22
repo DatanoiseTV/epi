@@ -48,7 +48,7 @@
   /* Choice lists. Order must match the C++ StringArrays in
      src/epi/ParameterIDs.h. */
   // Must match epi::ids::instrumentNames.
-  const INSTRUMENTS = ['Tine', 'E-Grand', 'Reed', 'Grand'];
+  const INSTRUMENTS = ['Tine', 'E-Grand', 'Reed', 'Grand', 'Clav'];
   const PICKUP_SEL  = ['MAGNETIC', 'NATIVE', 'ELECTRO', 'CONTACT'];
   const MATERIALS   = ['MUSIC WIRE', 'STAINLESS', 'BRONZE', 'BRASS',
                        'TITANIUM', 'ALUMINIUM', 'TUNGSTEN', 'NYLON'];
@@ -111,6 +111,10 @@
     cabMix:      { label: 'Cabinet',   map: M.unit,      def: 0.50, format: pct },
 
     clarity:     { label: 'Clarity',   map: M.db12,      def: M.db12.from(0),     format: dbOf(M.db12), bipolar: true },
+    clavBrill:   { label: 'Brilliant', map: M.unit, def: 0, format: (x) => x >= 0.5 ? 'ON' : 'OFF' },
+    clavTreb:    { label: 'Treble',    map: M.unit, def: 0, format: (x) => x >= 0.5 ? 'ON' : 'OFF' },
+    clavMed:     { label: 'Medium',    map: M.unit, def: 1, format: (x) => x >= 0.5 ? 'ON' : 'OFF' },
+    clavSoft:    { label: 'Soft',      map: M.unit, def: 0, format: (x) => x >= 0.5 ? 'ON' : 'OFF' },
     spaceMix:    { label: 'Space',     map: M.unit,      def: 0.15, format: pct },
     spaceSize:   { label: 'Size',      map: M.unit,      def: 0.40, format: pct },
     outGain:     { label: 'Output',    map: M.outGain,   def: M.outGain.from(0),  format: dbOf(M.outGain), bipolar: true },
@@ -139,7 +143,7 @@
       const ev = mk();
       sliders[id] = { getNormalisedValue: () => v, setNormalisedValue: (n) => { v = n; ev.fire(); }, valueChangedEvent: ev };
     });
-    [['pickupSel', 1], ['instrument', 0], ['material', 0]].forEach(([id, d]) => {
+    [['pickupSel', 1], ['instrument', 0], ['material', 0], ['clavSwitch', 0]].forEach(([id, d]) => {
       let i = d; const ev = mk();
       combos[id] = { getChoiceIndex: () => i, setChoiceIndex: (n) => { i = n; ev.fire(); }, valueChangedEvent: ev };
     });

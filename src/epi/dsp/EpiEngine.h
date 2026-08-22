@@ -18,6 +18,8 @@
 #include "GrandVoice.h"
 #include "GrandBoard.h"
 #include "GrandRadiator.h"
+#include "ClavinetVoice.h"
+#include "ClavinetChain.h"
 #include "WurliChain.h"
 
 #include <vector>
@@ -87,6 +89,12 @@ struct EngineParams
     int   transducer  = 1;
     // What the resonator is made of: index into kMaterials, 0 = stock.
     int   material    = 0;
+    // The Clavinet's own switches: the 4-way pickup matrix and the rockers.
+    int   clavSwitch  = 0;
+    bool  clavBrill   = false;
+    bool  clavTreb    = false;
+    bool  clavMed     = true;
+    bool  clavSoft    = false;
     float tremRate    = 5.5f;
     float tremDepth   = 0.0f;
     float tremStereo  = 1.0f;   // 1 = the Rhodes panner, 0 = amplitude tremolo
@@ -292,11 +300,14 @@ private:
     CP70Voice::Config cp70Config (const EngineParams& p) const;
     WurliVoice::Config wurliConfig (const EngineParams& p) const;
     GrandVoice::Config grandConfig (const EngineParams& p) const;
+    ClavinetVoice::Config clavConfig (const EngineParams& p) const;
     void processActive (float* outL, float* outR, int numSamples,
                         const EngineParams& p,
                         const NoteEvent* events, int numEvents);
     void processWurli (float* outL, float* outR, int numSamples,
                        const EngineParams& p, const NoteEvent* events, int numEvents);
+    void processClav (float* outL, float* outR, int numSamples,
+                      const EngineParams& p, const NoteEvent* events, int numEvents);
     void processGrand (float* outL, float* outR, int numSamples,
                        const EngineParams& p, const NoteEvent* events, int numEvents);
     void processCP70 (float* outL, float* outR, int numSamples,
@@ -358,6 +369,7 @@ private:
         for (auto& v : cp70)  v.setPedal (pedalAmount);
         for (auto& v : wurli) v.setPedal (pedalAmount);
         for (auto& v : grand) v.setPedal (pedalAmount);
+        for (auto& v : clav)  v.setPedal (pedalAmount);
     }
     float bendSemis = 0.0f;
     float expression = 1.0f;
@@ -370,6 +382,7 @@ private:
     CP70Voice::Config lastCP70Cfg { -1.0e30 };
     WurliVoice::Config lastWurliCfg { -1.0e30 };
     GrandVoice::Config lastGrandCfg { -1.0e30 };
+    ClavinetVoice::Config lastClavCfg { -1.0e30 };
     // Which configuration each tine has been built to. A knob being turned
     // changes the configuration every block, and rebuilding all eighty-eight
     // every time is what pushed blocks past their deadline.
@@ -388,6 +401,13 @@ private:
     GrandRadiator grandRad;
     GrandMicPair  grandMics;
     std::array<double, kNumTines> grandPanL {}, grandPanR {};
+    // The Clavinet: sixty real keys (F1-E6, MIDI 29-88); voices outside that
+    // compass simply do not exist, as on the instrument.
+    std::array<std::uint32_t, kNumTines> clavCfgVersion {};
+    std::vector<ClavinetVoice> clav;
+    ClavinetToneStack clavTone;
+    ClavinetPreamp    clavPre;
+    ClavinetKnock     clavKnock;
     WurliPickupBus wurliBus;
     WurliPreamp   wurliPre;
     WurliTremolo  wurliTrem;

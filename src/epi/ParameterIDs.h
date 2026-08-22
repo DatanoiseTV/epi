@@ -37,7 +37,7 @@ namespace epi::ids
     // Two real instruments now, so the selector returns. It was removed when
     // only one existed: a single-entry choice has the range [0, 0] and AU
     // validation reads back NaN from the normalisation divide.
-    inline const juce::StringArray instrumentNames { "Tine", "E-Grand", "Reed", "Grand" };
+    inline const juce::StringArray instrumentNames { "Tine", "E-Grand", "Reed", "Grand", "Clav" };
 
     // ---- Action: key, hammer, damper ---------------------------------------
     inline constexpr const char* velCurve    = "velCurve";    // 0..1
@@ -68,6 +68,10 @@ namespace epi::ids
     inline constexpr const char* coilSat    = "coilSat";    // 0..1 core saturation
 
     // Clavinet pickup switching. Order must match epi::PickupSelect.
+    inline const juce::StringArray clavSwitchNames {
+        // The D6 selector rockers resolved to their four states.
+        "Center", "Bridge", "Both", "Out of Phase" };
+
     inline const juce::StringArray materialNames {
         // Index 0 is the calibrated stock metal for every instrument.
         "Music Wire", "Stainless", "Bronze", "Brass",
@@ -88,6 +92,11 @@ namespace epi::ids
     inline constexpr const char* tremDepth   = "tremDepth";   // 0..1
     inline constexpr const char* clarity     = "clarity";     // -12..+12 dB air
     inline constexpr const char* material    = "material";    // choice: resonator metal
+    inline constexpr const char* clavSwitch  = "clavSwitch";  // choice: the D6 pickup matrix
+    inline constexpr const char* clavBrill   = "clavBrill";   // rocker: Brilliant
+    inline constexpr const char* clavTreb    = "clavTreb";    // rocker: Treble
+    inline constexpr const char* clavMed     = "clavMed";     // rocker: Medium
+    inline constexpr const char* clavSoft    = "clavSoft";    // rocker: Soft
     inline constexpr const char* tremStereo  = "tremStereo";  // 0..1
     inline constexpr const char* cabMix      = "cabMix";      // 0..1
     inline constexpr const char* phaserMix   = "phaserMix";   // 0..1
@@ -242,6 +251,21 @@ namespace epi::ids
         // because hosts index AU parameters by position.
         add (std::make_unique<Pc> (juce::ParameterID { material, 1 }, "Material",
                                    materialNames, 0));
+
+        // The Clavinet's own switches, appended at the end like everything
+        // after the first release. The pickup matrix is the D6's two-rocker
+        // selector; the four tone rockers are stepped floats because they
+        // are honest on/off switches with no bool infrastructure to lean on.
+        add (std::make_unique<Pc> (juce::ParameterID { clavSwitch, 1 }, "Clav Pickup",
+                                   clavSwitchNames, 0));
+        add (std::make_unique<P> (juce::ParameterID { clavBrill, 1 }, "Brilliant",
+                                   juce::NormalisableRange<float> { 0.0f, 1.0f, 1.0f }, 0.0f));
+        add (std::make_unique<P> (juce::ParameterID { clavTreb, 1 }, "Treble Rocker",
+                                   juce::NormalisableRange<float> { 0.0f, 1.0f, 1.0f }, 0.0f));
+        add (std::make_unique<P> (juce::ParameterID { clavMed, 1 }, "Medium Rocker",
+                                   juce::NormalisableRange<float> { 0.0f, 1.0f, 1.0f }, 1.0f));
+        add (std::make_unique<P> (juce::ParameterID { clavSoft, 1 }, "Soft Rocker",
+                                   juce::NormalisableRange<float> { 0.0f, 1.0f, 1.0f }, 0.0f));
 
         return { params.begin(), params.end() };
     }

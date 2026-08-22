@@ -27,6 +27,17 @@ function ActionPanel() {
 }
 
 
+/* ---- Rocker: an on/off switch bound to a stepped float param ---- */
+function PRocker({ id }) {
+  const spec = PARAMS[id];
+  const [v, set] = JuceBridge.useJuceSlider(id);
+  const on = v >= 0.5;
+  return (
+    <button className={'seg wsrocker' + (on ? ' on' : '')}
+            onClick={() => set(on ? 0 : 1)}>{spec.label.toUpperCase()}</button>
+  );
+}
+
 /* ---- MATERIAL: what the resonator is made of ----
    Index 0 is the calibrated stock metal. The row also states the one hard
    transducer fact: a non-magnetic metal is invisible to a magnetic pickup,
@@ -39,7 +50,7 @@ function MaterialRow({ inst }) {
   const ferro = MAT_FERRO[mi], cond = MAT_COND[mi];
   /* Which selected transducer is deaf to this material, per instrument. */
   let deaf = null;
-  const magnetic = inst === 0 ? tr <= 1 : tr === 0;
+  const magnetic = (inst === 0 || inst === 4) ? tr <= 1 : tr === 0;
   const electro  = inst === 2 ? (tr === 1 || tr === 2) : tr === 2;
   if (magnetic && !ferro) deaf = cond
     ? 'a ' + MATERIALS[mi].toLowerCase() + ' resonator reaches a magnetic pickup only as a faint eddy signal'
@@ -58,10 +69,24 @@ function MaterialRow({ inst }) {
    CP-70 has no tone bar, no bloom and no magnetics -- showing those
    knobs would be showing dead controls. */
 function TinePanel({ inst }) {
-  const cp70 = inst === 1, wurli = inst === 2, gpiano = inst === 3;
+  const cp70 = inst === 1, wurli = inst === 2, gpiano = inst === 3, clav = inst === 4;
   const [tune] = useJuceSlider('tune');
   const [shop, setShop] = useState(false);
   const a4 = (440 * Math.pow(2, JuceBridge.PARAMS.tune.map.to(tune) / 1200)).toFixed(1) + ' Hz';
+  if (clav) return (
+    <div className="panel f-tine">
+      <PHead title="Strings" meta={a4} />
+      <div className="krow">
+        <PKnob id="resDamp" label="DECAY" />
+        <PKnob id="tune" label="TUNE" />
+      </div>
+      {/* Sixty strings under tangents: decay trims the intrinsic loss (the
+          yarn does the rest at release), and the tangent's rest distance
+          lives on the ACTION panel as let-off, which is what it is. */}
+      <MaterialRow inst={4} />
+      <div className="note">tangent-held strings · yarn release · solder-free tuning</div>
+    </div>
+  );
   if (gpiano) return (
     <div className="panel f-tine">
       <PHead title="Strings" meta={a4} />
@@ -149,11 +174,26 @@ function TinePanel({ inst }) {
 
 /* ---- PICKUP: where the sound is actually made ---- */
 function PickupPanel({ inst }) {
-  const cp70 = inst === 1, wurli = inst === 2, gpiano = inst === 3;
+  const cp70 = inst === 1, wurli = inst === 2, gpiano = inst === 3, clav = inst === 4;
   const [pos] = useJuceSlider('pickupPos');
   const [sat] = useJuceSlider('coilSat');
   const [shop, setShop] = useState(false);
   const mm = (JuceBridge.PARAMS.pickupPos.map.to(pos) * 2).toFixed(2) + ' mm';
+  if (clav) return (
+    <div className="panel f-pickup">
+      <PHead title="Pickups" meta="TWIN BAR" />
+      {/* The D6's two bar pickups at their measured distances, resolved by
+          the selector matrix: each position is a different comb written
+          onto the same string, and out-of-phase keeps only what the taps
+          do not share. GAP is the rest distance -- the operating point on
+          the flux curve. */}
+      <PSeg id="clavSwitch" options={['CENTER', 'BRIDGE', 'BOTH', 'OUT OF PHASE']} wide />
+      <div className="krow" style={{ marginTop: 8 }}>
+        <PKnob id="pickupDist" label="GAP" />
+      </div>
+      <div className="note">position combs · the switch is the voicing</div>
+    </div>
+  );
   if (gpiano) return (
     <div className="panel f-pickup">
       <div className="phead">
@@ -234,6 +274,25 @@ function PickupPanel({ inst }) {
 function AmpPanel({ inst }) {
   const [depth] = useJuceSlider('tremDepth');
   const [shop, setShop] = useState(false);
+  if (inst === 4) return (
+    <div className="panel f-amp">
+      <PHead title="Tone" meta="ROCKERS" />
+      {/* The four rockers as their real RC networks; all up falls back to
+          Medium, as the circuit does. Drive is the two-transistor preamp's
+          input level against its measured THD points. */}
+      <div className="wsrockers">
+        <PRocker id="clavBrill" />
+        <PRocker id="clavTreb" />
+        <PRocker id="clavMed" />
+        <PRocker id="clavSoft" />
+      </div>
+      <div className="krow" style={{ marginTop: 8 }}>
+        <PKnob id="preampDrive" label="DRIVE" />
+        <PKnob id="clarity" label="CLARITY" />
+      </div>
+      <div className="note">four rockers · measured THD points · DI to the desk</div>
+    </div>
+  );
   if (inst === 3) return (
     <div className="panel f-amp">
       <PHead title="Air" />

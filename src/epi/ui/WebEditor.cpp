@@ -33,10 +33,11 @@ namespace
         "preampDrive", "bass", "treble", "tremRate", "tremDepth", "tremStereo", "cabMix",
         "phaserMix", "phaserRate", "phaserDepth", "phaserFb",
         "spaceMix", "spaceSize", "outGain", "clarity",
+        "clavBrill", "clavTreb", "clavMed", "clavSoft",
     };
     // No bool parameters exist; an empty constexpr array is a compiler
     // extension GCC and MSVC both reject, so there is simply no list.
-    constexpr const char* kChoiceIds[] = { "pickupSel", "instrument", "material" };
+    constexpr const char* kChoiceIds[] = { "pickupSel", "instrument", "material", "clavSwitch" };
 
     constexpr int kDesignW = 1224;
     constexpr int kDesignH = 768;

@@ -420,3 +420,10 @@ html, body {
    states the transducer fact in the panel's own voice, slightly lifted. */
 .matrow { margin-top: 6px; }
 .matrow .note.warn { color: #b08d4a; }
+
+/* Clavinet rockers: four latching switches in a row. */
+.wsrockers { display: flex; gap: 6px; justify-content: center; }
+.wsrocker { padding: 6px 10px; font-size: 9px; letter-spacing: .12em;
+  background: #17140f; color: var(--mute); border: 1px solid #2c271d;
+  border-radius: 4px; cursor: pointer; }
+.wsrocker.on { color: #caa45e; border-color: #caa45e; background: #221c11; }

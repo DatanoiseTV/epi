@@ -35,6 +35,7 @@ static constexpr float kTrimRhodes = 0.66f;
 static constexpr float kTrimCP70   = 3.94f;
 static constexpr float kTrimWurli  = 6.38f;
 static constexpr float kTrimGrand  = 75.0f;   // mic-pair units are small. Deliberately ~6 dB under the electrics' bench: a close-miked grand carries a 22 dB attack crest, and matching RMS exactly would put every mf attack into the output rail
+static constexpr float kTrimClav   = 0.092f;  // matched to the -24 dBFS mf bench like the other four
 
 void EpiEngine::prepare (double sampleRate, int)
 {
@@ -89,6 +90,15 @@ void EpiEngine::prepare (double sampleRate, int)
     grandCfgVersion.fill (0);
     grandRad.prepare (sampleRate);
     grandMics.prepare (sampleRate);
+
+    if (clav.size() != static_cast<std::size_t> (kNumTines))
+        clav.resize (static_cast<std::size_t> (kNumTines));
+    for (int i = 0; i < kNumTines; ++i)
+        clav[static_cast<std::size_t> (i)].prepare (sampleRate);
+    clavCfgVersion.fill (0);
+    clavTone.prepare (sampleRate);
+    clavPre.prepare (sampleRate);
+    clavKnock.prepare (sampleRate);
 
     wurliBus.prepare (sampleRate * WurliVoice::kOver);
     wurliPre.prepare (sampleRate * WurliVoice::kOver);
@@ -148,6 +158,10 @@ void EpiEngine::reset()
     grandBoard.prepare (fs);
     grandRad.prepare (fs);
     grandMics.prepare (fs);
+    for (auto& v : clav) v.reset();
+    clavTone.prepare (fs);
+    clavPre.prepare (fs);
+    clavKnock.reset();
     keyDown.fill (false);
     harp.reset();
     action.reset();
@@ -267,6 +281,25 @@ GrandVoice::Config EpiEngine::grandConfig (const EngineParams& p) const
     return c;
 }
 
+ClavinetVoice::Config EpiEngine::clavConfig (const EngineParams& p) const
+{
+    ClavinetVoice::Config c;
+    c.hammerHardness = p.hammerHard;
+    c.hammerMassNorm = p.hammerMass;
+    // The tangent's rest distance from the string: the let-off knob's honest
+    // Clavinet meaning (EURASIP's d).
+    c.escapementNorm = p.escapement;
+    c.damperGrip     = p.damperGrip;
+    c.gapNorm        = std::clamp (p.pickupDist, 0.0f, 1.0f);
+    c.pickupSel      = static_cast<double> (p.clavSwitch);
+    c.dampTrim       = p.resDamp;
+    c.detuneCents    = static_cast<double> (p.tuneCents)
+                     + 100.0 * static_cast<double> (bendSemis);
+    c.transducer     = static_cast<double> (p.transducer);
+    c.material       = static_cast<double> (p.material);
+    return c;
+}
+
 void EpiEngine::handleEvent (const NoteEvent& e, const EngineParams& p)
 {
     switch (e.type)
@@ -295,7 +328,18 @@ void EpiEngine::handleEvent (const NoteEvent& e, const EngineParams& p)
             cp70[i].setPedal (pedalAmount);
             wurli[static_cast<std::size_t> (i)].setPedal (pedalAmount);
             grand[static_cast<std::size_t> (i)].setPedal (pedalAmount);
-            if (p.instrument == 3)
+            clav[static_cast<std::size_t> (i)].setPedal (pedalAmount);
+            if (p.instrument == 4)
+            {
+                if (clavCfgVersion[static_cast<std::size_t> (i)] != cfgVersion)
+                {
+                    clav[static_cast<std::size_t> (i)].setNote (kLoNote + i, clavConfig (p));
+                    clavCfgVersion[static_cast<std::size_t> (i)] = cfgVersion;
+                }
+                clav[static_cast<std::size_t> (i)].noteOn (e.note, vel, clavConfig (p), seed);
+                clavKnock.strike (i, vel);
+            }
+            else if (p.instrument == 3)
             {
                 if (grandCfgVersion[static_cast<std::size_t> (i)] != cfgVersion)
                 {
@@ -342,6 +386,7 @@ void EpiEngine::handleEvent (const NoteEvent& e, const EngineParams& p)
             cp70[i].noteOff();
             wurli[static_cast<std::size_t> (i)].noteOff();
             grand[static_cast<std::size_t> (i)].noteOff();
+            clav[static_cast<std::size_t> (i)].noteOff();
             action.release (i, static_cast<double> (i) / (kNumTines - 1));
             break;
         }
@@ -358,6 +403,7 @@ void EpiEngine::handleEvent (const NoteEvent& e, const EngineParams& p)
             for (auto& v : cp70)  v.noteOff();
             for (auto& v : wurli) v.noteOff();
             for (auto& v : grand) v.noteOff();
+            for (auto& v : clav)  v.noteOff();
             break;
 
         case NoteEvent::sustainOn:  setPedalAmount (1.0); break;
@@ -437,6 +483,13 @@ void EpiEngine::process (float* outL, float* outR, int numSamples,
             grandRad.prepare (fs);
             grandMics.prepare (fs);
         }
+        if (activeInst == 4)
+        {
+            for (auto& v : clav) v.reset();
+            clavTone.prepare (fs);
+            clavPre.prepare (fs);
+            clavKnock.reset();
+        }
         // The chain stages freeze mid-signal when their instrument stops
         // running -- the coil was measured thawing a two-second-old ring as
         // a half-scale burst on the way back in. Everything stateful between
@@ -502,6 +555,11 @@ void EpiEngine::processActive (float* outL, float* outR, int numSamples,
     if (p.instrument == 3)
     {
         processGrand (outL, outR, numSamples, p, events, numEvents);
+        return;
+    }
+    if (p.instrument == 4)
+    {
+        processClav (outL, outR, numSamples, p, events, numEvents);
         return;
     }
 
@@ -1028,6 +1086,153 @@ void EpiEngine::processGrand (float* outL, float* outR, int numSamples,
             grandBoard.prepare (fs);
             grandRad.prepare (fs);
             grandMics.prepare (fs);
+            room.reset();
+            l = r = 0.0;
+            ++recoveries;
+        }
+
+        const float g = gain0 + (gain1 - gain0) * (static_cast<float> (n + 1) / static_cast<float> (numSamples));
+        const float fl = static_cast<float> (l) * g;
+        const float fr = static_cast<float> (r) * g;
+        outL[n] = fl;
+        outR[n] = fr;
+        pL = std::max (pL, std::abs (fl));
+        pR = std::max (pR, std::abs (fr));
+        if (n == numSamples - 1) numActive.store (active, std::memory_order_relaxed);
+    }
+
+    for (int i = 0; i < kNumTines; ++i)
+    {
+        vTineTip[i].store (tineBlockPeak[i], std::memory_order_relaxed);
+        tineBlockPeak[i] = 0.0f;
+    }
+    for (int w = 0; w < kKeyWords; ++w)
+    {
+        std::uint32_t bits = 0;
+        for (int b = 0; b < 32; ++b)
+        {
+            const int i = w * 32 + b;
+            if (i < kNumTines && keyDown[i]) bits |= (1u << b);
+        }
+        vKeys[w].store (bits, std::memory_order_relaxed);
+    }
+    vPedal.store (pedalDown, std::memory_order_relaxed);
+
+    while (nextEvent < numEvents) handleEvent (events[nextEvent++], p);
+
+    auto bump = [] (std::atomic<float>& a, float v)
+    {
+        const float cur = a.load (std::memory_order_relaxed);
+        if (v > cur) a.store (v, std::memory_order_relaxed);
+    };
+    bump (peakL, pL);
+    bump (peakR, pR);
+}
+
+
+void EpiEngine::processClav (float* outL, float* outR, int numSamples,
+                             const EngineParams& p,
+                             const NoteEvent* events, int numEvents)
+{
+    const auto cfg = clavConfig (p);
+    if (std::memcmp (&cfg, &lastClavCfg, sizeof cfg) != 0)
+    {
+        lastClavCfg = cfg;
+        ++cfgVersion;
+    }
+    {
+        int budget = 8;
+        for (int pass = 0; pass < 2 && budget > 0; ++pass)
+            for (int i = 0; i < kNumTines && budget > 0; ++i)
+            {
+                if (clavCfgVersion[static_cast<std::size_t> (i)] == cfgVersion) continue;
+                const bool live = clav[static_cast<std::size_t> (i)].isRinging() || keyDown[i];
+                if (pass == 0 && ! live) continue;
+                clav[static_cast<std::size_t> (i)].setNote (kLoNote + i, cfg);
+                clavCfgVersion[static_cast<std::size_t> (i)] = cfgVersion;
+                --budget;
+            }
+    }
+
+    {
+        const float k = smoothK (numSamples);
+        sm.step (sm.drive, p.preampDrive, k);
+        sm.step (sm.air, p.clarityDb, k);
+        airL.set (sm.air, fs);
+        airR.set (sm.air, fs);
+    }
+    clavTone.setRockers (p.clavSoft, p.clavMed, p.clavTreb, p.clavBrill);
+    clavPre.setDrive (0.25 + 3.75 * static_cast<double> (std::clamp (sm.drive, 0.0f, 1.0f)));
+    phaserL.setParams (p.phaserRate, p.phaserDepth, p.phaserFb, p.phaserMix);
+    phaserR.setParams (p.phaserRate, p.phaserDepth, p.phaserFb, p.phaserMix);
+    if (std::abs (p.spaceSize - lastSpaceSize) > 1.0e-4f)
+    {
+        lastSpaceSize = p.spaceSize;
+        room.setSize (p.spaceSize);
+    }
+
+    const float gain1 = p.outGainLin * kTrimClav;
+    if (sm.gain < -0.5f) sm.gain = gain1;
+    const float gain0 = sm.gain;
+    sm.gain = gain1;
+
+    float pL = 0.0f, pR = 0.0f;
+    int nextEvent = 0;
+
+    for (int n = 0; n < numSamples; ++n)
+    {
+        while (nextEvent < numEvents && events[nextEvent].offset <= n)
+            handleEvent (events[nextEvent++], p);
+
+        // All sixty gaps hang on one pickup bus, so superposition at the bus
+        // is exact and intermodulation belongs to the preamp -- the same
+        // discipline as the reed bar.
+        double os[ClavinetVoice::kOver] = {};
+        double vbuf[ClavinetVoice::kOver];
+        int active = 0;
+        for (int i = 0; i < kNumTines; ++i)
+        {
+            auto& v = clav[static_cast<std::size_t> (i)];
+            if (! v.isRinging()) continue;
+            v.process (cfg, vbuf);
+            for (int k = 0; k < ClavinetVoice::kOver; ++k) os[k] += vbuf[k];
+            v.applyDamperIfDue();
+            ++active;
+            const float amp = static_cast<float> (std::abs (v.centerDisplacement()));
+            if (amp > tineBlockPeak[i]) tineBlockPeak[i] = amp;
+        }
+        // The knock reaches the pickups acoustically through the frame, not
+        // through the string clamp: chain-level, pre tone stack.
+        double y = decimL.process (os) + clavKnock.process() * p.strikeNoise;
+        y = clavTone.process (y);
+        y = clavPre.process (y);
+
+        double l = y, r = y;
+        if (p.clarityDb != 0.0f || sm.air != 0.0f)
+        {
+            l = airL.process (l);
+            r = airR.process (r);
+        }
+        if (p.phaserMix > 0.0f)
+        {
+            l = phaserL.process (l);
+            r = phaserR.process (r);
+        }
+        if (p.spaceMix > 0.0f)
+        {
+            double wl = 0.0, wr = 0.0;
+            room.process (l, r, wl, wr);
+            const double mix = std::clamp (static_cast<double> (p.spaceMix), 0.0, 1.0);
+            l += mix * wl;
+            r += mix * wr;
+        }
+
+        if (! std::isfinite (l) || ! std::isfinite (r))
+        {
+            for (auto& v : clav) v.reset();
+            clavTone.prepare (fs);
+            clavPre.prepare (fs);
+            decimL.reset();
             room.reset();
             l = r = 0.0;
             ++recoveries;
