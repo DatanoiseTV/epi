@@ -20,6 +20,9 @@ namespace epi
 {
     // The shipped bank. Values are in real parameter units; anything a preset
     // does not name resets to its default first, so presets are self-contained.
+    // The data itself lives framework-free in presets/PresetData.h, where the
+    // preset verification harness renders every entry; this function only
+    // adapts it to the PresetManager's shape.
     std::vector<epicommon::PresetManager::Preset> makeFactoryPresets();
 
     // A factory preset may re-cut the harp itself: 88 pairs of
@@ -32,4 +35,8 @@ namespace epi
     // And the cabinet bench, for presets whose instrument lives on its own
     // speakers. Null for every preset that should leave the player's box.
     const std::array<float, 5>* factoryCabMods (const juce::String& name);
+
+    // And the grand's mic bench: { spread, balance, distance, level L,
+    // level R }. Same contract as the other benches: null means hands off.
+    const std::array<float, 5>* factoryMicMods (const juce::String& name);
 }

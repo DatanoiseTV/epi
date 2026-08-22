@@ -11,6 +11,7 @@
 */
 
 #include "epi/PluginProcessor.h"
+#include "epi/EngineParamMap.h"
 #include "epi/ParameterIDs.h"
 #include "epi/presets/FactoryPresets.h"
 #include "epi/ui/WebEditor.h"
@@ -48,6 +49,8 @@ EpiAudioProcessor::EpiAudioProcessor()
                                (*mods)[static_cast<std::size_t> (i)][1]);
         if (const auto* cab = epi::factoryCabMods (presetManager.getCurrentName()))
             setCabMod ({ (*cab)[0], (*cab)[1], (*cab)[2], (*cab)[3], (*cab)[4] });
+        if (const auto* mic = epi::factoryMicMods (presetManager.getCurrentName()))
+            setMicMod ({ (*mic)[0], (*mic)[1], (*mic)[2], (*mic)[3], (*mic)[4] });
     });
     snapshotCurrentParams();
 }
@@ -71,59 +74,13 @@ void EpiAudioProcessor::prepareToPlay (double newSampleRate, int samplesPerBlock
 
 epi::EngineParams EpiAudioProcessor::buildEngineParams() const
 {
-    auto raw = [this] (const char* id)
+    // The raw-to-engine mapping lives in EngineParamMap.h, shared verbatim
+    // with the preset verification harness: what the tests render is what
+    // this processor renders.
+    return epi::engineParamsFrom ([this] (const char* id)
     {
         return apvts.getRawParameterValue (id)->load (std::memory_order_relaxed);
-    };
-
-    epi::EngineParams p;
-    using namespace epi::ids;
-
-    p.instrument = static_cast<int> (raw (instrument));
-
-    p.tuneCents  = raw (tune);
-
-    p.velCurve    = raw (velCurve);
-    p.hammerHard  = raw (hammerHard);
-    p.hammerMass  = raw (hammerMass);
-    p.escapement  = raw (escapement);
-    p.strikeNoise = raw (strikeNoise);
-    p.damperGrip  = raw (damperGrip);
-
-    p.tipMass   = raw (tipMass);
-    p.resDamp   = raw (resDamp);
-    p.barCouple = raw (barCouple);
-    p.barTune   = raw (barTune);
-    p.bodyMix   = raw (bodyMix);
-    p.nonlinAmt = raw (nonlinAmt);
-
-    p.pickupPos  = raw (pickupPos);
-    p.pickupDist = raw (pickupDist);
-    p.pickupSel  = static_cast<int> (raw (pickupSel));
-    p.coilFreq   = raw (coilFreq);
-    p.coilQ      = raw (coilQ);
-    p.coilSat    = raw (coilSat);
-
-    p.preampDrive = raw (preampDrive);
-    p.bassDb      = raw (bass);
-    p.trebleDb    = raw (treble);
-    p.clarityDb   = raw (clarity);
-    p.transducer  = static_cast<int> (raw (pickupSel));
-    p.material    = static_cast<int> (raw (material));
-    p.tremRate    = raw (tremRate);
-    p.tremDepth   = raw (tremDepth);
-    p.tremStereo  = raw (tremStereo);
-    p.cabMix      = raw (cabMix);
-    p.phaserMix   = raw (phaserMix);
-    p.phaserRate  = raw (phaserRate);
-    p.phaserDepth = raw (phaserDepth);
-    p.phaserFb    = raw (phaserFb);
-
-    p.spaceMix   = raw (spaceMix);
-    p.spaceSize  = raw (spaceSize);
-    p.outGainLin = juce::Decibels::decibelsToGain (raw (outGain));
-
-    return p;
+    });
 }
 
 void EpiAudioProcessor::collectEvents (juce::MidiBuffer& midi)

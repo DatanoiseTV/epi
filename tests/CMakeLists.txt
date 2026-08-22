@@ -63,3 +63,16 @@ target_include_directories(epi_clavinet_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_features(epi_clavinet_tests PRIVATE cxx_std_20)
 add_test(NAME epi_clavinet COMMAND epi_clavinet_tests)
 set_tests_properties(epi_clavinet PROPERTIES TIMEOUT 900)
+
+# ---------------------------------------------------------------------------
+# Epi factory preset verification. Renders every preset in PresetData.h
+# through the shared EngineParamMap and holds it to level, spectrum and
+# character bounds. Framework-free: no JUCE.
+# ---------------------------------------------------------------------------
+add_executable(epi_preset_tests
+    test_epi_presets.cpp
+    ${CMAKE_SOURCE_DIR}/src/epi/dsp/EpiEngine.cpp)
+target_include_directories(epi_preset_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_features(epi_preset_tests PRIVATE cxx_std_20)
+add_test(NAME epi_presets COMMAND epi_preset_tests)
+set_tests_properties(epi_presets PROPERTIES TIMEOUT 900)
