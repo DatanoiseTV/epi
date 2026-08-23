@@ -82,7 +82,8 @@ jobs:
         shell: bash
         run: |
           cmake --build build --target Epi_All Epi_CLAP \
-            epi_dsp_tests epi_reference_tests epi_grand_tests epi_wurli_tests -j
+            epi_dsp_tests epi_reference_tests epi_grand_tests epi_wurli_tests \
+            epi_clavinet_tests epi_preset_tests epi_engine_tests -j
 
       - name: tests
         shell: bash
