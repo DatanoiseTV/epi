@@ -448,9 +448,15 @@ private:
     struct AirShelf
     {
         double b0 = 1, b1 = 0, b2 = 0, a1 = 0, a2 = 0, z1 = 0, z2 = 0;
+        double curDb = 0.0;
+        bool shelfInit = false;
         void set (double dB, double fs)
         {
-            const double A = std::pow (10.0, dB / 40.0);
+            // Rate-limited like the cabinet morph: an RBJ shelf's coefficient
+            // step rings its own resonance under fast automation.
+            curDb += shelfInit ? std::clamp (dB - curDb, -0.15, 0.15) : dB - curDb;
+            shelfInit = true;
+            const double A = std::pow (10.0, curDb / 40.0);
             const double w = 2.0 * kPiD * 8500.0 / fs;
             const double c = std::cos (w);
             const double al = std::sin (w) / 2.0 * std::sqrt ((A + 1.0 / A) * (1.0 / 0.9 - 1.0) + 2.0);

@@ -95,7 +95,7 @@ void EpiEngine::prepare (double sampleRate, int)
     if (clav.size() != static_cast<std::size_t> (kNumTines))
         clav.resize (static_cast<std::size_t> (kNumTines));
     for (int i = 0; i < kNumTines; ++i)
-        clav[static_cast<std::size_t> (i)].prepare (sampleRate);
+        clav[static_cast<std::size_t> (i)].prepare (sampleRate, &field);
     clavCfgVersion.fill (0);
     // The stack and preamp run at the oversampled rate, as calibrated:
     // the saturation's harmonics must exist above base Nyquist BEFORE the
@@ -515,9 +515,12 @@ void EpiEngine::process (float* outL, float* outR, int numSamples,
         // tail is continuous and real.
         coil.reset(); preamp.reset();
         cabinetL.reset(); cabinetR.reset(); cabinetBL.reset(); cabinetBR.reset();
-        wurliPre.reset();
+        cp70Preamp.reset();
+        wurliBus.reset(); wurliPre.reset(); wurliTrem.reset();
+        vibrato.reset();
         decimL.reset(); decimR.reset();
         phaserL.reset(); phaserR.reset();
+        airL.reset(); airR.reset();
         activeInst = p.instrument;
     }
     EngineParams pa = p;
@@ -668,8 +671,11 @@ void EpiEngine::processActive (float* outL, float* outR, int numSamples,
     {
         const float k = smoothK (numSamples);
         sm.step (sm.drive, p.preampDrive, k);
-        sm.step (sm.bass, p.bassDb, k);
-        sm.step (sm.treb, p.trebleDb, k);
+        // Tone gains move slower than the general smoothing: a gain-blend
+        // step is an amplitude discontinuity, and at the 40 ms constant a
+        // fast treble sweep still zipped at measurable level.
+        sm.step (sm.bass, p.bassDb, k * 0.35f);
+        sm.step (sm.treb, p.trebleDb, k * 0.35f);
         sm.step (sm.cabMix, p.cabMix, k);
         sm.step (sm.air, p.clarityDb, k);
         airL.set (sm.air, fs);
@@ -1356,8 +1362,11 @@ void EpiEngine::processCP70 (float* outL, float* outR, int numSamples,
     {
         const float k = smoothK (numSamples);
         sm.step (sm.drive, p.preampDrive, k);
-        sm.step (sm.bass, p.bassDb, k);
-        sm.step (sm.treb, p.trebleDb, k);
+        // Tone gains move slower than the general smoothing: a gain-blend
+        // step is an amplitude discontinuity, and at the 40 ms constant a
+        // fast treble sweep still zipped at measurable level.
+        sm.step (sm.bass, p.bassDb, k * 0.35f);
+        sm.step (sm.treb, p.trebleDb, k * 0.35f);
         sm.step (sm.cabMix, p.cabMix, k);
         sm.step (sm.air, p.clarityDb, k);
         airL.set (sm.air, fs);
@@ -1604,8 +1613,11 @@ void EpiEngine::processWurli (float* outL, float* outR, int numSamples,
     {
         const float k = smoothK (numSamples);
         sm.step (sm.drive, p.preampDrive, k);
-        sm.step (sm.bass, p.bassDb, k);
-        sm.step (sm.treb, p.trebleDb, k);
+        // Tone gains move slower than the general smoothing: a gain-blend
+        // step is an amplitude discontinuity, and at the 40 ms constant a
+        // fast treble sweep still zipped at measurable level.
+        sm.step (sm.bass, p.bassDb, k * 0.35f);
+        sm.step (sm.treb, p.trebleDb, k * 0.35f);
         sm.step (sm.cabMix, p.cabMix, k);
         sm.step (sm.sat, p.coilSat, k);
         sm.step (sm.air, p.clarityDb, k);
