@@ -18,6 +18,7 @@
 #include "GrandVoice.h"
 #include "GrandBoard.h"
 #include "GrandRadiator.h"
+#include "GrandMicStage.h"
 #include "ClavinetVoice.h"
 #include "ClavinetChain.h"
 #include "WurliChain.h"
@@ -222,6 +223,12 @@ public:
         micLvlR.store (lvlR, std::memory_order_relaxed);
         micDirty.store (true, std::memory_order_release);
     }
+
+    // The grand's multi-mic stage (GrandMicStage.h): mode and per-mic
+    // geometry are driven directly on the stage object, which does its own
+    // click-safe pickup on the audio thread. Mode 0 is the calibrated pair
+    // above; mode 1 is the freely positioned Stage.
+    GrandMicStage& grandMicStage() noexcept { return grandMics; }
 
     // The string workshop: the CP-70's own bench. Same discipline as the
     // tines: atomics, a dirty flag, the bounded priority rebuild.
@@ -464,7 +471,7 @@ private:
     std::vector<GrandVoice> grand;
     GrandBoard    grandBoard;
     GrandRadiator grandRad;
-    GrandMicPair  grandMics;
+    GrandMicStage grandMics;
     std::array<double, kNumTines> grandPanL {}, grandPanR {};
     // The Clavinet: sixty real keys (F1-E6, MIDI 29-88); voices outside that
     // compass simply do not exist, as on the instrument.

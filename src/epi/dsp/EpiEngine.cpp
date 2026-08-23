@@ -1101,11 +1101,12 @@ void EpiEngine::processGrand (float* outL, float* outR, int numSamples,
             if (amp > tineBlockPeak[i]) tineBlockPeak[i] = amp;
         }
         grandBoard.tick();
-        double tl = 0.0, tr = 0.0;
-        grandRad.tick (tl, tr);
-        double l = grandBoard.outputL() + tl;
-        double r = grandBoard.outputR() + tr;
-        grandMics.tick (l, r);
+        // The mic stage owns the radiator's per-sample readout: in Classic
+        // mode its body is exactly the shipped seam (radiator tick, board
+        // plus tail per channel, the pair's allpass phase); in Stage mode
+        // the same state advance feeds the positioned mics instead.
+        double l = 0.0, r = 0.0;
+        grandMics.tick (grandRad, grandBoard.outputL(), grandBoard.outputR(), l, r);
         // The desk's shelf pair (see the block above).
         if (grandBassGain != 0.0 || grandTrebGain != 0.0)
         {

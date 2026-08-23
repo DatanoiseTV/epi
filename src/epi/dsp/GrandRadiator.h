@@ -58,6 +58,48 @@ public:
     static constexpr double kLoHz = 1200.0;
     static constexpr double kHiHz = 15000.0;
 
+    // -----------------------------------------------------------------------
+    // The stage readout: where the sections SIT, not just how loud they are.
+    //
+    // The per-section scatter h already encodes a position. With
+    // gL = a (1 + s h), gR = a (1 - s h) the two classic channels hear each
+    // section exactly as a coincident pair hears a source displaced along
+    // the bridge: h > 0 reads louder left, and on a real grand seen from the
+    // tail the bass end of the bridge is the LEFT end. Formalised: the
+    // bridge spans 2 * kBridgeHalf = 1.4 m, and the two banks are the two
+    // half-bridge ensembles -- the L bank (fed through the bass-favouring
+    // side of the per-note pan law) owns [-0.7, 0], the R bank [0, +0.7] --
+    // with each section placed inside its half by its own h:
+    //
+    //     x(L, i) = -0.35 - 0.35 h_i      x(R, i) = +0.35 - 0.35 h_i
+    //
+    // so a section that Classic renders louder-left sits further left on
+    // the Stage, and the per-note pan law (panGains' measured ILD line,
+    // monotone bass-left) becomes the linear crossfade of a source walking
+    // x_note = -0.7 + 1.4 (note - 21)/87 along the same axis. Classic and
+    // Stage therefore agree about where every source sits; only the way the
+    // field is SAMPLED differs (fixed gain law there, real mic geometry
+    // here). For the mics the 256 per-section positions are quantised onto
+    // kStageSlots delay buses by linear split -- at mic distances >= 0.2 m
+    // the inter-slot spacing (0.2 m) is below the resolution any two-ear or
+    // two-mic rig has for an extended source, so nothing audible is lost.
+    // -----------------------------------------------------------------------
+    static constexpr int kStageSlots = 8;
+    static constexpr double kBridgeHalf = 0.7;   // metres, mid-bridge to end
+
+    static double slotX (int s)
+    {
+        return -kBridgeHalf + 2.0 * kBridgeHalf * s / (kStageSlots - 1);
+    }
+
+    // The keyboard-geometry source position of a note, the Stage reading of
+    // the same law panGains encodes: bass end left, treble end right.
+    static double noteX (int midiNote)
+    {
+        return -kBridgeHalf
+             + 2.0 * kBridgeHalf * std::clamp ((midiNote - 21.0) / 87.0, 0.0, 1.0);
+    }
+
     // Second-order allpass, unit magnitude everywhere; the building block of
     // the direct branch's dispersion and the mic pair's interchannel phase.
     struct Ap2
@@ -141,6 +183,9 @@ private:
             double* pa1 = ch == 0 ? a1L : a1R;
             double* pa2 = ch == 0 ? a2L : a2R;
             double* pg  = ch == 0 ? gL : gR;
+            double* pgB = ch == 0 ? gBL : gBR;
+            int*    psi = ch == 0 ? slotIL : slotIR;
+            double* psw = ch == 0 ? slotWL : slotWR;
             for (int i = 0; i < kSections; ++i)
             {
                 const double t = (i + 0.5 + 0.5 * ch) / kSections;
@@ -171,6 +216,19 @@ private:
                 const double amp = norm * kScale * std::sqrt (GrandBoard::kBandHz / f);
                 const double h = 2.0 * hash01 (static_cast<unsigned> (i) * 4u + 1u) - 1.0;
                 pg[i] = amp * (1.0 + (ch == 0 ? kSideAmt : -kSideAmt) * h);
+
+                // The Stage readout of the same section: base amplitude with
+                // the +/- scatter REMOVED -- on the stage the scatter is not
+                // a gain any more, it is the position (see the header note),
+                // and applying it twice would double-count the image.
+                pgB[i] = amp;
+                const double centre = (ch == 0 ? -0.5 : 0.5) * kBridgeHalf;
+                const double x = centre - 0.5 * kBridgeHalf * h;
+                const double u = (x + kBridgeHalf) / (2.0 * kBridgeHalf)
+                               * (kStageSlots - 1);
+                const int i0 = std::clamp (static_cast<int> (u), 0, kStageSlots - 2);
+                psi[i] = i0;
+                psw[i] = std::clamp (u - i0, 0.0, 1.0);
             }
         }
     }
@@ -226,8 +284,37 @@ public:
         inR += force * gPanR;
     }
 
-    // Once per engine sample, after every push.
+    // Once per engine sample, after every push. The classic two-channel
+    // readout, byte-identical to the shipped chain.
     void tick (double& outL, double& outR)
+    {
+        tickCore<true, false> (&outL, &outR, nullptr, nullptr);
+    }
+
+    // The Stage readout: kStageSlots spatial buses (per-section outputs
+    // binned by the positions formalised above) plus the direct low branch
+    // folded to ONE mid-bridge bus. Advances exactly the same states through
+    // exactly the same arithmetic as tick(), so the two readouts can be
+    // exchanged at any sample without a discontinuity in the resonators.
+    void tickStage (double* slots, double& low)
+    {
+        tickCore<false, true> (nullptr, nullptr, slots, &low);
+    }
+
+    // Both readouts from one state advance -- the mode crossfade's tick.
+    // (Running tick() and tickStage() back to back would advance the
+    // resonators twice; this is the one-advance version.)
+    void tickDual (double& outL, double& outR, double* slots, double& low)
+    {
+        tickCore<true, true> (&outL, &outR, slots, &low);
+    }
+
+private:
+    // The single per-sample core. The Classic arithmetic is textually the
+    // shipped tick() -- the constexpr branches only ADD accumulations, so
+    // the classic outputs stay byte-identical whichever readouts are on.
+    template <bool Classic, bool Stage>
+    void tickCore (double* outL, double* outR, double* slots, double* low)
     {
         // The band-edge guard: the tail owns >1.3 kHz only, but 128 section
         // skirts summed in phase pass real bass -- measured, an A0
@@ -253,19 +340,49 @@ public:
             dr = dispR[i].tick (dr);
         }
         double sl = dl, sr = dr;
+        if constexpr (Stage)
+        {
+            for (int s = 0; s < kStageSlots; ++s) slots[s] = 0.0;
+            // The low branch collapses to one mid-bridge source on the
+            // Stage: its band lives below 1.3 kHz, whose wavelengths
+            // (>= 26 cm) are of the order of the whole bridge, so a mic at
+            // 0.2 m or more cannot resolve where along it the force entered.
+            // Half the two-channel sum keeps the per-mic level on the same
+            // footing as one classic channel.
+            *low = 0.5 * (dl + dr);
+        }
         for (int i = 0; i < kSections; ++i)
         {
             const double l = a1L[i] * yL1[i] + a2L[i] * yL2[i] + xl;
             yL2[i] = yL1[i]; yL1[i] = l;
-            sl += gL[i] * l;
+            if constexpr (Classic)
+                sl += gL[i] * l;
+            if constexpr (Stage)
+            {
+                const double v = gBL[i] * l;
+                slots[slotIL[i]]     += (1.0 - slotWL[i]) * v;
+                slots[slotIL[i] + 1] += slotWL[i] * v;
+            }
             const double r = a1R[i] * yR1[i] + a2R[i] * yR2[i] + xr;
             yR2[i] = yR1[i]; yR1[i] = r;
-            sr += gR[i] * r;
+            if constexpr (Classic)
+                sr += gR[i] * r;
+            if constexpr (Stage)
+            {
+                const double v = gBR[i] * r;
+                slots[slotIR[i]]     += (1.0 - slotWR[i]) * v;
+                slots[slotIR[i] + 1] += slotWR[i] * v;
+            }
         }
         inL = inR = 0.0;
-        outL = sl;
-        outR = sr;
+        if constexpr (Classic)
+        {
+            *outL = sl;
+            *outR = sr;
+        }
     }
+
+public:
 
 private:
     static constexpr double kEta = 0.02;      // the board's own loss factor
@@ -278,6 +395,11 @@ private:
     double a1L[kSections] {}, a2L[kSections] {};
     double a1R[kSections] {}, a2R[kSections] {};
     double gL[kSections] {}, gR[kSections] {};
+    // Stage readout tables: scatter-free base amplitude and the two-slot
+    // linear split of each section's bridge position (see the header note).
+    double gBL[kSections] {}, gBR[kSections] {};
+    int    slotIL[kSections] {}, slotIR[kSections] {};
+    double slotWL[kSections] {}, slotWR[kSections] {};
     GrandRadiationHp hpInL, hpInR;
     GrandRadiationHp dirHpL, dirHpR;
     Lp2 dirLpL, dirLpR;

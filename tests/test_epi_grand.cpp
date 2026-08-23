@@ -4,9 +4,12 @@
 
   Covers strings + bridge two-port + board (rows E1, K1-K3, U1-U2, W1-W5,
   P1), the radiator with its stereo pair and the knock feed (S1-S2, T1,
-  stereo rows), the pedals (G1-G3, Y1-Y2, UC1) and the hammer calibration
-  (H1, V1-V3). Every target is the plan's own Salamander C5 measurement or
-  its named [R] source.
+  stereo rows), the pedals (G1-G3, Y1-Y2, UC1), the hammer calibration
+  (H1, V1-V3) and the multi-mic stage's geometry (MS1-MS7: mode-0
+  bit-exactness, 1/r, r/c delay, dipole sign, lid image, click safety,
+  cost). Every physical target is the plan's own Salamander C5 measurement,
+  its named [R] source, or -- for the mic stage -- the free-field law the
+  geometry must reproduce.
 
   Two rendered signals, chosen per row to match how the target was measured:
   the summed full-band termination force (component-level string physics:
@@ -23,10 +26,12 @@
 
 #include "EpiAnalysis.h"
 #include "epi/dsp/GrandBoard.h"
+#include "epi/dsp/GrandMicStage.h"
 #include "epi/dsp/GrandRadiator.h"
 #include "epi/dsp/GrandVoice.h"
 
 #include <algorithm>
+#include <chrono>
 #include <complex>
 #include <cstdio>
 #include <memory>
@@ -1893,6 +1898,352 @@ static void sectionCalibration()
     }
 }
 
+// ===========================================================================
+// MS: the multi-mic stage (GrandMicStage.h) -- geometry rows
+// ===========================================================================
+
+// The stage path at component level: the renderRadiated rig with
+// GrandMicStage in place of the fixed pair, mode and mics as given. A mic
+// change can be scheduled mid-render for the click row.
+static StereoSig renderStagePath (const std::vector<Strike>& strikes, double seconds,
+                                  int mode, const std::vector<GrandMicStage::Mic>& mics,
+                                  double changeAt = -1.0, int changeIdx = 0,
+                                  const GrandMicStage::Mic* changeTo = nullptr)
+{
+    const int N = static_cast<int> (kFs * seconds);
+    GrandBoard board;
+    board.prepare (kFs);
+    GrandRadiator rad;
+    rad.prepare (kFs);
+    GrandMicStage stage;
+    stage.setMode (mode);
+    for (std::size_t i = 0; i < mics.size(); ++i)
+        stage.setMic (static_cast<int> (i), mics[i]);
+    stage.prepare (kFs);   // seats mode and mics steady: no initial fade
+    const GrandVoice::Config cfg;
+    std::vector<std::unique_ptr<GrandVoice>> vs;
+    std::vector<double> pl, pr;
+    for (const Strike& st : strikes)
+    {
+        vs.push_back (std::make_unique<GrandVoice>());
+        vs.back()->prepare (kFs);
+        vs.back()->setPedal (0.0);
+        vs.back()->noteOn (st.note, st.vel, cfg, board, 0);
+        double gl, gr;
+        GrandRadiator::panGains (st.note, gl, gr);
+        pl.push_back (gl);
+        pr.push_back (gr);
+    }
+    const int changeSample = changeAt >= 0.0 ? static_cast<int> (changeAt * kFs) : -1;
+    StereoSig s;
+    s.l.resize (static_cast<std::size_t> (N));
+    s.r.resize (static_cast<std::size_t> (N));
+    s.m.resize (static_cast<std::size_t> (N));
+    for (int i = 0; i < N; ++i)
+    {
+        if (i == changeSample && changeTo != nullptr)
+            stage.setMic (changeIdx, *changeTo);
+        for (std::size_t j = 0; j < vs.size(); ++j)
+        {
+            const double f = vs[j]->process (cfg, board) + vs[j]->knockOut();
+            vs[j]->applyDamperIfDue();
+            rad.push (f, pl[j], pr[j]);
+        }
+        board.tick();
+        double L = 0.0, R = 0.0;
+        stage.tick (rad, board.outputL(), board.outputR(), L, R);
+        s.l[static_cast<std::size_t> (i)] = L;
+        s.r[static_cast<std::size_t> (i)] = R;
+        s.m[static_cast<std::size_t> (i)] = 0.5 * (L + R);
+    }
+    return s;
+}
+
+// Deterministic noise force pushed straight into the radiator (no voices):
+// the controlled source for the pure-geometry rows. lowBand shapes the noise
+// below the radiator band; feedBoard additionally presents it as the modal
+// board readout, which makes the mid-bridge low branch the dominant source
+// (a true point source for the 1/r and delay rows). Broadband without the
+// board lights up the section slots and the lid instead.
+static StereoSig renderStageNoise (double seconds, const std::vector<GrandMicStage::Mic>& mics,
+                                   bool lowBand, bool feedBoard = false)
+{
+    const int N = static_cast<int> (kFs * seconds);
+    GrandRadiator rad;
+    rad.prepare (kFs);
+    GrandMicStage stage;
+    stage.setMode (1);
+    for (std::size_t i = 0; i < mics.size(); ++i)
+        stage.setMic (static_cast<int> (i), mics[i]);
+    stage.prepare (kFs);
+    std::uint64_t rng = 0x9e3779b97f4a7c15ull;
+    double lp1 = 0.0, lp2 = 0.0;
+    const double a = 1.0 - std::exp (-2.0 * an::kPi * 500.0 / kFs);
+    StereoSig s;
+    s.l.resize (static_cast<std::size_t> (N));
+    s.r.resize (static_cast<std::size_t> (N));
+    s.m.resize (static_cast<std::size_t> (N));
+    for (int i = 0; i < N; ++i)
+    {
+        rng ^= rng << 13; rng ^= rng >> 7; rng ^= rng << 17;
+        double w = (static_cast<double> (rng >> 11) / 9007199254740992.0) * 2.0 - 1.0;
+        if (lowBand)
+        {
+            lp1 += a * (w - lp1);
+            lp2 += a * (lp1 - lp2);
+            w = lp2;
+        }
+        rad.push (w, 0.7071, 0.7071);
+        const double b = feedBoard ? w : 0.0;
+        double L = 0.0, R = 0.0;
+        stage.tick (rad, b, b, L, R);
+        s.l[static_cast<std::size_t> (i)] = L;
+        s.r[static_cast<std::size_t> (i)] = R;
+        s.m[static_cast<std::size_t> (i)] = 0.5 * (L + R);
+    }
+    return s;
+}
+
+static double rmsDb (const std::vector<double>& x, double fromS)
+{
+    double e = 0.0;
+    std::size_t n = 0;
+    for (std::size_t i = static_cast<std::size_t> (fromS * kFs); i < x.size(); ++i)
+    {
+        e += x[i] * x[i];
+        ++n;
+    }
+    return 10.0 * std::log10 (std::max (1.0e-300, e / static_cast<double> (std::max<std::size_t> (1, n))));
+}
+
+// Welch band power, Hann windows.
+static double bandPowerDb (const std::vector<double>& x, double fLo, double fHi)
+{
+    const int NF = 8192, hop = 4096;
+    double acc = 0.0;
+    int nseg = 0;
+    std::vector<cplx> buf (static_cast<std::size_t> (NF));
+    for (int st = 0; st + NF <= static_cast<int> (x.size()); st += hop)
+    {
+        for (int i = 0; i < NF; ++i)
+        {
+            const double wn = 0.5 - 0.5 * std::cos (2.0 * an::kPi * i / NF);
+            buf[static_cast<std::size_t> (i)] = cplx (x[static_cast<std::size_t> (st + i)] * wn, 0.0);
+        }
+        an::fft (buf);
+        const int k0 = static_cast<int> (std::ceil (fLo * NF / kFs));
+        const int k1 = static_cast<int> (std::floor (fHi * NF / kFs));
+        for (int k = k0; k <= k1; ++k) acc += std::norm (buf[static_cast<std::size_t> (k)]);
+        ++nseg;
+    }
+    return 10.0 * std::log10 (std::max (1.0e-300, acc / std::max (1, nseg)));
+}
+
+static int xcorrPeakLag (const std::vector<double>& x, const std::vector<double>& y, int maxLag)
+{
+    double best = -1.0e300;
+    int bestK = 0;
+    const int n = static_cast<int> (std::min (x.size(), y.size()));
+    for (int k = -maxLag; k <= maxLag; ++k)
+    {
+        double sum = 0.0;
+        for (int i = std::max (0, -k); i < n - std::max (0, k); ++i)
+            sum += x[static_cast<std::size_t> (i)] * y[static_cast<std::size_t> (i + k)];
+        if (sum > best) { best = sum; bestK = k; }
+    }
+    return bestK;
+}
+
+// Pearson correlation of the two channels below fc (two cascaded one-poles
+// per channel), from fromS to the end.
+static double lowBandCorr (const StereoSig& s, double fc, double fromS)
+{
+    const double a = 1.0 - std::exp (-2.0 * an::kPi * fc / kFs);
+    double l1 = 0, l2 = 0, r1 = 0, r2 = 0;
+    double sl = 0, sr = 0, sll = 0, srr = 0, slr = 0;
+    std::size_t n = 0;
+    const std::size_t from = static_cast<std::size_t> (fromS * kFs);
+    for (std::size_t i = 0; i < s.l.size(); ++i)
+    {
+        l1 += a * (s.l[i] - l1); l2 += a * (l1 - l2);
+        r1 += a * (s.r[i] - r1); r2 += a * (r1 - r2);
+        if (i < from) continue;
+        sl += l2; sr += r2;
+        sll += l2 * l2; srr += r2 * r2; slr += l2 * r2;
+        ++n;
+    }
+    const double nn = static_cast<double> (n);
+    const double cov = slr / nn - (sl / nn) * (sr / nn);
+    const double vl = sll / nn - (sl / nn) * (sl / nn);
+    const double vr = srr / nn - (sr / nn) * (sr / nn);
+    return cov / std::max (1.0e-300, std::sqrt (vl * vr));
+}
+
+static double maxSecondDiff (const std::vector<double>& x, double fromS, double toS)
+{
+    double d = 0.0;
+    const std::size_t i0 = std::max<std::size_t> (2, static_cast<std::size_t> (fromS * kFs));
+    const std::size_t i1 = std::min (x.size(), static_cast<std::size_t> (toS * kFs));
+    for (std::size_t i = i0; i < i1; ++i)
+        d = std::max (d, std::abs (x[i] - 2.0 * x[i - 1] + x[i - 2]));
+    return d;
+}
+
+static void sectionMicStage()
+{
+    heading ("S. Grand: multi-mic stage (GrandMicStage.h -- Classic pair vs positioned Stage)");
+
+    // ---- MS1: mode 0 is the shipped chain, byte for byte -------------------
+    {
+        const auto a = renderRadiatedNote (60, 0.8, 1.0);
+        const auto b = renderStagePath ({ { 60, 0.8 } }, 1.0, 0, {});
+        double d = 0.0;
+        for (std::size_t i = 0; i < a.l.size(); ++i)
+        {
+            d = std::max (d, std::abs (a.l[i] - b.l[i]));
+            d = std::max (d, std::abs (a.r[i] - b.r[i]));
+        }
+        row ("MS1", "mode 0 vs shipped chain (1 s)", "bit-exact",
+             fmt ("max |diff| = %.1e", d), d == 0.0 ? Verdict::pass : Verdict::fail);
+    }
+
+    // ---- MS2: inverse-distance law ------------------------------------------
+    {
+        // Two identical mics, one at z = 1 m and one at z = 2 m, panned to
+        // opposite channels of the same render. Low-band drive through the
+        // board branch makes the mid-bridge source dominant -- a point
+        // source, whose direct field is the textbook 1/r: 6.02 dB per
+        // doubling. (Both mics sit at h = 0, so the dipole factor is the
+        // same on both and cancels in the ratio.)
+        GrandMicStage::Mic m1;
+        m1.on = true; m1.x = 0.0; m1.z = 1.0; m1.h = 0.0; m1.pan = -1.0;
+        GrandMicStage::Mic m2 = m1;
+        m2.z = 2.0; m2.pan = 1.0;
+        const auto s = renderStageNoise (2.0, { m1, m2 }, true, true);
+        const double drop = rmsDb (s.l, 0.2) - rmsDb (s.r, 0.2);
+        row ("MS2", "level z=1 -> z=2 (direct field)", "6 +/- 1 dB",
+             fmt ("%.2f dB", drop), within (drop, 5.0, 7.0));
+    }
+
+    // ---- MS3: geometry delay ------------------------------------------------
+    {
+        // Two mics 0.5 m apart along z, far enough out that the bridge's
+        // extent contributes < 0.2 samples of path spread; low-band drive
+        // makes the mid-bridge source dominant, so the cross-correlation
+        // peak is the pure r/c difference: 0.5 m / 343 m/s = 70.0 samples.
+        GrandMicStage::Mic m1;
+        m1.on = true; m1.x = 0.0; m1.z = 3.0; m1.h = 0.0; m1.pan = -1.0;
+        GrandMicStage::Mic m2 = m1;
+        m2.z = 3.5; m2.pan = 1.0;
+        const auto s = renderStageNoise (2.0, { m1, m2 }, true, true);
+        std::vector<double> xa (s.l.begin() + 24000, s.l.end());
+        std::vector<double> xb (s.r.begin() + 24000, s.r.end());
+        const int lag = xcorrPeakLag (xa, xb, 200);
+        const double expect = 0.5 / 343.0 * kFs;
+        row ("MS3", "xcorr lag, mics 0.5 m apart", fmt ("%.1f smp +/- 1", expect),
+             fmt ("%.0f smp", static_cast<double> (lag)),
+             within (std::abs (lag - expect), 0.0, 1.0));
+    }
+
+    // ---- MS4: dipole sign under the board -----------------------------------
+    {
+        // Below coincidence the board radiates as a dipole about its own
+        // plane: a mic mirrored under the board hears the low branch with
+        // inverted polarity, so the two channels anti-correlate in the low
+        // band. C2's fundamental and low partials carry the energy there.
+        GrandMicStage::Mic up;
+        up.on = true; up.x = 0.0; up.z = 1.2; up.h = 0.6; up.pan = -1.0;
+        GrandMicStage::Mic dn = up;
+        dn.h = -0.6; dn.pan = 1.0;
+        const auto s = renderStagePath ({ { 36, 0.8 } }, 1.2, 1, { up, dn });
+        const double c = lowBandCorr (s, 400.0, 0.1);
+        row ("MS4", "low-band corr above/below board", "< -0.3 (inverted)",
+             fmt ("%.2f", c), c < -0.3 ? Verdict::pass : Verdict::fail);
+    }
+
+    // ---- MS5: lid image brightens the open side -----------------------------
+    {
+        // Mirrored positions either side of mid-bridge: the open-lid (+x)
+        // mic gets the direct field plus the lid's specular image, the
+        // closed-side mic only the direct field -- the 2-6 kHz lift of the
+        // classic jazz position.
+        GrandMicStage::Mic open;
+        open.on = true; open.x = 1.0; open.z = 1.2; open.h = 0.6; open.pan = 1.0;
+        GrandMicStage::Mic closed = open;
+        closed.x = -1.0; closed.pan = -1.0;
+        const auto s = renderStageNoise (2.0, { open, closed }, false);
+        const double d = bandPowerDb (s.r, 2000.0, 6000.0)
+                       - bandPowerDb (s.l, 2000.0, 6000.0);
+        row ("MS5", "2-6 kHz open vs closed lid side", "> +0.5 dB",
+             fmt ("%+.2f dB", d), d > 0.5 ? Verdict::pass : Verdict::fail);
+    }
+
+    // ---- MS6: a mic move mid-note rides the crossfade -----------------------
+    {
+        GrandMicStage::Mic m;
+        m.on = true; m.x = 0.0; m.z = 1.2; m.h = 0.6; m.pan = 0.0;
+        GrandMicStage::Mic moved = m;
+        moved.x = 0.5; moved.z = 2.0;
+        const auto a = renderStagePath ({ { 60, 0.8 } }, 1.5, 1, { m }, 0.7, 0, &moved);
+        const auto b = renderStagePath ({ { 60, 0.8 } }, 1.5, 1, { m });
+        const double da = std::max (maxSecondDiff (a.l, 0.68, 0.9),
+                                    maxSecondDiff (a.r, 0.68, 0.9));
+        const double db = std::max (maxSecondDiff (b.l, 0.68, 0.9),
+                                    maxSecondDiff (b.r, 0.68, 0.9));
+        row ("MS6", "mid-note mic move, |d2| vs steady", "<= 3x steady",
+             fmt2 ("%.2e vs %.2e", da, 3.0 * db),
+             da <= 3.0 * db ? Verdict::pass : Verdict::fail);
+    }
+
+    // ---- MS7: cost (informational) ------------------------------------------
+    {
+        // The whole per-sample seam (radiator readout + stage or pair), five
+        // mics on, against the same rig in Classic mode. Budget: the stage
+        // must stay under 3% of one core at 48 kHz.
+        std::vector<GrandMicStage::Mic> mics (5);
+        const double mx[5] = { -1.2, -0.4, 0.3, 1.0, 0.0 };
+        const double mz[5] = { 1.0, 0.8, 1.5, 1.2, 3.0 };
+        const double mh[5] = { 0.5, 0.7, 0.4, 0.8, 1.0 };
+        for (int i = 0; i < 5; ++i)
+        {
+            mics[static_cast<std::size_t> (i)].on = true;
+            mics[static_cast<std::size_t> (i)].x = mx[i];
+            mics[static_cast<std::size_t> (i)].z = mz[i];
+            mics[static_cast<std::size_t> (i)].h = mh[i];
+            mics[static_cast<std::size_t> (i)].pan = -1.0 + 0.5 * i;
+        }
+        double pct[2] = { 0.0, 0.0 };
+        volatile double sink = 0.0;
+        for (int mode = 0; mode <= 1; ++mode)
+        {
+            GrandRadiator rad;
+            rad.prepare (kFs);
+            GrandMicStage stage;
+            stage.setMode (mode);
+            for (int i = 0; i < 5; ++i)
+                stage.setMic (i, mics[static_cast<std::size_t> (i)]);
+            stage.prepare (kFs);
+            const double seconds = 5.0;
+            const int N = static_cast<int> (kFs * seconds);
+            std::uint64_t rng = 0x2545f4914f6cdd1dull;
+            const auto t0 = std::chrono::steady_clock::now();
+            for (int i = 0; i < N; ++i)
+            {
+                rng ^= rng << 13; rng ^= rng >> 7; rng ^= rng << 17;
+                const double w = (static_cast<double> (rng >> 11) / 9007199254740992.0) * 2.0 - 1.0;
+                rad.push (w, 0.7071, 0.7071);
+                double L = 0.0, R = 0.0;
+                stage.tick (rad, 0.0, 0.0, L, R);
+                sink = sink + L + R;
+            }
+            const auto t1 = std::chrono::steady_clock::now();
+            pct[mode] = std::chrono::duration<double> (t1 - t0).count() / seconds * 100.0;
+        }
+        row ("MS7", "seam cost, 5 mics, 48 kHz", "stage < 3% of a core",
+             fmt2 ("mode1 %.2f%% (mode0 %.2f%%)", pct[1], pct[0]), Verdict::info);
+    }
+}
+
 int main()
 {
     std::printf ("Epi grand reference rows (steps 2-4, 6: strings, bridge, board, radiator, pedals)\n");
@@ -1904,6 +2255,7 @@ int main()
     sectionMaterials();
     sectionPedals();
     sectionCalibration();
+    sectionMicStage();
 
     std::printf ("\n");
     if (gaps > 0)
