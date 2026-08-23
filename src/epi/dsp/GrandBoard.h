@@ -12,7 +12,10 @@
 
 #pragma once
 
+#include "EpiModel.h"
 #include "ModalCore.h"
+
+#include <type_traits>
 
 namespace epi
 {
@@ -98,13 +101,28 @@ public:
     // The band edge: above this the board is out of the loop entirely.
     static constexpr double kBandHz = 1300.0;
 
+    // Engine contract: the engine builds one Config per block and calls
+    // board.configure(cfg) when it changed; the radiator's modal tail stands
+    // in for the SAME board above the band edge, so after configuring the
+    // board the engine must forward the body to it as
+    //     radiator.setBody (board.bodyFreqScale(), board.bodyEtaAdd());
+    // (setBody keeps section states, so a live change does not click, and
+    // setBody(1, 0) is bit-exactly the stock radiator).
     struct Config
     {
         // gV: the one global scalar the plan lets absorb the residual between
         // the a-priori mobility (Ege's 1.3e-3 s/kg) and the measured decay
         // knees. Mapped from the "bodyMix" control x0.5..2 by the engine.
         double couplingTrim = 1.0;
+        // Index into kBodyMaterials; 0 = stock, the calibrated board exactly.
+        double bodyMaterial = 0.0;
+        // Uniform linear size scale, 0..1 with 0.5 = stock: s = 1.43^(2u-1),
+        // i.e. s in [1/1.43, 1.43] ~ [0.70, 1.43] and s(0.5) = 1 exactly.
+        double bodySize     = 0.5;
     };
+
+    static_assert (std::is_trivially_copyable<Config>::value, "Config must be memcmp-able");
+    static_assert (sizeof (Config) == 3 * sizeof (double), "Config has padding");
 
     void prepare (double sampleRate)
     {
@@ -129,10 +147,56 @@ public:
         // per-note decay variance live.
         const double gV = std::clamp (cfg.couplingTrim, 0.05, 8.0);
         phiAmp = 2.0 * std::sqrt (4.0 * kModalMass * 1.3e-3 * gV / 0.058);
+
+        // ---- the body: material and size, relative to the calibrated stock --
+        // A uniform size scale s and a material against the stock spruce:
+        //   - mode frequencies scale by freq/s (a plate's f goes as t/L^2,
+        //     1/s with every dimension scaled; sqrt(E/rho) for the material),
+        //   - modal masses by mass * s^3,
+        //   - added internal loss on a rate basis, sigma += pi f etaAdd.
+        // The driving-point mobility then scales by the infinite-plate law
+        // WITHOUT a separate factor: the Skudrzyk mean G = n <Phi^2>/(4 Mm)
+        // carries n ~ 1/freqScale and Mm ~ massScale, and
+        //   1/(freqScale * massScale) = 1/((f/s) * rho * s^3)
+        //                             = 1/(s^2 sqrt(E rho / (E rho)_stock)),
+        // exactly Y ~ 1/(t^2 sqrt(E rho)). Folding it into phiAmp as well
+        // would count it twice, and leaving phiAmp to couplingTrim alone
+        // keeps the bodyMix knob's meaning unchanged at stock. All three
+        // scalers are exactly {1, 1, 0} at index 0 / size 0.5: the stock
+        // board is bit-identical by construction.
+        const BodyScalers bs = bodyScalers (static_cast<int> (cfg.bodyMaterial));
+        const double s = std::pow (1.43, 2.0 * std::clamp (cfg.bodySize, 0.0, 1.0) - 1.0);
+        bodyFScale = bs.freq / s;
+        bodyMScale = bs.mass * s * s * s;
+        bodyEta    = bs.etaAdd;
+
         sys.setNumModes (kModes);
         for (int m = 0; m < kModes; ++m)
-            sys.setMode (m, modeF[m], 2.2 / (kEta * modeF[m]), kModalMass);
+        {
+            const double f = modeF[m] * bodyFScale;
+            sys.setMode (m, f, 2.2 / ((kEta + bodyEta) * f), kModalMass * bodyMScale);
+        }
+
+        // The radiation collapse corner is set by the source's size against
+        // the acoustic wavelength, so it moves with 1/s and is indifferent
+        // to the material. Re-prepare (which zeroes the filter state) only
+        // when the corner actually moved: at stock this never fires and the
+        // readout chain stays bit-identical; on a live size change the two
+        // biquads restart from silence once, at the moment everything else
+        // about the board moves anyway.
+        const double radFc = kRadFcHz / s;
+        if (radFc != appliedRadFc)
+        {
+            hpL.prepare (fs, radFc);
+            hpR.prepare (fs, radFc);
+            appliedRadFc = radFc;
+        }
     }
+
+    // The body scalers the out-of-loop radiator tail must follow (see the
+    // engine contract at Config). freqScale already contains the size.
+    double bodyFreqScale() const { return bodyFScale; }
+    double bodyEtaAdd()    const { return bodyEta; }
 
     // The board's mode amplitudes at one note's bridge point: 72 weights,
     // deterministic and continuous along the compass. The bridge runs on an
@@ -211,7 +275,7 @@ public:
     static constexpr double kRadFcHz = 200.0;
 
     double energy() const { return sys.energy(); }
-    double modeFrequency (int m) const { return (m >= 0 && m < kModes) ? modeF[m] : 0.0; }
+    double modeFrequency (int m) const { return (m >= 0 && m < kModes) ? modeF[m] * bodyFScale : 0.0; }
 
     // Driving-point receptance u/F at a bridge point, for the voice's tuning
     // pass: the coupled fundamental is pulled by the bridge reactance, and a
@@ -223,10 +287,10 @@ public:
         double hr = 0.0, hi = 0.0;
         for (int m = 0; m < kModes; ++m)
         {
-            const double wm = 2.0 * kPiD * modeF[m];
+            const double wm = 2.0 * kPiD * (modeF[m] * bodyFScale);
             const double a = wm * wm - w * w;
-            const double b = kEta * wm * w;
-            const double den = kModalMass * (a * a + b * b);
+            const double b = (kEta + bodyEta) * wm * w;
+            const double den = (kModalMass * bodyMScale) * (a * a + b * b);
             hr += phi[m] * phi[m] * a / den;
             hi -= phi[m] * phi[m] * b / den;
         }
@@ -282,11 +346,14 @@ private:
         }
         hpL.prepare (fs, kRadFcHz);
         hpR.prepare (fs, kRadFcHz);
+        appliedRadFc = kRadFcHz;
         outL = outR = 0.0;
     }
 
     double fs = 48000.0;
     double phiAmp = 0.0;
+    double bodyFScale = 1.0, bodyMScale = 1.0, bodyEta = 0.0;
+    double appliedRadFc = kRadFcHz;
     double modeF[kModes] {};
     int    modeP[kModes] {}, modeR[kModes] {};
     double listenL[kModes] {}, listenR[kModes] {};

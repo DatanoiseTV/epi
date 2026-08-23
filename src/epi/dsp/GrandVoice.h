@@ -16,6 +16,8 @@
 #include "GrandBoard.h"
 #include "ModalCore.h"
 
+#include <type_traits>
+
 namespace epi
 {
 
@@ -183,8 +185,16 @@ public:
         double detuneSpread   = 0.5;    // "tipMass" knob: unison spread 0..4 cents
         double dampTrim       = 0.5;    // "resDamp": intrinsic-alpha trim x0.7..1.5
         double detuneCents    = 0.0;    // master tune + bend
+        double material       = 0.0;    // index into kMaterials; 0 = stock music wire
         bool   unaCorda       = false;  // CC67: shifted action
     };
+
+    // Compared byte-for-byte by the engine to decide whether the instrument
+    // needs rebuilding. 8 doubles plus the bool's padded tail: the doubles
+    // pack with no interior holes, and the engine zero-initialises whole
+    // structs, so the tail bytes compare equal too.
+    static_assert (std::is_trivially_copyable<Config>::value, "Config must be memcmp-able");
+    static_assert (sizeof (Config) == 9 * sizeof (double), "Config has interior padding");
 
     void prepare (double sampleRate)
     {
@@ -494,11 +504,31 @@ private:
         const double f0Nom = 440.0 * std::pow (2.0, (note - 69.0) / 12.0);
         const double stretch = grandStretchCents (note);
         const double f0 = f0Nom * std::pow (2.0, (stretch + cfg.detuneCents) / 1200.0);
-        const double B = GrandInharmonicity::at (note);
+
+        // The string workshop's material swap, the CP-70's pattern exactly:
+        // at fixed pitch, gauge and length the tension re-solves, and what
+        // survives of the material is
+        //   - B proportional to E/rho (bronze halves the steel curve, nylon
+        //     nearly flattens it),
+        //   - mu proportional to rho -- carried through the re-solved tension
+        //     T = 4 f0^2 L^2 mu, so the two-port weights, the read shapes and
+        //     the truncated stiffness load Ku all scale with it. That moves
+        //     the string-to-board impedance ratio, and with it the decay
+        //     through the bridge: physical and wanted,
+        //   - internal loss on the BENDING share of each mode only (below).
+        // Index 0 is the measured music wire bit-exactly: every ratio is one
+        // and the added loss is zero.
+        const Material& mat = kMaterials[std::clamp (static_cast<int> (cfg.material), 0, kNumMaterials - 1)];
+        const double matB = (static_cast<double> (mat.youngs) / static_cast<double> (mat.density))
+                          / (static_cast<double> (kMusicWire.youngs) / static_cast<double> (kMusicWire.density));
+        const double matDEta = std::max (0.0, static_cast<double> (mat.lossEta)
+                                            - static_cast<double> (kMusicWire.lossEta));
+        const double B = GrandInharmonicity::at (note) * matB;
 
         // ---- geometry: the Broadwood scale anchors --------------------------
         const double L = speakingLength (note);
-        const double T = 700.0;                  // mid of the 600-900 N band
+        const double T = 700.0                   // mid of the 600-900 N band
+                       * (static_cast<double> (mat.density) / static_cast<double> (kMusicWire.density));
         const double mu = T / (4.0 * f0 * f0 * L * L);
         const double modalMass = 0.5 * mu * L;   // pinned-pinned, every mode
 
@@ -528,6 +558,18 @@ private:
 
         board.fillBridgeShape (note, phi);
         Ku = 0.0;
+
+        // Material loss on a STRING acts only on the bending share of the
+        // energy -- the tension's restoring force is geometric and lossless,
+        // which is why a nylon guitar string rings for seconds while a nylon
+        // rod clunks (see CP70Voice.h). The bending fraction of mode k is
+        // the inharmonicity term B k^2 / (1 + B k^2): nearly nothing for low
+        // partials, growing with k -- so nylon keeps its fundamental and
+        // sheds its highs. Rates add; exactly zero for the stock wire.
+        auto bendLoss = [&] (int k, double fk)
+        {
+            return 8.686 * kPiD * fk * ((B * k * k) / (1.0 + B * k * k)) * matDEta;
+        };
 
         // Hammer voicing is never perfectly even: crown wear and string
         // height differences make the felt launch the members of a choir at
@@ -623,18 +665,22 @@ private:
             // uncoupled H (top octave only), then the high verticals.
             for (int k = 1; k <= kCplV; ++k)
                 place (k - 1, k, fV (k),
-                       trim * (grandAlphaIntr (fV (k)) + grandAlphaBoardHF (fV (k))),
+                       trim * (grandAlphaIntr (fV (k)) + grandAlphaBoardHF (fV (k)))
+                           + bendLoss (k, fV (k)),
                        false, 1.0);
             for (int k = 1; k <= std::min (kCplH, kH); ++k)
                 place (kCplV + k - 1, k, fH (k),
-                       trim * grandAlphaIntr (fH (k)) / grandPolRatio (note), true, kGH);
+                       trim * grandAlphaIntr (fH (k)) / grandPolRatio (note)
+                           + bendLoss (k, fH (k)), true, kGH);
             for (int k = kCplH + 1; k <= kH; ++k)
                 place (kCplV + k - 1, k, fH (k),
-                       trim * (grandAlphaIntr (fH (k)) + grandAlphaBoardHF (fH (k))) / grandPolRatio (note),
+                       trim * (grandAlphaIntr (fH (k)) + grandAlphaBoardHF (fH (k))) / grandPolRatio (note)
+                           + bendLoss (k, fH (k)),
                        true, 0.0);
             for (int k = kCplV + 1; k <= kV; ++k)
                 place (kH + k - 1, k, fV (k),
-                       trim * (grandAlphaIntr (fV (k)) + grandAlphaBoardHF (fV (k))),
+                       trim * (grandAlphaIntr (fV (k)) + grandAlphaBoardHF (fV (k)))
+                           + bendLoss (k, fV (k)),
                        false, 0.0);
             for (int i = S.kTotal; i < kMaxModes; ++i)
             { S.w[i] = 0.0; S.readShape[i] = 0.0; S.strikeShape[i] = 0.0; }

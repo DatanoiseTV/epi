@@ -106,6 +106,27 @@ public:
     void prepare (double sampleRate)
     {
         fs = sampleRate;
+        buildSections (1.0, 0.0);
+        clear();
+    }
+
+    // The tail stands in for the SAME board above the band edge, so it must
+    // follow the board's body: called by the engine with the board's own
+    // scalers, radiator.setBody(board.bodyFreqScale(), board.bodyEtaAdd()),
+    // whenever the board's Config changed (see GrandBoard::Config). Section
+    // frequencies scale, damping takes the added internal loss on the same
+    // rate basis, and each section's peak normalisation and mean-mobility
+    // gain are recomputed for the pole it actually lands on. Section STATES
+    // are kept, so a live change does not click; at (1, 0) every coefficient
+    // recomputes to its stock value bit-exactly.
+    void setBody (double freqScale, double etaAdd)
+    {
+        buildSections (freqScale, etaAdd);
+    }
+
+private:
+    void buildSections (double freqScale, double etaAdd)
+    {
         const double top = std::min (kHiHz, 0.45 * fs);
         auto hash01 = [] (unsigned v)
         {
@@ -124,8 +145,12 @@ public:
             {
                 const double t = (i + 0.5 + 0.5 * ch) / kSections;
                 const double f = kLoHz * std::pow (top / kLoHz, t);
-                const double th = 2.0 * kPiD * f / fs;
-                const double r  = std::exp (-kPiD * kEta * f / fs);
+                // The body-scaled pole. A small stiff body can push the top
+                // of the grid past what the sample rate carries; those
+                // sections saturate at the ceiling rather than alias.
+                const double fp = std::min (f * freqScale, 0.45 * fs);
+                const double th = 2.0 * kPiD * fp / fs;
+                const double r  = std::exp (-kPiD * (kEta + etaAdd) * fp / fs);
                 pa1[i] = 2.0 * r * std::cos (th);
                 pa2[i] = -r * r;
                 // Peak-normalise: |1 - 2 r cos(th) e^{-jth} + r^2 e^{-2jth}|.
@@ -140,14 +165,17 @@ public:
                 // between the channels: the modal sign pattern the mics see.
                 // The frequency-dependent interchannel phase lives in
                 // GrandMicPair.
+                // The fall is anchored to the grid position f, not the moved
+                // pole fp: the band edge the tail hangs off moves with the
+                // same body, so section i keeps its level relation to it.
                 const double amp = norm * kScale * std::sqrt (GrandBoard::kBandHz / f);
                 const double h = 2.0 * hash01 (static_cast<unsigned> (i) * 4u + 1u) - 1.0;
                 pg[i] = amp * (1.0 + (ch == 0 ? kSideAmt : -kSideAmt) * h);
             }
         }
-        clear();
     }
 
+public:
     void clear()
     {
         for (int i = 0; i < kSections; ++i)

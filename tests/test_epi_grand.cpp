@@ -1178,6 +1178,343 @@ static void sectionRadiator()
 }
 
 // ===========================================================================
+// Materials and body: the string workshop (GrandVoice::Config::material) and
+// the board's build (GrandBoard::Config::bodyMaterial / bodySize), plus the
+// radiator's matching setBody. Row M0 is the stock-exactness fence: material
+// 0 and the stock body must be bit-identical to the default path, sample for
+// sample -- on top of it, every existing row above already re-measures the
+// stock instrument.
+// ===========================================================================
+
+static double windowDb (const std::vector<double>& x, double t0, double t1);
+
+static std::vector<double> renderMat (const std::vector<Strike>& strikes, double seconds,
+                                      const GrandVoice::Config& cfg,
+                                      const GrandBoard::Config& bcfg)
+{
+    const int N = static_cast<int> (kFs * seconds);
+    GrandBoard board;
+    board.prepare (kFs);
+    board.configure (bcfg);
+    std::vector<std::unique_ptr<GrandVoice>> vs;
+    for (const Strike& s : strikes)
+    {
+        vs.push_back (std::make_unique<GrandVoice>());
+        vs.back()->prepare (kFs);
+        vs.back()->noteOn (s.note, s.vel, cfg, board, 0);
+    }
+    std::vector<double> x (static_cast<std::size_t> (N), 0.0);
+    for (int i = 0; i < N; ++i)
+    {
+        double f = 0.0;
+        for (auto& v : vs)
+        {
+            f += v->process (cfg, board);
+            v->applyDamperIfDue();
+        }
+        board.tick();
+        x[static_cast<std::size_t> (i)] = f;
+    }
+    return x;
+}
+
+// The radiated pair through the full engine contract, board and radiator
+// configured for the same body: rad.setBody(freqScale, etaAdd) exactly as
+// GrandBoard::Config documents it.
+static StereoSig renderMatRadiated (const std::vector<Strike>& strikes, double seconds,
+                                    const GrandVoice::Config& cfg,
+                                    const GrandBoard::Config& bcfg)
+{
+    const int N = static_cast<int> (kFs * seconds);
+    GrandBoard board;
+    board.prepare (kFs);
+    board.configure (bcfg);
+    GrandRadiator rad;
+    rad.prepare (kFs);
+    rad.setBody (board.bodyFreqScale(), board.bodyEtaAdd());
+    GrandMicPair mics;
+    mics.prepare (kFs);
+    std::vector<std::unique_ptr<GrandVoice>> vs;
+    std::vector<double> pl, pr;
+    for (const Strike& st : strikes)
+    {
+        vs.push_back (std::make_unique<GrandVoice>());
+        vs.back()->prepare (kFs);
+        vs.back()->noteOn (st.note, st.vel, cfg, board, 0);
+        double gl, gr;
+        GrandRadiator::panGains (st.note, gl, gr);
+        pl.push_back (gl);
+        pr.push_back (gr);
+    }
+    StereoSig s;
+    s.l.resize (static_cast<std::size_t> (N));
+    s.r.resize (static_cast<std::size_t> (N));
+    s.m.resize (static_cast<std::size_t> (N));
+    for (int i = 0; i < N; ++i)
+    {
+        for (std::size_t j = 0; j < vs.size(); ++j)
+        {
+            const double f = vs[j]->process (cfg, board) + vs[j]->knockOut();
+            vs[j]->applyDamperIfDue();
+            rad.push (f, pl[j], pr[j]);
+        }
+        board.tick();
+        double tl, tr;
+        rad.tick (tl, tr);
+        double L = board.outputL() + tl;
+        double R = board.outputR() + tr;
+        mics.tick (L, R);
+        s.l[static_cast<std::size_t> (i)] = L;
+        s.r[static_cast<std::size_t> (i)] = R;
+        s.m[static_cast<std::size_t> (i)] = 0.5 * (L + R);
+    }
+    return s;
+}
+
+// The K1 machinery, condensed to one call: Theil-Sen B from a mid-compass
+// render, guesses anchored on the expected B so the admission windows land.
+static double measureB (const std::vector<double>& x, int midi, double bGuess)
+{
+    const double ta = 0.12, tb = 1.6;   // mid-compass window, as K1
+    const double f0n = noteHz (midi) * std::pow (2.0, grandStretchCents (midi) / 1200.0);
+    double f0 = f0n * std::sqrt (1.0 + bGuess);
+    for (int it = 0; it < 2; ++it)
+    {
+        const double got = strongCompFreq (x, f0n, f0, ta, tb);
+        if (got > 0.0) f0 = got;
+    }
+    f0 /= std::sqrt (1.0 + bGuess);
+    int kTop = 1;
+    while (kTop < 15 && (kTop + 1) * f0 * std::sqrt (1.0 + bGuess * (kTop + 1.0) * (kTop + 1.0)) < 11500.0)
+        ++kTop;
+    const int kHi = std::min (14, kTop);
+    const int kLo = std::max (2, kHi - 9);
+    std::vector<double> ys, k2s;
+    for (int k = kLo; k <= kHi; ++k)
+    {
+        const double guess = k * f0 * std::sqrt (1.0 + bGuess * k * k);
+        const double got = strongCompFreq (x, f0n, guess, ta, tb);
+        if (got <= 0.0) continue;
+        ys.push_back ((got / (k * f0)) * (got / (k * f0)) - 1.0);
+        k2s.push_back (static_cast<double> (k) * k);
+    }
+    if (ys.size() < 3) return -1.0;
+    std::vector<double> slopes;
+    for (std::size_t i = 0; i < ys.size(); ++i)
+        for (std::size_t j = i + 1; j < ys.size(); ++j)
+            if (k2s[j] - k2s[i] > 1.0)
+                slopes.push_back ((ys[j] - ys[i]) / (k2s[j] - k2s[i]));
+    if (slopes.empty()) return -1.0;
+    std::sort (slopes.begin(), slopes.end());
+    return slopes[slopes.size() / 2];
+}
+
+// The board's driving-point response at a note's bridge point -- the same
+// receptance the voices' tuning pass consults, so this measures exactly what
+// the coupled strings see. Returns the FIRST resonance above fLo: under a
+// uniform frequency scale the lowest mode stays the lowest, so this tracks
+// one mode's identity, where a global |H| max hops to whichever higher mode
+// the scale drags into the scan window.
+static double boardFirstPeakHz (const GrandBoard::Config& bcfg, int midi, double fLo, double fHi)
+{
+    GrandBoard board;
+    board.prepare (kFs);
+    board.configure (bcfg);
+    double phi[GrandBoard::kModes];
+    board.fillBridgeShape (midi, phi);
+    auto mag = [&] (double f)
+    {
+        double re = 0.0, im = 0.0;
+        board.receptance (phi, f, re, im);
+        return re * re + im * im;
+    };
+    const double floorMag = mag (fLo);
+    double prev = floorMag, cur = mag (fLo + 0.05);
+    for (double f = fLo + 0.10; f <= fHi; f += 0.05)
+    {
+        const double next = mag (f);
+        // A real resonance: a local max above the scan-start response. The
+        // guard can be mild because every receptance term carries phi^2, so
+        // below the first mode the curve rises monotonically -- probed, the
+        // first peak clears the 45 Hz floor by 2.1x and nothing else moves.
+        if (cur >= prev && cur > next && cur > 1.5 * floorMag)
+            return f - 0.05;
+        prev = cur;
+        cur = next;
+    }
+    return -1.0;
+}
+
+static void sectionMaterials()
+{
+    heading ("M. Grand: string material and body build (workshop lanes)");
+
+    // ---- M0: stock exactness ------------------------------------------------
+    {
+        // material 0 / stock body through the explicit configure path must be
+        // bit-identical to the default path -- the whole calibrated suite
+        // above is the regression fence, this row is the sharp edge of it.
+        GrandVoice::Config vc;
+        vc.material = 0.0;
+        GrandBoard::Config bc;
+        bc.couplingTrim = 1.0; bc.bodyMaterial = 0.0; bc.bodySize = 0.5;
+        const auto a = renderNote (60, 0.8, 1.5);
+        const auto b = renderMat ({ { 60, 0.8 } }, 1.5, vc, bc);
+        double d = 0.0;
+        for (std::size_t i = 0; i < a.size(); ++i) d = std::max (d, std::abs (a[i] - b[i]));
+        row ("M0", "stock string+board bit-exact", "max |diff| = 0",
+             fmt ("%.1e", d), d == 0.0 ? Verdict::pass : Verdict::fail);
+
+        // And the radiated chain, which additionally runs setBody(1, 0): the
+        // radiator must recompute its stock coefficients bit-exactly.
+        const auto ra = renderRadiatedNote (60, 0.8, 1.0);
+        const auto rb = renderMatRadiated ({ { 60, 0.8 } }, 1.0, vc, bc);
+        double dr = 0.0;
+        for (std::size_t i = 0; i < ra.m.size(); ++i)
+        {
+            dr = std::max (dr, std::abs (ra.l[i] - rb.l[i]));
+            dr = std::max (dr, std::abs (ra.r[i] - rb.r[i]));
+        }
+        row ("M0", "stock radiated (setBody) bit-exact", "max |diff| = 0",
+             fmt ("%.1e", dr), dr == 0.0 ? Verdict::pass : Verdict::fail);
+    }
+
+    // ---- M1: bronze halves the inharmonicity --------------------------------
+    {
+        // (E/rho) bronze / music wire = 0.487: at fixed pitch the tension
+        // re-solves and B scales with E/rho, so the measured Theil-Sen B of a
+        // bronze C4 must land at 0.487x the stock table value.
+        GrandVoice::Config vc;
+        vc.material = 2.0;   // phosphor bronze
+        const double bSteel = GrandInharmonicity::at (60);
+        const auto x = renderMat ({ { 60, 0.7 } }, 3.2, vc, {});
+        const double bGot = measureB (x, 60, bSteel * 0.487);
+        const double ratio = bGot / bSteel;
+        row ("M1", "bronze C4: B vs steel table", "x0.487 +/-25%",
+             bGot > 0.0 ? fmt ("x%.3f", ratio) : std::string ("unfit"),
+             bGot > 0.0 ? within (ratio, 0.487 * 0.75, 0.487 * 1.25) : Verdict::fail);
+    }
+
+    // ---- M2: nylon keeps its sustain ----------------------------------------
+    {
+        // Material loss enters through the bending share only, and at C4's
+        // low partials B k^2 is a few parts in ten thousand: nylon's 100x
+        // loss factor adds hundredths of a dB/s there, so the aftersound
+        // must keep steel's rate within 30%. (The lighter string's impedance
+        // change is real too, but it acts on the BRIDGE-coupled fast
+        // component -- nylon's prompt decay slows to ~6 dB/s -- which is why
+        // the measurement sits late, after both prompt tracks are gone.)
+        // Measured on the broadband peak-hold envelope with the unison
+        // spread at zero: the trichord's beats are a +/-2 dB confound on a
+        // 2 dB/s slope (probed, a component fit rode an 18 dB beat plunge
+        // at 8.5 s), and the spread is not the mechanism under test. With a
+        // degenerate unison both materials decay as clean exponentials.
+        auto lateRate = [] (const std::vector<double>& x)
+        {
+            // Least-squares slope of the 0.25 s peak-hold envelope over the
+            // whole late stretch: immune to which residual wiggle a single
+            // anchor window happens to catch.
+            double st = 0.0, sd = 0.0, stt = 0.0, std2 = 0.0;
+            int n = 0;
+            for (double t = 8.0; t + 0.25 <= 14.0; t += 0.25)
+            {
+                const double tm = t + 0.125;
+                const double d = windowDb (x, t, t + 0.25);
+                st += tm; sd += d; stt += tm * tm; std2 += tm * d;
+                ++n;
+            }
+            return (n * std2 - st * sd) / (n * stt - st * st);
+        };
+        GrandVoice::Config vs2;
+        vs2.detuneSpread = 0.0;
+        GrandVoice::Config vn;
+        vn.material = 7.0;   // nylon
+        vn.detuneSpread = 0.0;
+        const auto xs = renderMat ({ { 60, 0.9 } }, 14.0, vs2, {});
+        const auto xn = renderMat ({ { 60, 0.9 } }, 14.0, vn, {});
+        const double sSteel = lateRate (xs), sNylon = lateRate (xn);
+        row ("M2", "nylon C4 aftersound vs steel", "rate within 30%",
+             fmt2 ("%.2f vs %.2f dB/s", sNylon, sSteel),
+             (sSteel < 0.0 && sNylon < 0.0)
+                 ? within (sNylon / sSteel, 0.7, 1.3) : Verdict::fail);
+    }
+
+    // ---- M3: maple board moves the low modes --------------------------------
+    {
+        // sqrt(E/rho) maple / stock spruce = 0.858 at size 0.5. Measured on
+        // the board's driving-point receptance at A0's bridge point -- the
+        // response the coupled strings and the tuning pass actually see (an
+        // A0 RENDER cannot carry this row: the string's own partials at 55
+        // and 110 Hz sit inside the board's first-mode region). The band is
+        // [0.686, 0.95]: within 20% of the predicted ratio AND strictly
+        // moved, so an unapplied scale (ratio 1.0) fails.
+        GrandBoard::Config maple;
+        maple.bodyMaterial = 2.0;
+        const double pkStock = boardFirstPeakHz ({}, 21, 45.0, 130.0);
+        const double pkMaple = boardFirstPeakHz (maple, 21, 45.0, 130.0);
+        const double ratio = pkMaple / pkStock;
+        row ("M3", "maple board: A0-region peak", "x0.858 +/-20%, moved",
+             fmt2 ("%.1f -> %.1f Hz", pkStock, pkMaple),
+             within (ratio, 0.858 * 0.8, 0.95));
+
+        // The moved board stays finite and bounded under a hard strike.
+        const auto x = renderMatRadiated ({ { 21, 1.0 } }, 3.0, {}, maple);
+        double pk = 0.0;
+        bool fin = true;
+        for (double v : x.m) { fin = fin && std::isfinite (v); pk = std::max (pk, std::abs (v)); }
+        row ("M3", "maple A0 render finite", "finite, peak < 4",
+             fmt ("peak %.2f", pk), (fin && pk < 4.0) ? Verdict::pass : Verdict::fail);
+    }
+
+    // ---- M4: a small body sits higher ---------------------------------------
+    {
+        // bodySize 0 is s = 1/1.43: every frame resonance rises by 1.43.
+        GrandBoard::Config small;
+        small.bodySize = 0.0;
+        const double pkStock = boardFirstPeakHz ({}, 21, 45.0, 130.0);
+        const double pkSmall = boardFirstPeakHz (small, 21, 45.0, 190.0);
+        const double ratio = pkSmall / pkStock;
+        row ("M4", "small body (s=0.70): peak rises", "x1.43 +/-20%",
+             fmt2 ("%.1f -> %.1f Hz", pkStock, pkSmall),
+             within (ratio, 1.43 * 0.8, 1.43 * 1.2));
+    }
+
+    // ---- M5: no growth at the extremes --------------------------------------
+    {
+        // Maple at s = 0.70 is the mobility extreme -- 1/(s^2 sqrt(E rho))
+        // is largest there, the deepest coupling the body lanes can set --
+        // and the passivity argument is supposed to be indifferent to it.
+        // Ten seconds, ff chord, radiated: finite, bounded, and the tail of
+        // the render sits below the attack (no growth anywhere).
+        GrandBoard::Config extreme;
+        extreme.bodyMaterial = 2.0;   // maple
+        extreme.bodySize = 0.0;       // s = 0.70
+        const auto x = renderMatRadiated ({ { 36, 1.0 }, { 60, 1.0 }, { 72, 1.0 } },
+                                          10.0, {}, extreme);
+        double pk = 0.0;
+        bool fin = true;
+        for (double v : x.m) { fin = fin && std::isfinite (v); pk = std::max (pk, std::abs (v)); }
+        const double growDb = windowDb (x.m, 9.0, 10.0) - windowDb (x.m, 0.05, 1.0);
+        row ("M5", "maple small body, 10 s ff chord", "finite, peak < 4, decays",
+             fmt2 ("peak %.2f, tail %+.0f dB", pk, growDb),
+             (fin && pk < 4.0 && growDb < -10.0) ? Verdict::pass : Verdict::fail);
+
+        // Carbon small is the frequency extreme (x1.80): the radiator's
+        // scaled grid crosses the sample rate's ceiling and must saturate
+        // there instead of aliasing or blowing up.
+        GrandBoard::Config carbon;
+        carbon.bodyMaterial = 7.0;
+        carbon.bodySize = 0.0;
+        const auto xc = renderMatRadiated ({ { 60, 1.0 } }, 4.0, {}, carbon);
+        double pkc = 0.0;
+        bool finc = true;
+        for (double v : xc.m) { finc = finc && std::isfinite (v); pkc = std::max (pkc, std::abs (v)); }
+        row ("M5", "carbon small body finite", "finite, peak < 4",
+             fmt ("peak %.2f", pkc), (finc && pkc < 4.0) ? Verdict::pass : Verdict::fail);
+    }
+}
+
+// ===========================================================================
 // Step 4: pedals -- half pedal, sostenuto, una corda, sympathetics
 // ===========================================================================
 
@@ -1542,6 +1879,7 @@ int main()
 
     sectionGrand();
     sectionRadiator();
+    sectionMaterials();
     sectionPedals();
     sectionCalibration();
 
