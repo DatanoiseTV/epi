@@ -418,7 +418,7 @@ html, body {
 
 /* Material row: the selector sits under the resonator knobs; the warning
    states the transducer fact in the panel's own voice, slightly lifted. */
-.matrow { margin-top: 6px; }
+.matrow { margin-top: 2px; }
 .matrow .note.warn { color: #b08d4a; }
 
 /* Clavinet rockers: four latching switches in a row. */
@@ -429,5 +429,7 @@ html, body {
 .wsrocker.on { color: #caa45e; border-color: #caa45e; background: #221c11; }
 
 /* Body bench row: material cycler beside a small size knob. */
-.bodyrow { display: flex; align-items: center; justify-content: center; gap: 10px; }
+.bodyrow { display: flex; align-items: center; justify-content: center; gap: 8px; }
+.bodyrow .knob { width: 46px; }
+.bodyrow .kval { display: none; }
 .bodysize .knob { width: 52px; }
