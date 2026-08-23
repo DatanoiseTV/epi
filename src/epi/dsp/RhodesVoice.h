@@ -615,13 +615,16 @@ public:
         // stays exact.
         if (trans == 2)
         {
+            // The same insulator rule the other three voices carry: nylon
+            // cannot be the moving plate of a polarised capacitor. Flagged
+            // by the engine suite -- this path alone had no gate.
             const double gE = std::max (0.6e-3, staticGap);
             for (int k = 0; k < kOver; ++k)
             {
                 const double t = static_cast<double> (k + 1) / kOver;
                 double vv = hermite (vHist[0], vHist[1], vHist[2], vNow, t);
                 vv = std::min (vv, 0.85 * gE);
-                fluxOut[k] = kElectroOut * (vv / (gE - vv));
+                fluxOut[k] = matCond ? kElectroOut * (vv / (gE - vv)) : 0.0;
             }
             vHist[0] = vHist[1]; vHist[1] = vHist[2]; vHist[2] = vNow;
             hHist[0] = hHist[1]; hHist[1] = hHist[2]; hHist[2] = hNow;
@@ -934,6 +937,7 @@ private:
         // audible growl, not a filter.
         const Material& mat = kMaterials[std::clamp (static_cast<int> (cfg.material), 0, kNumMaterials - 1)];
         magCouple = magneticCoupling (mat);
+        matCond   = mat.conductive;
         tineLength = CantileverModes::lengthForFrequency (f0Cut, radius, mat) * geoLen;
         const double area = kPiD * radius * radius;
         const double modalMass = std::max (1.0e-8, mat.density * area * tineLength * 0.25);
@@ -1649,6 +1653,7 @@ private:
     // Resolved transducer: 0 magnetic, 2 electro, 3 contact (native folds in).
     int trans = 0;
     double magCouple = 1.0;   // ferro = 1; bare conductor = faint eddy signal
+    bool   matCond   = true;  // an insulator cannot be an electrostatic plate
     double shapeContact[kNumModes] {};
     double cfHist[3] {};
     static constexpr double kElectroOut = 2.5e-2;   // level-matched by probe
@@ -1671,7 +1676,7 @@ private:
     // derivative the coil takes of it stays inside the note.
     void glidePickup()
     {
-        const double a = 1.0 - std::exp (-1.0 / (0.020 * fs));
+        const double a = 1.0 - std::exp (-1.0 / (0.035 * fs));
         const double dO = staticOffsetT - staticOffset;
         const double dG = staticGapT - staticGap;
         const double dS = satAmtT - satAmt;
