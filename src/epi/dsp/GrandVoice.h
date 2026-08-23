@@ -545,8 +545,15 @@ private:
 
         // ---- geometry: the Broadwood scale anchors --------------------------
         const double L = speakingLength (note) * geoLen;
+        // A fatter wire at the same pitch and length takes proportionally
+        // more tension (T = 4 f0^2 L^2 mu with mu ~ d^2), so the gauge trim
+        // enters here, not only through B: the re-solved mass moves the
+        // string's impedance into the bridge, and with it the level and the
+        // decay through the board -- the workshop's bell-or-thud lane in
+        // full, exactly as on the E-Grand.
         const double T = 700.0                   // mid of the 600-900 N band
-                       * (static_cast<double> (mat.density) / static_cast<double> (kMusicWire.density));
+                       * (static_cast<double> (mat.density) / static_cast<double> (kMusicWire.density))
+                       * geoDia * geoDia;
         const double mu = T / (4.0 * f0 * f0 * L * L);
         const double modalMass = 0.5 * mu * L;   // pinned-pinned, every mode
 
