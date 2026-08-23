@@ -4,7 +4,11 @@ All notable changes to Epi are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [semver](https://semver.org/) (pre-1.0: minor bumps may break).
 
-## [Unreleased]
+## [0.7.0] - 2026-08-23
+
+The bench release: every part of the instrument a technician can touch
+is now a selector with the physics attached, the bank is rebuilt around
+them, and a seventh measured suite fences the engine.
 
 ### Added
 - The grand's string workshop: per-course length and gauge, pitch
@@ -25,6 +29,16 @@ All notable changes to Epi are documented here. The format follows
   grand -- bronze halves the measured inharmonicity, nylon keeps its
   fundamental and sheds highs through the bending share, stock is
   bit-exact by the suite's own rows.
+- The hammer bench: soft felt, hard felt, lacquered, leather and wood
+  coverings, each a point in the contact law's parameter space relative
+  to the instrument's own stock (attack centroids on the tine run
+  369 Hz under soft felt to 1155 under wood).
+- The grand's desk: a channel-strip shelf pair on the shared bass and
+  treble knobs -- outboard, not instrument.
+- The factory bank rebuilt around the benches: 59 presets, every one
+  rendered and measured, with 24 character rows (a hardened-felt zing
+  preset must MEASURE its zing, a worn keybed its thump, a parlor
+  board its thinner bottom). Five frozen references untouched.
 - The action bench: damper felt condition (fresh, worn, or hardened --
   hardened felt cannot seat on the string's fine ripple and the high
   partials escape it, measured plus 26 dB of post-release zing on the
