@@ -193,16 +193,16 @@ function WsModal({ title, onReset, onClose, children }) {
 /* ============================================================
    The tine workshop
    ============================================================ */
-function TineWorkshop({ onClose, strings }) {
+function TineWorkshop({ onClose, strings, grand }) {
   const [mods, setMods] = useState(null);
   const [range, setRange] = useState(100);      // length lane zoom, in cents
   const [root, setRoot] = useState(0);          // template root, 0 = C
-  const evName = strings ? 'string_mod' : 'tine_mod';
+  const evName = grand ? 'grand_mod' : strings ? 'string_mod' : 'tine_mod';
 
   useEffect(() => {
     let alive = true;
     try {
-      Juce.getNativeFunction(strings ? 'getStringMods' : 'getTineMods')().then((a) => {
+      Juce.getNativeFunction(grand ? 'getGrandMods' : strings ? 'getStringMods' : 'getTineMods')().then((a) => {
         if (!alive) return;
         const flat = a ? Array.from(a) : [];
         const m = [];

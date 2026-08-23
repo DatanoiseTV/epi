@@ -112,7 +112,12 @@ function TinePanel({ inst }) {
   );
   if (gpiano) return (
     <div className="panel f-tine">
-      <PHead title="Strings" meta={a4} />
+      <div className="phead">
+        <h2>Strings</h2>
+        <span className="hrule" />
+        <button className="wsopen" onClick={() => setShop(true)} title="Per-course length and gauge">WORKSHOP</button>
+        <span className="hmeta">{a4}</span>
+      </div>
       <div className="krow">
         <PKnob id="tipMass" label="UNISON" />
         <PKnob id="resDamp" label="DECAY" />
@@ -126,6 +131,7 @@ function TinePanel({ inst }) {
       <MaterialRow inst={3} />
       <BodyRow />
       <div className="note">unison hairsbreadth · board coupling · pedal-open board wash</div>
+      {shop && <TineWorkshop strings grand onClose={() => setShop(false)} />}
     </div>
   );
   if (wurli) return (

@@ -367,9 +367,10 @@ void EpiEngine::handleEvent (const NoteEvent& e, const EngineParams& p)
             }
             else if (p.instrument == 3)
             {
-                if (grandCfgVersion[static_cast<std::size_t> (i)] != cfgVersion)
+                if (grandCfgVersion[static_cast<std::size_t> (i)] != cfgVersion
+                    || grandMod[static_cast<std::size_t> (i)].dirty.load (std::memory_order_acquire))
                 {
-                    grand[static_cast<std::size_t> (i)].setNote (kLoNote + i, grandConfig (p), grandBoard);
+                    rebuildGrandString (i, grandConfig (p));
                     grandCfgVersion[static_cast<std::size_t> (i)] = cfgVersion;
                 }
                 grand[static_cast<std::size_t> (i)].noteOn (e.note, vel, grandConfig (p), grandBoard, seed);
@@ -992,10 +993,12 @@ void EpiEngine::processGrand (float* outL, float* outR, int numSamples,
         for (int pass = 0; pass < 2 && budget > 0; ++pass)
             for (int i = 0; i < kNumTines && budget > 0; ++i)
             {
-                if (grandCfgVersion[static_cast<std::size_t> (i)] == cfgVersion) continue;
+                if (grandCfgVersion[static_cast<std::size_t> (i)] == cfgVersion
+                    && ! grandMod[static_cast<std::size_t> (i)].dirty.load (std::memory_order_acquire))
+                    continue;
                 const bool live = grand[static_cast<std::size_t> (i)].isRinging() || pedalDown || keyDown[i];
                 if (pass == 0 && ! live) continue;
-                grand[static_cast<std::size_t> (i)].setNote (kLoNote + i, cfg, grandBoard);
+                rebuildGrandString (i, cfg);
                 grandCfgVersion[static_cast<std::size_t> (i)] = cfgVersion;
                 --budget;
             }
@@ -1319,6 +1322,16 @@ void EpiEngine::processClav (float* outL, float* outR, int numSamples,
     };
     bump (peakL, pL);
     bump (peakR, pR);
+}
+
+// One grand course, built to the configuration and its own bench trims.
+void EpiEngine::rebuildGrandString (int i, const GrandVoice::Config& cfg)
+{
+    auto& m = grandMod[static_cast<std::size_t> (i)];
+    grand[static_cast<std::size_t> (i)].setGeometryTrim (m.len.load (std::memory_order_relaxed),
+                                                         m.dia.load (std::memory_order_relaxed));
+    m.dirty.store (false, std::memory_order_release);
+    grand[static_cast<std::size_t> (i)].setNote (kLoNote + i, cfg, grandBoard);
 }
 
 // One CP-70 course, built to the configuration and its own steel.

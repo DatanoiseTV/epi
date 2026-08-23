@@ -252,6 +252,15 @@ public:
 
     // CC64, continuous: 0 = dampers seated, 1 = fully lifted. The partial
     // range in between is the half-pedal map (applyDamperIfDue).
+    // The workshop trims, the CP-70's pattern exactly: at constant tension
+    // pitch follows 1/L (the microtonality lane), and B moves as d^2/L^2
+    // (the bell-or-thud lane), with the hammer meeting the re-solved mass.
+    void setGeometryTrim (double lenScale, double diaScale)
+    {
+        geoLen = std::clamp (lenScale, 0.5, 2.0);
+        geoDia = std::clamp (diaScale, 0.4, 2.5);
+    }
+
     void setPedal (double value) { pedalV = std::clamp (value, 0.0, 1.0); }
 
     // CC66: latched by the caller for voices held at the moment the pedal
@@ -509,7 +518,8 @@ private:
 
     void configure (const Config& cfg, const GrandBoard& board)
     {
-        const double f0Nom = 440.0 * std::pow (2.0, (note - 69.0) / 12.0);
+        const double f0Nom = 440.0 * std::pow (2.0, (note - 69.0) / 12.0)
+                           / geoLen;   // a string's pitch follows 1/L
         const double stretch = grandStretchCents (note);
         const double f0 = f0Nom * std::pow (2.0, (stretch + cfg.detuneCents) / 1200.0);
 
@@ -531,10 +541,10 @@ private:
                           / (static_cast<double> (kMusicWire.youngs) / static_cast<double> (kMusicWire.density));
         const double matDEta = std::max (0.0, static_cast<double> (mat.lossEta)
                                             - static_cast<double> (kMusicWire.lossEta));
-        const double B = GrandInharmonicity::at (note) * matB;
+        const double B = GrandInharmonicity::at (note) * matB * (geoDia * geoDia) / (geoLen * geoLen);
 
         // ---- geometry: the Broadwood scale anchors --------------------------
-        const double L = speakingLength (note);
+        const double L = speakingLength (note) * geoLen;
         const double T = 700.0                   // mid of the 600-900 N band
                        * (static_cast<double> (mat.density) / static_cast<double> (kMusicWire.density));
         const double mu = T / (4.0 * f0 * f0 * L * L);
@@ -849,6 +859,7 @@ private:
     double Ku = 0.0;
     double damperFactor = 1.0;
     double feltWLo = 1.0, feltWHi = 1.0;
+    double geoLen = 1.0, geoDia = 1.0;
     double knockFeed = 0.0;
     double sinceStrike = 1.0e9;
     double peakEnergy = 1.0e-30;

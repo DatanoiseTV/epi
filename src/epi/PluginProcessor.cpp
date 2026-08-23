@@ -215,6 +215,8 @@ juce::ValueTree EpiAudioProcessor::buildModsTree (bool always) const
         if (m[0] != 0.0f || m[1] != 0.0f || m[2] != 1.0f) { modded = true; break; }
     for (const auto& m : stringMods)
         if (m[0] != 1.0f || m[1] != 1.0f) { modded = true; break; }
+    for (const auto& m : grandMods)
+        if (m[0] != 1.0f || m[1] != 1.0f) { modded = true; break; }
     if (cabMods != kCabDefaults) modded = true;
     if (micMods != kMicDefaults) modded = true;
     if (! modded && ! always) return {};
@@ -236,6 +238,12 @@ juce::ValueTree EpiAudioProcessor::buildModsTree (bool always) const
         sl.add (juce::String (m[0], 6));
         sd.add (juce::String (m[1], 6));
     }
+    juce::StringArray gl, gd;
+    for (const auto& m : grandMods)
+    {
+        gl.add (juce::String (m[0], 6));
+        gd.add (juce::String (m[1], 6));
+    }
     for (float v : cabMods) cs.add (juce::String (v, 6));
     juce::StringArray ms;
     for (float v : micMods) ms.add (juce::String (v, 6));
@@ -248,6 +256,8 @@ juce::ValueTree EpiAudioProcessor::buildModsTree (bool always) const
     mods.setProperty ("pkw",  ws.joinIntoString (","), nullptr);
     mods.setProperty ("slen", sl.joinIntoString (","), nullptr);
     mods.setProperty ("sdia", sd.joinIntoString (","), nullptr);
+    mods.setProperty ("glen", gl.joinIntoString (","), nullptr);
+    mods.setProperty ("gdia", gd.joinIntoString (","), nullptr);
     mods.setProperty ("cab",  cs.joinIntoString (","), nullptr);
     mods.setProperty ("mic",  ms.joinIntoString (","), nullptr);
     return mods;
@@ -261,6 +271,7 @@ void EpiAudioProcessor::applyModsTree (const juce::ValueTree& mods)
     resetTineMods();
     resetPickupMods();
     resetStringMods();
+    resetGrandMods();
     resetCabMods();
     resetMicMods();
     if (! mods.isValid()) return;
@@ -273,6 +284,9 @@ void EpiAudioProcessor::applyModsTree (const juce::ValueTree& mods)
     ws.addTokens (mods["pkw"].toString(), ",", "");
     sl.addTokens (mods["slen"].toString(), ",", "");
     sd.addTokens (mods["sdia"].toString(), ",", "");
+    juce::StringArray gl, gd;
+    gl.addTokens (mods["glen"].toString(), ",", "");
+    gd.addTokens (mods["gdia"].toString(), ",", "");
     cs.addTokens (mods["cab"].toString(), ",", "");
     juce::StringArray msv;
     msv.addTokens (mods["mic"].toString(), ",", "");
@@ -288,6 +302,9 @@ void EpiAudioProcessor::applyModsTree (const juce::ValueTree& mods)
         setStringMod (i,
                       i < sl.size() ? sl[i].getFloatValue() : 1.0f,
                       i < sd.size() ? sd[i].getFloatValue() : 1.0f);
+        setGrandMod (i,
+                     i < gl.size() ? gl[i].getFloatValue() : 1.0f,
+                     i < gd.size() ? gd[i].getFloatValue() : 1.0f);
     }
     if (cs.size() == 5)
         setCabMod ({ cs[0].getFloatValue(), cs[1].getFloatValue(),
