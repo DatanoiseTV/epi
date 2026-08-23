@@ -4,6 +4,17 @@ All notable changes to Epi are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [semver](https://semver.org/) (pre-1.0: minor bumps may break).
 
+## [Unreleased]
+
+### Fixed
+- The Clav's yarn damper defaults to mint condition: the shared DAMPER
+  default meant half-aged wool and let the three-semitone release drop
+  ring out at -22 dB for fifty milliseconds. At the mapped default the
+  release is the brief thup the measured spectrogram shows; the bottom
+  of the knob still reaches compressed old wool.
+- The Clav's tone-rocker row wraps instead of clipping at the panel
+  edge.
+
 ## [0.6.0] - 2026-08-22
 
 Two new instruments, materials science, three pedals, and a measured
@@ -85,6 +96,12 @@ accuracy campaign across every model.
 - Fast knob sweeps no longer click: the reed's electrostatic gap and
   centring and the tine's core-saturation knee now glide to their
   targets the way the voicing screw always did.
+- The Clav plays through the engine exactly as its suite calibrated
+  it: tone stack and preamp at the oversampled rate before the
+  decimator, the drive law fitted through the calibration point, and
+  the shared knob defaults landed on the voice's operating points --
+  every harmonic of an A3 matches the calibrated chain within
+  0.05 dB.
 - The sympathetic display shows actual levels on a steady reference
   (two strings ringing 12 dB apart read 12 dB apart), instead of one
   flag color that also drifted as notes decayed.
