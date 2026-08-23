@@ -118,11 +118,15 @@ instrument.
   response: box volume sets the resonance, cone size sets the breakup, the
   microphone has distance and angle, and the suspension decides when it
   grinds. Five cabinets ship as one-click starting points.
-- **Mic Studio** — the grand's bench: spread widens the pair and deepens
-  the bass-left image, balance walks it, distance is the lid's high-band
-  shadow rather than a tone control, and each mic has its own level trim.
-  Four placements ship as one-click starting points; the defaults are
-  exactly the calibrated pair.
+- **Mic Studio** — the grand's bench, in two modes. Classic Pair: spread
+  widens the calibrated pair and deepens the bass-left image, balance
+  walks it, distance is the lid's high-band shadow, each mic has its own
+  trim. Stage: up to five microphones dragged freely on a top-down view
+  of the instrument, each rendered from real geometry — inverse-distance
+  level (6 dB per doubling, measured), arrival delay at the speed of
+  sound, the board's dipole (a mic under the board reads the low band
+  inverted), and the lid as a specular image that brightens the open
+  side. The whole five-mic stage costs about 2% of a core.
 
 <div align="center">
 <img src="docs/img/epi-mic-studio.png" width="100%" alt="Mic Studio: the grand's spaced pair on the bench" />
@@ -146,11 +150,18 @@ material-transducer pairings) before it ships.
 - BASS, TREBLE, and CLARITY are the channel strip; DRIVE and CORE SAT (or
   SUPPLY, on the reed piano) are where the dirt lives, because that is
   where it lives on the instruments.
+- ROOM and SIZE place the output in a space, and SPACE picks which one:
+  the adjustable studio room the plugin shipped with, or one of five
+  surveyed profiles — booth, studio, stage, hall, church — each with its
+  decay computed per octave band from published absorption data and its
+  early reflections from the room's actual geometry. The size knob scales
+  the surveyed room's dimensions and the physics follows.
 - The five instruments are level-matched to within a decibel at a shared
-  -24 dBFS mezzo-forte bench — except the grand, deliberately about 6 dB
+  -18 dBFS mezzo-forte bench — except the grand, deliberately about 6 dB
   under, because its real 22 dB attack crest must clear the output rail
-  (transparent below 0.85, bounded at 1.0). Switching instruments fades
-  through silence, and fast knob sweeps glide instead of clicking.
+  (transparent below 0.76, bounded a decibel under full scale). Switching
+  instruments fades through silence, and fast knob sweeps glide instead
+  of clicking.
 
 ## Install
 
