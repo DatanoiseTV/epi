@@ -281,6 +281,7 @@ GrandVoice::Config EpiEngine::grandConfig (const EngineParams& p) const
     c.dampTrim       = p.resDamp;
     c.detuneCents    = static_cast<double> (p.tuneCents)
                      + 100.0 * static_cast<double> (bendSemis);
+    c.material       = static_cast<double> (p.material);
     c.unaCorda       = unaCorda;
     return c;
 }
@@ -966,10 +967,14 @@ void EpiEngine::processGrand (float* outL, float* outR, int numSamples,
         lastGrandCfg = cfg;
         ++cfgVersion;
     }
-    // The board's one global scalar: BODY trims the string-to-board coupling
-    // about the fitted mobility, x0.7 at zero to x2.8 full -- neutral at the
-    // default quarter.
-    grandBoard.configure ({ std::pow (4.0, static_cast<double> (std::clamp (p.bodyMix, 0.0f, 1.0f))) * 0.707 });
+    // The board's coupling scalar (BODY knob, neutral at the default
+    // quarter) plus the body bench: what the board is made of and how big
+    // it is. The radiator's modal tail stands in for the same board above
+    // its band edge, so it follows the same frequency scale and added loss.
+    grandBoard.configure ({ std::pow (4.0, static_cast<double> (std::clamp (p.bodyMix, 0.0f, 1.0f))) * 0.707,
+                            static_cast<double> (p.bodyMat),
+                            static_cast<double> (p.bodySize) });
+    grandRad.setBody (grandBoard.bodyFreqScale(), grandBoard.bodyEtaAdd());
 
     // Rebuilds, sounding first, bounded -- a grand voice is the heaviest
     // rebuild in the plugin (up to ~130 modes over three strings).
