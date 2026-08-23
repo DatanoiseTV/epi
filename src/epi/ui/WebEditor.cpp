@@ -41,7 +41,7 @@ namespace
     constexpr const char* kChoiceIds[] = { "pickupSel", "instrument", "material", "clavSwitch", "bodyMat", "damperFelt", "keyBed" };
 
     constexpr int kDesignW = 1224;
-    constexpr int kDesignH = 768;
+    constexpr int kDesignH = 860;
     constexpr int kTelemetryHz = 60;
 
     epicommon::WebResources& resources()
