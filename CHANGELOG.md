@@ -7,6 +7,24 @@ All notable changes to Epi are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- The body bench: every instrument's frame, bar or board can be re-made
+  (stock, three soundboard woods, four metals) and re-sized (0.7x to
+  1.43x), with the plate family's own physics -- mode ladder by
+  sqrt(E/rho)/s, modal mass by rho s-cubed, internal loss added per
+  mode, bit-exact stock at the default. A steel frame carries 24 dB
+  less sympathetic wash than the stock casting; a small light one 24 dB
+  more. On the grand the whole board ladder, mobility and radiator tail
+  move together.
+- Grand string material: the shared MATERIAL selector now reaches the
+  grand -- bronze halves the measured inharmonicity, nylon keeps its
+  fundamental and sheds highs through the bending share, stock is
+  bit-exact by the suite's own rows.
+- The action bench: damper felt condition (fresh, worn, or hardened --
+  hardened felt cannot seat on the string's fine ripple and the high
+  partials escape it, measured plus 26 dB of post-release zing on the
+  string piano) and the rail cloth the keys land on (fresh felt
+  quieter and deeper, leather the soft thock of an older action, worn
+  cloth louder and brighter).
 - A seventh measured suite: 110 engine-integration rows covering all
   five instruments at three sample rates -- life and loudness parity,
   seam behavior, all three pedals per instrument, the full material and
