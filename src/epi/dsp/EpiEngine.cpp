@@ -553,7 +553,11 @@ void EpiEngine::process (float* outL, float* outR, int numSamples,
     // extremes it exists for.
     auto rail = [] (float x) -> float
     {
-        constexpr float a = 0.85f, s = 0.15f;
+        // Ceiling at -1 dBFS, not 0: a rail that tops at exactly full scale
+        // reads as clipping on a DAW meter and leaves nothing for
+        // inter-sample peaks downstream. Same knee shape, one decibel of
+        // honest headroom.
+        constexpr float a = 0.76f, s = 0.131f;
         const float ax = std::fabs (x);
         if (ax <= a) return x;
         const float y = a + s * std::tanh ((ax - a) / s);
