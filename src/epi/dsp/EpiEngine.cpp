@@ -28,15 +28,19 @@ namespace epi
 
 // Loudness alignment. Five instruments, five signal chains, one fader
 // convention: the same mezzo-forte chord measures the same RMS through
-// each, benched at -24 dBFS within a decibel (the grand deliberately a
-// touch under -- its real 22 dB attack crest must clear the output rail).
+// each, benched at -18 dBFS within a decibel -- raised from -24 because
+// the plugin sat quiet against other instruments in a session. Peaks
+// above the bench land in the soft output rail, which bounds at 1.0 by
+// construction: fortissimo attacks (the grand's especially, with its real
+// 22 dB crest) get the transient rounding of a console, never a hard
+// clip.
 // The trims sit at the very end of each path, after every nonlinearity,
 // so no operating point moves, only the meter.
-static constexpr float kTrimRhodes = 0.66f;
-static constexpr float kTrimCP70   = 3.94f;
-static constexpr float kTrimWurli  = 6.38f;
-static constexpr float kTrimGrand  = 75.0f;   // mic-pair units are small. Deliberately ~6 dB under the electrics' bench: a close-miked grand carries a 22 dB attack crest, and matching RMS exactly would put every mf attack into the output rail
-static constexpr float kTrimClav   = 0.092f;  // matched to the -24 dBFS mf bench like the other four
+static constexpr float kTrimRhodes = 1.32f;
+static constexpr float kTrimCP70   = 7.88f;
+static constexpr float kTrimWurli  = 12.76f;
+static constexpr float kTrimGrand  = 150.0f;   // mic-pair units are small. Deliberately ~6 dB under the electrics' bench: a close-miked grand carries a 22 dB attack crest, and matching RMS exactly would put every mf attack into the output rail
+static constexpr float kTrimClav   = 0.292f;  // matched to the -24 dBFS mf bench like the other four
 
 void EpiEngine::prepare (double sampleRate, int)
 {

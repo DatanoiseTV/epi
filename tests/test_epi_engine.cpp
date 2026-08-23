@@ -329,7 +329,9 @@ static void sectionLife()
     heading ("1. Life and parity at 44.1/48/96 kHz");
 
     // Level bench: the calibration suite measured -24 dBFS +/-1 for the mf
-    // chord at 48k; [-31, -17] allows rate variance and instrument spread
+    // chord at 48k; [-25, -11] allows rate variance and instrument spread
+    // about the -18 dBFS bench (raised from -24: the plugin sat quiet in
+    // sessions; peaks land in the soft rail, never a hard clip)
     // without letting a silent or roaring instrument through. Peak <= 1.0 is
     // the output rail's own asymptote (a + s*tanh -> 0.85 + 0.15).
     int id = 1;
@@ -341,7 +343,7 @@ static void sectionLife()
             const bool finite = allFinite (s);
             const double pk = peakAbs (s);
             const double rms = rmsDbMono (s, 0.0, 3.0);
-            const bool ok = finite && pk <= 1.0 && rms >= -31.0 && rms <= -17.0;
+            const bool ok = finite && pk <= 1.0 && rms >= -25.0 && rms <= -11.0;
             char what[64], idb[8];
             std::snprintf (what, sizeof what, "%s chord @ %.0fk", kInstName[inst], fs / 1000.0);
             std::snprintf (idb, sizeof idb, "1.%d", id++);
