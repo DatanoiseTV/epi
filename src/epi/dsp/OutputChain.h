@@ -169,9 +169,13 @@ public:
         double y = input.highpass (x);
         y = band.lowpass (y);
 
-        // Baxandall: two very broad shelves about a flat centre.
-        y += bassGain * bassShelf.lowpass (y);
-        y += trebGain * trebShelf.highpass (y);
+        // Baxandall: two very broad shelves about a flat centre. The gains
+        // glide per sample -- a block-rate gain step is an amplitude
+        // discontinuity, measured as zipper under fast treble automation.
+        bassNow += 0.0015 * (bassGain - bassNow);
+        trebNow += 0.0015 * (trebGain - trebNow);
+        y += bassNow * bassShelf.lowpass (y);
+        y += trebNow * trebShelf.highpass (y);
 
         // Class-A stage: asymmetric, because one side of the transfer curve
         // runs out before the other.
@@ -190,6 +194,7 @@ private:
     double fs = 48000.0;
     OnePoleD input, band, bassShelf, trebShelf;
     double bassGain = 0.0, trebGain = 0.0, driveGain = 1.0, makeup = 1.0;
+    double bassNow = 0.0, trebNow = 0.0;
     double dcx = 0.0, dcy = 0.0;
 };
 
@@ -327,10 +332,19 @@ public:
     // One path, no cancellation, and full mix is exactly the voiced box.
     void setMix (double m)
     {
-        m = std::clamp (m, 0.0, 1.0);
-        if (m != mix)
+        // The morph re-derives every filter coefficient, and a per-block
+        // coefficient step under fast automation rings the resonant
+        // sections -- measured at -12 dBFS second-difference. So setMix only
+        // stores the target; process() micro-walks toward it every sixteen
+        // samples, which makes each coefficient move sixteen times smaller
+        // at the same tracking speed. The first call snaps: a fresh
+        // instance must start AT its setting, not walk to it (a third of a
+        // second of time-varying excursion broke the superposition row).
+        mixTarget = std::clamp (m, 0.0, 1.0);
+        if (! mixInit)
         {
-            mix = m;
+            mixInit = true;
+            mix = mixTarget;
             setVoicing (voxBox, voxCone, voxDist, voxAngle, voxSusp);
         }
     }
@@ -391,6 +405,16 @@ public:
 
     double process (double x)
     {
+        if (--mixCount <= 0)
+        {
+            mixCount = 16;
+            const double step = std::clamp (mixTarget - mix, -0.0006, 0.0006);
+            if (step != 0.0)
+            {
+                mix += step;
+                setVoicing (voxBox, voxCone, voxDist, voxAngle, voxSusp);
+            }
+        }
         if (mix <= 0.0) return x;
         double y = run (boxHp, x);
         y = run (coneLp, y);
@@ -399,7 +423,18 @@ public:
         y = beam.lowpass (y);
         y = air.lowpass (y);
         // Excursion limit: a cone cannot travel further than its suspension.
-        return std::tanh (y * excursion) / excursion;
+        y = std::tanh (y * excursion) / excursion;
+        // The bottom of the knob crossfades to the exact bypass instead of
+        // switching to it: the hard mix<=0 branch was a discontinuity that
+        // clicked every time an automation sweep crossed zero -- measured at
+        // -18 dBFS second-difference. Below the fade the filters are already
+        // voiced near-transparent, so the blend only hides their tail.
+        if (mix < 0.02)
+        {
+            const double w = mix / 0.02;
+            return x + w * (y - x);
+        }
+        return y;
     }
 
 private:
@@ -468,6 +503,9 @@ private:
     // Defaults chosen to sit where the old fixed cabinet sat: fc near 75 Hz,
     // breakup near 4.2 kHz, a touch of proximity, slightly off axis.
     double voxBox = 0.74, voxCone = 0.59, voxDist = 0.5, voxAngle = 0.25, voxSusp = 0.5;
+    bool mixInit = false;
+    double mixTarget = 0.0;
+    int mixCount = 1;
     BQ boxHp, coneLp, edge, prox;
     OnePoleD beam, air;
 };
@@ -520,8 +558,17 @@ public:
     // +/-12.5 dB at 5 kHz.
     void setTone (double bassDb, double trebleDb, double drive)
     {
-        setShelf (bassCtl, 50.0, std::clamp (bassDb, -17.0, 17.0) * 17.0 / 12.0, false);
-        setShelf (trebCtl, 5000.0, std::clamp (trebleDb, -12.5, 12.5) * 12.5 / 12.0, true);
+        // Rate-limited like the air shelf and the cabinet morph: these are
+        // RBJ biquads, and a per-block coefficient step under fast automation
+        // rings them -- measured at 24 dB over the static floor on a treble
+        // sweep before the cap.
+        const double bT = std::clamp (bassDb, -17.0, 17.0);
+        const double tT = std::clamp (trebleDb, -12.5, 12.5);
+        bassDbNow += toneInit ? std::clamp (bT - bassDbNow, -0.15, 0.15) : bT - bassDbNow;
+        trebDbNow += toneInit ? std::clamp (tT - trebDbNow, -0.15, 0.15) : tT - trebDbNow;
+        toneInit = true;
+        setShelf (bassCtl, 50.0, bassDbNow * 17.0 / 12.0, false);
+        setShelf (trebCtl, 5000.0, trebDbNow * 12.5 / 12.0, true);
         driveGain = 0.25 * std::pow (40.0, std::clamp (drive, 0.0, 1.0));
     }
 
@@ -605,6 +652,8 @@ private:
     OnePoleD hpA, hpB;
     Biquad scoop, lowFixed, highFixed, bassCtl, trebCtl;
     double driveGain = 0.25;
+    double bassDbNow = 0.0, trebDbNow = 0.0;
+    bool toneInit = false;
 };
 
 } // namespace epi
