@@ -29,15 +29,20 @@ All notable changes to Epi are documented here. The format follows
   unchanged.
 
 ### Changed
-- The grand's worst case runs 2.6x lighter: a ten-note chord with the
-  pedal down dropped from 75% to 29% of one core at 48 kHz (4 notes
-  without pedal: 5%). Sympathetic strings now run the one
-  representative string and the coupled prefix the board can actually
-  excite -- which moved the wake-selectivity measurement toward the
-  published band, not away from it -- and the bridge exchange loops
-  were rebuilt so the reductions pipeline instead of serialising on
-  the FMA latency chain. Bit-for-bit deterministic; all seven suites
-  pass unchanged.
+- The grand's worst case runs 2.2x lighter: a ten-note chord with the
+  pedal down dropped from 75% to 34% of one core at 48 kHz (4 notes
+  without pedal: 5%). Sympathetic voices keep the FULL course -- every
+  string, both coupled prefixes, so the intra-course detune beats that
+  are the shimmer of a pedal wash survive (measured: 8.6 dB of
+  coherent wash and the superposed beat structure against a
+  single-string economy that was tried and rejected) -- truncated only
+  above the board's 1.3 kHz coupling band, which is the physics of the
+  two-port, not a budget. The speed came from the bridge exchange:
+  raw-array views and hand-split accumulators so the per-voice dots
+  pipeline instead of serialising on the FMA latency chain, plus a
+  fused coupled-tick fast lane and a dormancy tier with a
+  thousandfold hysteresis. Bit-for-bit deterministic; all seven
+  suites pass unchanged.
 
 ## [0.7.0] - 2026-08-23
 
