@@ -75,13 +75,27 @@ public:
     static constexpr double kTrebL = 2.0,    kTrebC = 4.7e-9;
     static constexpr double kTrebRw = 60.0;   // 700 turns 0.09 mm CuL, computed
     static constexpr double kBrilL = 0.6;
+    // The rocker network does not hang off an ideal source: it divides
+    // against the pickup coil's own impedance, and that division is what
+    // tames the branch resonances in the real instrument. Driven ideally,
+    // the Treble branch's LC computes to Q ~ 340 and was heard as exactly
+    // that -- a heavy 1.6 kHz resonance under the funk registration. With
+    // the source in place the working Q is a handful, and Brilliant's bare
+    // inductor becomes the ~1.5 kHz high-pass it must physically be rather
+    // than a raw differentiator. 5.5 kOhm is the single-coil class typical;
+    // the exact coil is the research doc's open contradiction and owns the
+    // number.
+    static constexpr double kSourceR = 5.5e3;
 
-    // |Z_medium(j 2 pi 1000)| — the shared level reference (see above).
+    // |D_medium(j 2 pi 1000)| — the shared level reference: the medium
+    // branch's divider gain at 1 kHz, so Medium alone stays near its old
+    // level and the RELATIVE rocker balance follows the circuit.
     static double zRef()
     {
         const double w = 2.0 * kPiD * 1000.0;
-        const double x = w * kMedR * kMedC;
-        return kMedR / std::sqrt (1.0 + x * x);
+        const double tau = kSourceR * kMedR * kMedC / (kMedR + kSourceR);
+        const double g0 = kMedR / (kMedR + kSourceR);
+        return g0 / std::sqrt (1.0 + w * w * tau * tau);
     }
 
     void prepare (double rate)
@@ -90,40 +104,46 @@ public:
         const double K = 2.0 * fs;
         const double inv = 1.0 / zRef();
 
-        // Soft and Medium: bilinear of R/(1+sRC), Table 3 exactly.
+        // Soft and Medium: the divider of the R-parallel-C branch against
+        // the source, D = (R/(R+Rs)) / (1 + s RsRC/(R+Rs)), bilinear.
         auto firstOrder = [&] (Sec& s, double R, double C)
         {
-            const double krc = K * R * C;
-            s.b0 = inv * R / (1.0 + krc);
+            const double g0  = R / (R + kSourceR);
+            const double tau = kSourceR * R * C / (R + kSourceR);
+            const double kt  = K * tau;
+            s.b0 = inv * g0 / (1.0 + kt);
             s.b1 = s.b0;
             s.b2 = 0.0;
-            s.a1 = (1.0 - krc) / (1.0 + krc);
+            s.a1 = (1.0 - kt) / (1.0 + kt);
             s.a2 = 0.0;
         };
         firstOrder (sec[0], kSoftR, kSoftC);
         firstOrder (sec[1], kMedR, kMedC);
 
-        // Treble: bilinear of (Rw + sL)/(1 + sRwC + s^2 LC).
+        // Treble: D = (Rw + sL) / ((Rw+Rs) + s (L + Rs Rw C) + s^2 Rs L C).
         {
-            const double rck = kTrebRw * kTrebC * K;
-            const double lck = kTrebL * kTrebC * K * K;
-            const double a0 = 1.0 + rck + lck;
+            const double c0 = kTrebRw + kSourceR;
+            const double c1 = kTrebL + kSourceR * kTrebRw * kTrebC;
+            const double c2 = kSourceR * kTrebL * kTrebC;
+            const double a0 = c0 + c1 * K + c2 * K * K;
             Sec& s = sec[2];
             s.b0 = inv * (kTrebRw + kTrebL * K) / a0;
             s.b1 = inv * 2.0 * kTrebRw / a0;
             s.b2 = inv * (kTrebRw - kTrebL * K) / a0;
-            s.a1 = (2.0 - 2.0 * lck) / a0;
-            s.a2 = (1.0 - rck + lck) / a0;
+            s.a1 = (2.0 * c0 - 2.0 * c2 * K * K) / a0;
+            s.a2 = (c0 - c1 * K + c2 * K * K) / a0;
         }
 
-        // Brilliant: bilinear of sL with the paper's own 0.99 pole
-        // regularisation (a raw bilinear of s puts a pole exactly at z = -1).
+        // Brilliant: D = sL / (Rs + sL) -- the high-pass the bare inductor
+        // makes against the source, bilinear.
         {
+            const double kl = K * kBrilL;
+            const double a0 = kSourceR + kl;
             Sec& s = sec[3];
-            s.b0 = inv * K * kBrilL;
+            s.b0 = inv * kl / a0;
             s.b1 = -s.b0;
             s.b2 = 0.0;
-            s.a1 = 0.99;
+            s.a1 = (kSourceR - kl) / a0;
             s.a2 = 0.0;
         }
         reset();
