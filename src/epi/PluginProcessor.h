@@ -152,6 +152,36 @@ public:
     }
     void resetMicMods() { setMicMod (kMicDefaults); }
     const std::array<float, 5>& getMicMods() const { return micMods; }
+
+    // The mic stage: [mode, then five of (on, x, z, h, gainDb, pan)] in
+    // GrandMicStage's own units. Mode 0 ignores the mic list (classic pair),
+    // so the defaults may carry a sensible starting placement.
+    void setMicStage (const std::array<float, 31>& v)
+    {
+        micStage = v;
+        auto& st = engine.grandMicStage();
+        st.setMode (static_cast<int> (v[0] + 0.5f));
+        for (int i = 0; i < 5; ++i)
+        {
+            epi::GrandMicStage::Mic m;
+            m.on     = v[1 + i * 6] >= 0.5f;
+            m.x      = v[2 + i * 6];
+            m.z      = v[3 + i * 6];
+            m.h      = v[4 + i * 6];
+            m.gainDb = v[5 + i * 6];
+            m.pan    = v[6 + i * 6];
+            st.setMic (i, m);
+        }
+    }
+    void resetMicStage() { setMicStage (kStageDefaults); }
+    const std::array<float, 31>& getMicStage() const { return micStage; }
+    static constexpr std::array<float, 31> kStageDefaults {
+        0.0f,
+        1.0f, -0.5f, 1.2f, 0.6f,  0.0f, -0.7f,
+        1.0f,  0.5f, 1.2f, 0.6f,  0.0f,  0.7f,
+        0.0f,  0.0f, 2.5f, 1.0f,  0.0f,  0.0f,
+        0.0f, -1.2f, 0.4f, 0.3f, -6.0f, -1.0f,
+        0.0f,  1.2f, 0.4f, 0.3f, -6.0f,  1.0f };
     void resetCabMods() { setCabMod (kCabDefaults); }
     const std::array<float, 5>& getCabMods() const { return cabMods; }
     static constexpr std::array<float, 5> kCabDefaults { 0.74f, 0.59f, 0.5f, 0.25f, 0.5f };
@@ -208,6 +238,7 @@ private:
 
     std::array<float, 5> cabMods = kCabDefaults;
     std::array<float, 5> micMods = kMicDefaults;
+    std::array<float, 31> micStage = kStageDefaults;
     std::array<float, 5> velMap { 0.0f, 0.25f, 0.5f, 0.75f, 1.0f };
 
     struct UiNote { int note; float velocity; bool on; };

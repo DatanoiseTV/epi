@@ -219,6 +219,7 @@ juce::ValueTree EpiAudioProcessor::buildModsTree (bool always) const
         if (m[0] != 1.0f || m[1] != 1.0f) { modded = true; break; }
     if (cabMods != kCabDefaults) modded = true;
     if (micMods != kMicDefaults) modded = true;
+    if (micStage != kStageDefaults) modded = true;
     if (velMap != std::array<float, 5> { 0.0f, 0.25f, 0.5f, 0.75f, 1.0f }) modded = true;
     if (! modded && ! always) return {};
 
@@ -261,6 +262,9 @@ juce::ValueTree EpiAudioProcessor::buildModsTree (bool always) const
     mods.setProperty ("gdia", gd.joinIntoString (","), nullptr);
     mods.setProperty ("cab",  cs.joinIntoString (","), nullptr);
     mods.setProperty ("mic",  ms.joinIntoString (","), nullptr);
+    juce::StringArray sts;
+    for (float v : micStage) sts.add (juce::String (v, 6));
+    mods.setProperty ("mstage", sts.joinIntoString (","), nullptr);
     juce::StringArray vm;
     for (float v : velMap) vm.add (juce::String (v, 6));
     mods.setProperty ("vmap", vm.joinIntoString (","), nullptr);
@@ -278,6 +282,7 @@ void EpiAudioProcessor::applyModsTree (const juce::ValueTree& mods)
     resetGrandMods();
     resetCabMods();
     resetMicMods();
+    resetMicStage();
     resetVelMap();
     if (! mods.isValid()) return;
 
@@ -295,6 +300,14 @@ void EpiAudioProcessor::applyModsTree (const juce::ValueTree& mods)
     cs.addTokens (mods["cab"].toString(), ",", "");
     juce::StringArray msv;
     msv.addTokens (mods["mic"].toString(), ",", "");
+    juce::StringArray stv;
+    stv.addTokens (mods["mstage"].toString(), ",", "");
+    if (stv.size() == 31)
+    {
+        std::array<float, 31> sv {};
+        for (int i = 0; i < 31; ++i) sv[static_cast<size_t> (i)] = stv[i].getFloatValue();
+        setMicStage (sv);
+    }
     juce::StringArray vmv;
     vmv.addTokens (mods["vmap"].toString(), ",", "");
     for (int i = 0; i < epi::EpiEngine::kNumTines; ++i)

@@ -240,6 +240,25 @@ WebEditor::WebEditor (::EpiAudioProcessor& proc)
             })
         .withEventListener (juce::Identifier { "mic_mod_reset" },
             [&proc = epiProcessor] (juce::var) { proc.resetMicMods(); })
+        .withNativeFunction (juce::Identifier { "getMicStage" },
+            [&proc = epiProcessor] (const juce::Array<juce::var>&, auto complete)
+            {
+                juce::Array<juce::var> flat;
+                for (float v : proc.getMicStage()) flat.add (juce::var (static_cast<double> (v)));
+                complete (juce::var (flat));
+            })
+        .withEventListener (juce::Identifier { "mic_stage" },
+            [&proc = epiProcessor] (juce::var payload)
+            {
+                if (auto* arr = payload.getProperty ("v", juce::var()).getArray();
+                    arr != nullptr && arr->size() == 31)
+                {
+                    std::array<float, 31> v {};
+                    for (int i = 0; i < 31; ++i)
+                        v[static_cast<size_t> (i)] = static_cast<float> (static_cast<double> ((*arr)[i]));
+                    proc.setMicStage (v);
+                }
+            })
         .withNativeFunction (juce::Identifier { "getVelMap" },
             [&proc = epiProcessor] (const juce::Array<juce::var>&, auto complete)
             {

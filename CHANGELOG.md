@@ -24,9 +24,16 @@ All notable changes to Epi are documented here. The format follows
   bit-exact, no interpolation in the path.
 - The Mic Studio's stage: up to five freely positionable microphones
   dragged on a top-down view of the instrument, each with height, gain
-  and pan -- height below the board flips the low band's polarity, as
-  it does over a real rim. Classic Pair mode is the calibrated pair,
-  unchanged.
+  and pan. Every mic is rendered from real geometry -- inverse
+  distance (measured 5.99 dB per doubling), arrival delay at 343 m/s
+  (two mics half a metre apart cross-correlate at the geometric lag
+  within a sample), the board's dipole (a mic under the board reads
+  the low band inverted, correlation -0.81), and the lid as a specular
+  image toward the open side (+3.5 dB of 2-6 kHz on the open-lid
+  seat). Classic Pair mode is the calibrated pair, byte-identical to
+  the shipped chain by a suite row; the whole five-mic stage costs
+  2.4% of a core at 48 kHz. Placements persist with the project and
+  presets.
 
 ### Changed
 - The grand's worst case runs 2.2x lighter: a ten-note chord with the
