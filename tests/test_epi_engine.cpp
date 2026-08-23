@@ -1101,6 +1101,211 @@ static void sectionCpu()
 }
 
 // ===========================================================================
+// 11. The room's derived profiles.
+//
+// Every expectation here is a computed number from
+// docs/research/room-acoustics-measured.md: Eyring RT60 per octave band from
+// surveyed geometry and fetched published absorption tables (air term
+// included), and first-order image-source arrival times. Nothing is tuned to
+// the code; a failing row is a defect in the room or a wrong derivation, and
+// both get investigated.
+// ===========================================================================
+
+static Room makeRoom (int profile, double fs)
+{
+    Room r;
+    r.prepare (fs);
+    r.setProfile (profile);
+    r.setSize (0.5f);   // natural size: the doc's tables are computed here
+    r.reset();          // reset lands the pending swap at silence, per contract
+    return r;
+}
+
+static std::vector<double> renderRoomImpulse (Room& r, double fs, double seconds)
+{
+    const int n = static_cast<int> (fs * seconds);
+    std::vector<double> y (static_cast<std::size_t> (n));
+    for (int i = 0; i < n; ++i)
+    {
+        const double x = i == 0 ? 1.0 : 0.0;
+        double wl = 0.0, wr = 0.0;
+        r.process (x, x, wl, wr);
+        y[static_cast<std::size_t> (i)] = 0.5 * (wl + wr);
+    }
+    return y;
+}
+
+static double roomT60 (const std::vector<double>& y, double fs, double f, double ta, double tb)
+{
+    const auto env = an::heterodyne (y, fs, f);
+    const auto fit = an::fitDecay (env, ta, tb);
+    if (! fit.valid || fit.slopeDbPerS >= -1.0e-3) return 0.0;
+    return -60.0 / fit.slopeDbPerS;
+}
+
+static void sectionRoom()
+{
+    heading ("11. room profiles: Eyring decay, image-source early field, click-safe switch");
+
+    const double fs = 48000.0;
+
+    // 11.0 -- profile 0 is the shipped room, bit for bit (research doc,
+    // "Switching behaviour"). setProfile(0) on a fresh Room must change
+    // nothing at all against a Room that never heard of profiles.
+    {
+        Room a, b;
+        a.prepare (fs);
+        b.prepare (fs);
+        b.setProfile (0);
+        a.setSize (0.4f);
+        b.setSize (0.4f);
+        std::mt19937 rng (11);
+        std::uniform_real_distribution<double> dist (-1.0, 1.0);
+        bool exact = true;
+        for (int i = 0; i < 48000 && exact; ++i)
+        {
+            const double x = dist (rng);
+            double al = 0, ar = 0, bl = 0, br = 0;
+            a.process (x, 0.7 * x, al, ar);
+            b.process (x, 0.7 * x, bl, br);
+            exact = al == bl && ar == br;
+        }
+        row ("11.0", "profile 0 vs shipped room", "bit-exact over 1 s",
+             exact ? "identical" : "diverged", verdict (exact));
+    }
+
+    // 11.1..11.5 -- RT60 at 500 Hz per profile within 25 % of the computed
+    // Eyring value (research doc, "Computed Eyring RT60 per band", bold
+    // column). Renders and fit windows sized per decay; the fit starts after
+    // the early reflections and the heterodyne transient.
+    struct ProfileCase
+    {
+        int profile;
+        const char* name;
+        double t500;         // computed Eyring, natural size
+        double t4k;          // computed, informational
+        double ta, tb, len;  // fit window and render length, seconds
+    };
+    static const ProfileCase kCases[5] = {
+        { 1, "Booth",  0.066, 0.049, 0.040, 0.100, 0.35 },
+        { 2, "Studio", 0.397, 0.397, 0.060, 0.350, 0.70 },
+        { 3, "Stage",  1.025, 1.486, 0.120, 0.900, 1.30 },
+        { 4, "Hall",   2.391, 1.946, 0.250, 1.700, 2.20 },
+        { 5, "Church", 6.506, 3.316, 0.300, 2.600, 3.20 },
+    };
+
+    double t500Meas[5] = {};
+    std::vector<double> ir[5];
+    for (int c = 0; c < 5; ++c)
+    {
+        Room r = makeRoom (kCases[c].profile, fs);
+        ir[c] = renderRoomImpulse (r, fs, kCases[c].len);
+        t500Meas[c] = roomT60 (ir[c], fs, 500.0, kCases[c].ta, kCases[c].tb);
+
+        char id[12], what[64];
+        std::snprintf (id, sizeof id, "11.%d", c + 1);
+        std::snprintf (what, sizeof what, "%s RT60 at 500 Hz", kCases[c].name);
+        const double rel = std::fabs (t500Meas[c] - kCases[c].t500) / kCases[c].t500;
+        row (id, what, fmt2 ("%.3f s +/- 25%% (Eyring)", kCases[c].t500, 0.0),
+             fmt2 ("%.3f s (%+.0f%%)", t500Meas[c], 100.0 * (t500Meas[c] / kCases[c].t500 - 1.0)),
+             verdict (t500Meas[c] > 0.0 && rel <= 0.25));
+    }
+
+    // 11.6 / 11.7 -- material spectra plus the 4mV air term make the Hall
+    // and Church decay faster at 4 kHz than at 500 Hz (research doc: Hall
+    // 1.946 s vs 2.391 s, Church 3.316 s vs 6.506 s).
+    {
+        const double hall4k   = roomT60 (ir[3], fs, 4000.0, 0.25, 1.40);
+        const double church4k = roomT60 (ir[4], fs, 4000.0, 0.30, 2.20);
+        row ("11.6", "Hall HF decay shorter than mid", "T60(4k) < T60(500)",
+             fmt2 ("%.3f s vs %.3f s", hall4k, t500Meas[3]),
+             verdict (hall4k > 0.0 && hall4k < t500Meas[3]));
+        row ("11.7", "Church HF decay shorter than mid", "T60(4k) < T60(500)",
+             fmt2 ("%.3f s vs %.3f s", church4k, t500Meas[4]),
+             verdict (church4k > 0.0 && church4k < t500Meas[4]));
+    }
+
+    // 11.8..11.10 -- first reflection arrival within 15 % of the image-source
+    // prediction (research doc, "Early reflections" table: booth 2.205 ms
+    // near side wall, studio 2.708 ms floor, stage 2.103 ms floor). The wet
+    // path is exactly zero until the first tap fires, so the first nonzero
+    // sample is the arrival.
+    {
+        static const struct { int caseIdx; double ms; } kArrival[3] = {
+            { 0, 2.205 }, { 1, 2.708 }, { 2, 2.103 }
+        };
+        for (int k = 0; k < 3; ++k)
+        {
+            const auto& c = kCases[kArrival[k].caseIdx];
+            const auto& y = ir[kArrival[k].caseIdx];
+            int first = -1;
+            for (int i = 0; i < static_cast<int> (y.size()); ++i)
+                if (std::fabs (y[static_cast<std::size_t> (i)]) > 1.0e-9) { first = i; break; }
+            const double ms = first >= 0 ? 1000.0 * first / fs : -1.0;
+            const double rel = std::fabs (ms - kArrival[k].ms) / kArrival[k].ms;
+
+            char id[12], what[64];
+            std::snprintf (id, sizeof id, "11.%d", 8 + k);
+            std::snprintf (what, sizeof what, "%s first reflection arrival", c.name);
+            row (id, what, fmt2 ("%.2f ms +/- 15%%", kArrival[k].ms, 0.0),
+                 fmt ("%.2f ms", ms), verdict (first >= 0 && rel <= 0.15));
+        }
+    }
+
+    // 11.11 -- a profile switch mid-ring is click-safe (research doc,
+    // "Switching behaviour": 15 ms wet fade to a null, swap, fade back).
+    // Bound: the largest output second difference around the switch must not
+    // exceed 3x the larger of the two steady profiles' own second
+    // difference over the same window -- a hard step would show up as a
+    // spike of the signal's full scale.
+    {
+        auto render = [fs] (int from, int to, bool doSwitch)
+        {
+            Room r = makeRoom (from, fs);
+            const int n = static_cast<int> (fs);
+            std::vector<double> y (static_cast<std::size_t> (n));
+            for (int i = 0; i < n; ++i)
+            {
+                const double t = i / fs;
+                const double x = t < 0.3 ? 0.4 * std::sin (2.0 * an::kPi * 415.3 * t) : 0.0;
+                if (doSwitch && i == static_cast<int> (0.35 * fs))
+                    r.setProfile (to);
+                double wl = 0.0, wr = 0.0;
+                r.process (x, x, wl, wr);
+                y[static_cast<std::size_t> (i)] = wl;
+            }
+            return y;
+        };
+        auto maxD2 = [fs] (const std::vector<double>& y, double ta, double tb)
+        {
+            double m = 0.0;
+            const int a = std::max (2, static_cast<int> (ta * fs));
+            const int b = std::min (static_cast<int> (y.size()), static_cast<int> (tb * fs));
+            for (int i = a; i < b; ++i)
+                m = std::max (m, std::fabs (y[static_cast<std::size_t> (i)]
+                                            - 2.0 * y[static_cast<std::size_t> (i - 1)]
+                                            + y[static_cast<std::size_t> (i - 2)]));
+            return m;
+        };
+
+        const auto ySwitch = render (2, 4, true);
+        const auto yA      = render (2, 4, false);
+        const auto yB      = render (4, 2, false);
+
+        bool finite = true;
+        for (double v : ySwitch) finite = finite && std::isfinite (v);
+
+        const double d2s = maxD2 (ySwitch, 0.34, 0.45);
+        const double d2a = maxD2 (yA, 0.34, 0.45);
+        const double d2b = maxD2 (yB, 0.34, 0.45);
+        const double bound = 3.0 * std::max (d2a, d2b) + 1.0e-9;
+        row ("11.11", "mid-ring Studio->Hall switch", "max |d2| <= 3x steady, finite",
+             fmt2 ("%.2e vs bound %.2e", d2s, bound),
+             verdict (finite && d2s <= bound));
+    }
+}
+
+// ===========================================================================
 
 int main()
 {
@@ -1120,6 +1325,7 @@ int main()
     sectionMidi();
     sectionRates();
     sectionCpu();
+    sectionRoom();
 
     const double wall = std::chrono::duration<double> (std::chrono::steady_clock::now() - t0).count();
     std::printf ("\nsuite wall time %.1f s\n", wall);
