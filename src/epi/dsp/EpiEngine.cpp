@@ -26,11 +26,12 @@ namespace { constexpr int kRetuneBudget = EPI_RETUNE_BUDGET; }
 namespace epi
 {
 
-// Loudness alignment. Three instruments, three signal chains, one fader
-// convention: the same four-note forte chord measures the same RMS through
-// each, calibrated at -18 dBFS so a forte performance leaves honest
-// headroom at unity. The trims sit at the very end of each path -- after
-// every nonlinearity -- so no operating point moves, only the meter.
+// Loudness alignment. Five instruments, five signal chains, one fader
+// convention: the same mezzo-forte chord measures the same RMS through
+// each, benched at -24 dBFS within a decibel (the grand deliberately a
+// touch under -- its real 22 dB attack crest must clear the output rail).
+// The trims sit at the very end of each path, after every nonlinearity,
+// so no operating point moves, only the meter.
 static constexpr float kTrimRhodes = 0.66f;
 static constexpr float kTrimCP70   = 3.94f;
 static constexpr float kTrimWurli  = 6.38f;
