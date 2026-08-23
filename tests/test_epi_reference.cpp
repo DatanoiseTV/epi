@@ -1199,6 +1199,13 @@ static void sectionCP70()
             EngineParams p = referenceParams();
             p.instrument = 1;
             p.tremDepth = 0.0f; p.cabMix = 0.0f; p.spaceMix = 0.0f; p.preampDrive = 0.0f;
+            // This row measures the COUPLING's linearity, so it must render
+            // inside the output rail's linear region -- the rail is a
+            // deliberate nonlinearity at the very end, and at the raised
+            // loudness bench a fortissimo two-note chord reaches its knee.
+            // A -14 dB fader keeps every render linear; the ratio the row
+            // takes is fader-invariant.
+            p.outGainLin = 0.2f;
             std::vector<NoteEvent> evs;
             for (int n : notes) evs.push_back ({ 0, NoteEvent::noteOn, n, 0.9f });
             std::vector<float> L (static_cast<std::size_t> (N), 0.0f);
