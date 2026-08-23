@@ -219,6 +219,7 @@ juce::ValueTree EpiAudioProcessor::buildModsTree (bool always) const
         if (m[0] != 1.0f || m[1] != 1.0f) { modded = true; break; }
     if (cabMods != kCabDefaults) modded = true;
     if (micMods != kMicDefaults) modded = true;
+    if (velMap != std::array<float, 5> { 0.0f, 0.25f, 0.5f, 0.75f, 1.0f }) modded = true;
     if (! modded && ! always) return {};
 
     juce::StringArray ls, ds, hs, gs, ws, sl, sd, cs;
@@ -260,6 +261,9 @@ juce::ValueTree EpiAudioProcessor::buildModsTree (bool always) const
     mods.setProperty ("gdia", gd.joinIntoString (","), nullptr);
     mods.setProperty ("cab",  cs.joinIntoString (","), nullptr);
     mods.setProperty ("mic",  ms.joinIntoString (","), nullptr);
+    juce::StringArray vm;
+    for (float v : velMap) vm.add (juce::String (v, 6));
+    mods.setProperty ("vmap", vm.joinIntoString (","), nullptr);
     return mods;
 }
 
@@ -274,6 +278,7 @@ void EpiAudioProcessor::applyModsTree (const juce::ValueTree& mods)
     resetGrandMods();
     resetCabMods();
     resetMicMods();
+    resetVelMap();
     if (! mods.isValid()) return;
 
     juce::StringArray ls, ds, hs, gs, ws, sl, sd, cs;
@@ -290,6 +295,8 @@ void EpiAudioProcessor::applyModsTree (const juce::ValueTree& mods)
     cs.addTokens (mods["cab"].toString(), ",", "");
     juce::StringArray msv;
     msv.addTokens (mods["mic"].toString(), ",", "");
+    juce::StringArray vmv;
+    vmv.addTokens (mods["vmap"].toString(), ",", "");
     for (int i = 0; i < epi::EpiEngine::kNumTines; ++i)
     {
         setTineMod (i,
@@ -314,6 +321,10 @@ void EpiAudioProcessor::applyModsTree (const juce::ValueTree& mods)
         setMicMod ({ msv[0].getFloatValue(), msv[1].getFloatValue(),
                      msv[2].getFloatValue(), msv[3].getFloatValue(),
                      msv[4].getFloatValue() });
+    if (vmv.size() == 5)
+        setVelMap ({ vmv[0].getFloatValue(), vmv[1].getFloatValue(),
+                     vmv[2].getFloatValue(), vmv[3].getFloatValue(),
+                     vmv[4].getFloatValue() });
 }
 
 void EpiAudioProcessor::snapshotCurrentParams()

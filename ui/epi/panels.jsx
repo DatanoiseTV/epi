@@ -7,9 +7,14 @@ const { useJuceSlider, useJuceChoice, useJuceEvent, emitNative } = JuceBridge;
 
 /* ---- ACTION: the key, the hammer and the damper ---- */
 function ActionPanel({ inst }) {
+  const [velShop, setVelShop] = useState(false);
   return (
     <div className="panel f-action">
-      <PHead title="Action" />
+      <div className="phead">
+        <h2>Action</h2>
+        <span className="hrule" />
+        <button className="wsopen" onClick={() => setVelShop(true)} title="Velocity response curve">CURVE</button>
+      </div>
       <div className="krow">
         <PKnob id="hammerHard" label="HARDNESS" />
         <PKnob id="hammerMass" label="MASS" />
@@ -33,6 +38,7 @@ function ActionPanel({ inst }) {
         </div>
       )}
       <div className="note">hammer tip · escapement · felt</div>
+      {velShop && <VelocityWorkshop onClose={() => setVelShop(false)} />}
     </div>
   );
 }

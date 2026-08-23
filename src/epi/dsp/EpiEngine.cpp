@@ -343,7 +343,7 @@ void EpiEngine::handleEvent (const NoteEvent& e, const EngineParams& p)
             // instrument gives more for a light touch, above it the player has
             // to work for the top of the range.
             const float shape = 0.35f + 1.9f * std::clamp (p.velCurve, 0.0f, 1.0f);
-            const float vel = std::pow (std::clamp (e.velocity, 0.0f, 1.0f), shape)
+            const float vel = std::pow (velMapEval (std::clamp (e.velocity, 0.0f, 1.0f)), shape)
                             * std::clamp (expression, 0.0f, 2.0f);
 
             keyDown[i] = true;

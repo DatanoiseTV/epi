@@ -240,6 +240,25 @@ WebEditor::WebEditor (::EpiAudioProcessor& proc)
             })
         .withEventListener (juce::Identifier { "mic_mod_reset" },
             [&proc = epiProcessor] (juce::var) { proc.resetMicMods(); })
+        .withNativeFunction (juce::Identifier { "getVelMap" },
+            [&proc = epiProcessor] (const juce::Array<juce::var>&, auto complete)
+            {
+                juce::Array<juce::var> flat;
+                for (float v : proc.getVelMap()) flat.add (juce::var (static_cast<double> (v)));
+                complete (juce::var (flat));
+            })
+        .withEventListener (juce::Identifier { "vel_map" },
+            [&proc = epiProcessor] (juce::var payload)
+            {
+                proc.setVelMap ({
+                    static_cast<float> (static_cast<double> (payload.getProperty ("y0", 0.0))),
+                    static_cast<float> (static_cast<double> (payload.getProperty ("y1", 0.25))),
+                    static_cast<float> (static_cast<double> (payload.getProperty ("y2", 0.5))),
+                    static_cast<float> (static_cast<double> (payload.getProperty ("y3", 0.75))),
+                    static_cast<float> (static_cast<double> (payload.getProperty ("y4", 1.0))) });
+            })
+        .withEventListener (juce::Identifier { "vel_map_reset" },
+            [&proc = epiProcessor] (juce::var) { proc.resetVelMap(); })
         .withEventListener (juce::Identifier { "ui_note" },
             [&proc = epiProcessor] (juce::var payload)
             {

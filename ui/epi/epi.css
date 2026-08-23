@@ -433,3 +433,8 @@ html, body {
 .bodyrow .knob { width: 46px; }
 .bodyrow .kval { display: none; }
 .bodysize .knob { width: 52px; }
+
+/* Velocity curve editor. */
+.wsvcanvas { display: block; margin: 10px auto; background: #14110c; border: 1px solid #2c271d; border-radius: 6px; touch-action: none; cursor: crosshair; }
+.wsvmode { font-size: 8px; letter-spacing: .12em; color: var(--mute); margin-left: 10px; }
+.wschip.on { color: #caa45e; border-color: #caa45e; }

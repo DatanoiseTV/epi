@@ -81,6 +81,14 @@ public:
     }
 
     // The string workshop: the CP-70's per-course steel.
+    void setVelMap (const std::array<float, 5>& y)
+    {
+        velMap = y;
+        engine.setVelMap (y.data());
+    }
+    void resetVelMap() { setVelMap ({ 0.0f, 0.25f, 0.5f, 0.75f, 1.0f }); }
+    const std::array<float, 5>& getVelMap() const { return velMap; }
+
     void setGrandMod (int index, float lenScale, float diaScale)
     {
         if (index < 0 || index >= epi::EpiEngine::kNumTines) return;
@@ -200,6 +208,7 @@ private:
 
     std::array<float, 5> cabMods = kCabDefaults;
     std::array<float, 5> micMods = kMicDefaults;
+    std::array<float, 5> velMap { 0.0f, 0.25f, 0.5f, 0.75f, 1.0f };
 
     struct UiNote { int note; float velocity; bool on; };
     static constexpr unsigned kUiNoteCap = 64;

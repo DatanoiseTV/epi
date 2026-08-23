@@ -233,6 +233,25 @@ public:
         m.dirty.store (true, std::memory_order_release);
     }
 
+    // The velocity map: five editable ordinates over fixed abscissae
+    // {0, 1/4, 1/2, 3/4, 1}, identity by default (bit-exact: the evaluator
+    // short-circuits). Monotone by construction -- the setter sorts, and
+    // the evaluator is a Fritsch-Carlson monotone cubic, so a curve can
+    // never invert the player's dynamics.
+    void setVelMap (const float* y5)
+    {
+        float y[5];
+        for (int i = 0; i < 5; ++i) y[i] = std::clamp (y5[i], 0.0f, 1.0f);
+        for (int i = 1; i < 5; ++i) y[i] = std::max (y[i], y[i - 1]);
+        bool ident = true;
+        for (int i = 0; i < 5; ++i)
+        {
+            velMapY[i].store (y[i], std::memory_order_relaxed);
+            if (std::abs (y[i] - 0.25f * i) > 1.0e-6f) ident = false;
+        }
+        velMapIdentity.store (ident, std::memory_order_release);
+    }
+
     // The grand's string bench: same discipline again.
     void setGrandMod (int i, float lenScale, float diaScale)
     {
@@ -373,6 +392,36 @@ private:
     float lastSpaceSize = -1.0f;
 
     bool   unaCorda    = false;   // CC67, grand only
+    std::atomic<float> velMapY[5] { 0.0f, 0.25f, 0.5f, 0.75f, 1.0f };
+    std::atomic<bool> velMapIdentity { true };
+
+    float velMapEval (float v) const
+    {
+        if (velMapIdentity.load (std::memory_order_acquire)) return v;
+        float y[5];
+        for (int i = 0; i < 5; ++i) y[i] = velMapY[i].load (std::memory_order_relaxed);
+        v = std::clamp (v, 0.0f, 1.0f);
+        const float x = v * 4.0f;
+        const int seg = std::min (3, static_cast<int> (x));
+        const float t = x - static_cast<float> (seg);
+        // Fritsch-Carlson slopes on the uniform grid: secants, endpoint
+        // one-sided, interior harmonic mean of neighbouring secants (zero
+        // when either secant is zero) -- monotone by construction.
+        auto slope = [&] (int i) -> float
+        {
+            auto sec = [&] (int a) { return (y[a + 1] - y[a]) * 4.0f; };
+            if (i == 0) return sec (0);
+            if (i == 4) return sec (3);
+            const float s0 = sec (i - 1), s1 = sec (i);
+            if (s0 <= 0.0f || s1 <= 0.0f) return 0.0f;
+            return 2.0f * s0 * s1 / (s0 + s1);
+        };
+        const float y0 = y[seg], y1 = y[seg + 1];
+        const float m0 = slope (seg) * 0.25f, m1 = slope (seg + 1) * 0.25f;
+        const float t2 = t * t, t3 = t2 * t;
+        return std::clamp ((2*t3 - 3*t2 + 1) * y0 + (t3 - 2*t2 + t) * m0
+                         + (-2*t3 + 3*t2) * y1 + (t3 - t2) * m1, 0.0f, 1.0f);
+    }
     bool   pedalDown   = false;   // engaged at all -- gates the sympathetic path
     double pedalAmount = 0.0;     // continuous CC64, 0 = up, 1 = fully down
 

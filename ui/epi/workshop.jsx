@@ -583,4 +583,151 @@ function MicStudio({ onClose }) {
   );
 }
 
-Object.assign(window, { TineWorkshop, PickupWorkshop, CabinetWorkshop, MicStudio });
+
+/* ============================================================
+   Velocity curve editor.
+   REAL mode is a true bypass: at the identity map the engine
+   short-circuits and the raw velocity reaches the physics'
+   own launch law bit-exact -- no interpolation in the path.
+   Bending any point engages the monotone cubic; RESET returns
+   to real. Presets are named hand positions, pending the
+   measured-curve research for the CONCERT map.
+   ============================================================ */
+const WSV_IDENT = [0, 0.25, 0.5, 0.75, 1];
+const WSV_PRESETS = [
+  ['REAL', WSV_IDENT],
+  ['LIGHT', [0, 0.38, 0.62, 0.83, 1]],
+  ['HEAVY', [0, 0.14, 0.36, 0.66, 1]],
+  ['STAGE', [0.06, 0.32, 0.55, 0.78, 1]],
+];
+function VelocityWorkshop({ onClose }) {
+  const [y, setY] = useState(null);
+  const cvs = useRef(null);
+  const dragIdx = useRef(-1);
+
+  useEffect(() => {
+    let alive = true;
+    try {
+      Juce.getNativeFunction('getVelMap')().then((a) => {
+        if (!alive) return;
+        const flat = a ? Array.from(a).map(Number) : [];
+        setY(flat.length === 5 ? flat : WSV_IDENT.slice());
+      });
+    } catch (_) { setY(WSV_IDENT.slice()); }
+    return () => { alive = false; };
+  }, []);
+
+  const isReal = y && y.every((v, i) => Math.abs(v - WSV_IDENT[i]) < 1e-6);
+
+  const push = (arr) => {
+    const c = arr.slice();
+    for (let i = 1; i < 5; i++) c[i] = Math.max(c[i], c[i - 1]);
+    setY(c);
+    JuceBridge.emitNative('vel_map', { y0: c[0], y1: c[1], y2: c[2], y3: c[3], y4: c[4] });
+  };
+
+  useEffect(() => {
+    if (!y || !cvs.current) return;
+    const el = cvs.current, ctx = el.getContext('2d');
+    const W = el.width, H = el.height, pad = 14;
+    ctx.clearRect(0, 0, W, H);
+    ctx.strokeStyle = '#2c271d';
+    for (let i = 0; i <= 4; i++) {
+      const gx = pad + (W - 2 * pad) * i / 4;
+      ctx.beginPath(); ctx.moveTo(gx, pad); ctx.lineTo(gx, H - pad); ctx.stroke();
+      const gy = pad + (H - 2 * pad) * i / 4;
+      ctx.beginPath(); ctx.moveTo(pad, gy); ctx.lineTo(W - pad, gy); ctx.stroke();
+    }
+    /* identity reference */
+    ctx.strokeStyle = '#3a3426'; ctx.setLineDash([3, 4]);
+    ctx.beginPath(); ctx.moveTo(pad, H - pad); ctx.lineTo(W - pad, pad); ctx.stroke();
+    ctx.setLineDash([]);
+    /* the curve: same monotone cubic the engine runs */
+    const slope = (i) => {
+      const sec = (a) => (y[a + 1] - y[a]) * 4;
+      if (i === 0) return sec(0);
+      if (i === 4) return sec(3);
+      const s0 = sec(i - 1), s1 = sec(i);
+      if (s0 <= 0 || s1 <= 0) return 0;
+      return 2 * s0 * s1 / (s0 + s1);
+    };
+    const evalMap = (v) => {
+      const x = Math.min(Math.max(v, 0), 1) * 4;
+      const seg = Math.min(3, Math.floor(x)), t = x - seg;
+      const y0 = y[seg], y1 = y[seg + 1];
+      const m0 = slope(seg) / 4, m1 = slope(seg + 1) / 4;
+      const t2 = t * t, t3 = t2 * t;
+      return (2*t3 - 3*t2 + 1) * y0 + (t3 - 2*t2 + t) * m0 + (-2*t3 + 3*t2) * y1 + (t3 - t2) * m1;
+    };
+    ctx.strokeStyle = isReal ? '#96907d' : '#caa45e'; ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let px = 0; px <= 100; px++) {
+      const v = px / 100, u = evalMap(v);
+      const cx = pad + (W - 2 * pad) * v, cy = H - pad - (H - 2 * pad) * u;
+      px === 0 ? ctx.moveTo(cx, cy) : ctx.lineTo(cx, cy);
+    }
+    ctx.stroke();
+    for (let i = 0; i < 5; i++) {
+      const cx = pad + (W - 2 * pad) * i / 4, cy = H - pad - (H - 2 * pad) * y[i];
+      ctx.beginPath(); ctx.arc(cx, cy, 5, 0, 6.283);
+      ctx.fillStyle = '#caa45e'; ctx.fill();
+      ctx.strokeStyle = '#171310'; ctx.stroke();
+    }
+  }, [y, isReal]);
+
+  if (!y) return null;
+
+  const hitPoint = (e) => {
+    const r = cvs.current.getBoundingClientRect();
+    const W = cvs.current.width, pad = 14;
+    const px = (e.clientX - r.left) * (W / r.width);
+    let best = -1, bd = 24;
+    for (let i = 0; i < 5; i++) {
+      const cx = pad + (W - 2 * pad) * i / 4;
+      const d = Math.abs(px - cx);
+      if (d < bd) { bd = d; best = i; }
+    }
+    return best;
+  };
+  const yFromEvent = (e) => {
+    const r = cvs.current.getBoundingClientRect();
+    const H = cvs.current.height, pad = 14;
+    const py = (e.clientY - r.top) * (H / r.height);
+    return Math.min(1, Math.max(0, (H - pad - py) / (H - 2 * pad)));
+  };
+  const onDown = (e) => {
+    dragIdx.current = hitPoint(e);
+    if (dragIdx.current >= 0) {
+      const c = y.slice(); c[dragIdx.current] = yFromEvent(e); push(c);
+      try { e.target.setPointerCapture(e.pointerId); } catch (_) {}
+    }
+  };
+  const onMove = (e) => {
+    if (dragIdx.current < 0) return;
+    const c = y.slice(); c[dragIdx.current] = yFromEvent(e); push(c);
+  };
+  const onUp = () => { dragIdx.current = -1; };
+
+  return (
+    <WsModal title="Velocity Curve" onClose={onClose}
+             onReset={() => { JuceBridge.emitNative('vel_map_reset'); setY(WSV_IDENT.slice()); }}>
+      <div className="wstools">
+        <span className="wstoollabel">MAPS</span>
+        {WSV_PRESETS.map(([n, t]) => (
+          <button key={n} className={'wschip' + (n === 'REAL' && isReal ? ' on' : '')}
+                  onClick={() => push(t.slice())}>{n}</button>
+        ))}
+        <span className="wsvmode">{isReal ? 'REAL · CURVE BYPASSED, RAW VELOCITY TO THE PHYSICS' : 'CURVED · MONOTONE MAP ENGAGED'}</span>
+      </div>
+      <canvas ref={cvs} width={560} height={240} className="wsvcanvas"
+              onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} />
+      <div className="wsnote">
+        THE DASHED LINE IS REAL · DRAG A POINT TO BEND · THE MAP FEEDS THE
+        INSTRUMENT'S OWN LAUNCH LAW AND CANNOT INVERT DYNAMICS · SAVED WITH
+        THE PROJECT AND YOUR PRESETS
+      </div>
+    </WsModal>
+  );
+}
+
+Object.assign(window, { TineWorkshop, PickupWorkshop, CabinetWorkshop, MicStudio, VelocityWorkshop });
