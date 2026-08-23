@@ -4,6 +4,41 @@ All notable changes to Epi are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [semver](https://semver.org/) (pre-1.0: minor bumps may break).
 
+## [Unreleased]
+
+### Added
+- Room profiles: the output-stage room grows five surveyed spaces next
+  to the shipped size-mapped one -- booth, studio, stage, hall, church
+  -- each with an Eyring decay computed from published absorption data
+  per octave band, image-source early reflections, and the size knob
+  scaling the room's linear dimensions about the survey. Profile
+  switching rides a 15 ms fade to a null so nothing clicks mid-note;
+  the shipped room stays bit-exact (proved by a suite row). Measured:
+  the hall holds 15 dB more late-tail energy a second after release
+  than the shipped room, the church rings 6.5 s at 500 Hz against the
+  computed 6.5.
+- Velocity map presets seated on the measured literature: CONCERT
+  carries square-law ordinates at the measured 30 dB piano span, STAGE
+  gets a floor so a light touch still speaks, and REAL remains a true
+  bypass -- at the identity map the raw velocity reaches the physics
+  bit-exact, no interpolation in the path.
+- The Mic Studio's stage: up to five freely positionable microphones
+  dragged on a top-down view of the instrument, each with height, gain
+  and pan -- height below the board flips the low band's polarity, as
+  it does over a real rim. Classic Pair mode is the calibrated pair,
+  unchanged.
+
+### Changed
+- The grand's worst case runs 2.6x lighter: a ten-note chord with the
+  pedal down dropped from 75% to 29% of one core at 48 kHz (4 notes
+  without pedal: 5%). Sympathetic strings now run the one
+  representative string and the coupled prefix the board can actually
+  excite -- which moved the wake-selectivity measurement toward the
+  published band, not away from it -- and the bridge exchange loops
+  were rebuilt so the reductions pipeline instead of serialising on
+  the FMA latency chain. Bit-for-bit deterministic; all seven suites
+  pass unchanged.
+
 ## [0.7.0] - 2026-08-23
 
 The bench release: every part of the instrument a technician can touch
