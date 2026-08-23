@@ -6,7 +6,28 @@ All notable changes to Epi are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- A seventh measured suite: 110 engine-integration rows covering all
+  five instruments at three sample rates -- life and loudness parity,
+  seam behavior, all three pedals per instrument, the full material and
+  transducer audibility matrix, knob-sweep click bounds on thirteen
+  parameters, rail and 88-key stress, MIDI robustness, and cross-rate
+  decay consistency. Zero failures, zero gaps at head.
+- README rebuilt for the five-instrument reality, with Materials and
+  Pedals sections, the Mic Studio, and fresh screenshots.
+
 ### Fixed
+- Six engine defects the new suite caught on its first run: the
+  instrument-switch seam froze several chain stages mid-signal and
+  snapped them on re-entry (a -12 dBFS burst on a tight switch tour);
+  the Clav bank was prepared without the shared field table, so its
+  swapped magnetic transducer was silent; the Clav's magnetic paths
+  hard-gated non-ferrous strings instead of applying the eddy law; the
+  Clav contact transducer sat 33 dB under its native level; the Tine's
+  electrostatic swap ignored the insulator rule; and three automation
+  click sources -- the cabinet's hard bypass branch at mix zero, the
+  E-Grand preamp's block-rate shelf coefficient steps, and the air
+  shelf's -- are now continuous under any sweep.
 - The Clav's yarn damper defaults to mint condition: the shared DAMPER
   default meant half-aged wool and let the three-semitone release drop
   ring out at -22 dB for fifty milliseconds. At the mapped default the
