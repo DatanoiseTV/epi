@@ -533,13 +533,17 @@ int main()
         // The whole-render mean tolerates the reed preamp's asymmetric
         // saturation (a real, physical offset while the signal is loud);
         // stuck DC is what the tail measures, after the phrase has decayed.
-        // The RMS window moved with the engine's -18 dBFS loudness bench
-        // (it was [-34,-14] against the old -24 dBFS bench). Peaks pinned at
-        // exactly 1.0 are the soft output rail doing its job, not clipping.
+        // Both loudness fences moved with the engine's -18 dBFS bench: the
+        // RMS window (was [-34,-14] against the old -24 dBFS bench) and the
+        // whole-render DC allowance (was 5e-3; the reed offset is the same
+        // physical asymmetry, six decibels hotter). The tail fence does not
+        // move -- stuck DC is stuck at any bench. Peaks pinned at exactly
+        // 0.891 are the soft output rail's -1 dBFS ceiling doing its job,
+        // not clipping.
         const bool ok = m.finite
                      && m.peak <= 1.0
                      && m.rmsDb >= -28.0 && m.rmsDb <= -8.0
-                     && m.dcAbs < 5.0e-3 && m.tailDcAbs < 1.0e-3;
+                     && m.dcAbs < 8.0e-3 && m.tailDcAbs < 1.0e-3;
         if (! ok) ++failures;
         std::printf ("  %-15s %-4d %10.3f %10.1f %10.6f %10.0f %10.3f %10s\n",
                      p.name, p.instrument, m.peak, m.rmsDb,
