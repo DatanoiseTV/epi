@@ -74,6 +74,7 @@ inline constexpr ParamValue kDefaults[] = {
     { "outGain", 0.0f },
     { "clavSwitch", 0.0f },  { "clavBrill", 0.0f },   { "clavTreb", 0.0f },
     { "clavMed", 1.0f },     { "clavSoft", 0.0f },
+    { "bodyMat", 0.0f },     { "bodySize", 0.5f },
 };
 
 // ---------------------------------------------------------------------------
