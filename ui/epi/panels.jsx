@@ -6,7 +6,7 @@
 const { useJuceSlider, useJuceChoice, useJuceEvent, emitNative } = JuceBridge;
 
 /* ---- ACTION: the key, the hammer and the damper ---- */
-function ActionPanel() {
+function ActionPanel({ inst }) {
   return (
     <div className="panel f-action">
       <PHead title="Action" />
@@ -21,6 +21,12 @@ function ActionPanel() {
       {/* Contact duration is the whole attack. A neoprene tip stays on a bass
           tine for about four milliseconds, which lowpasses the strike hard
           enough that the tine's own overtones never get excited. */}
+      {inst !== 4 && (
+        <div className="matrow bodyrow">
+          <PCycle id="damperFelt" options={FELTS} label="FELT" />
+          {inst <= 2 && <PCycle id="keyBed" options={KEYBEDS} label="KEYBED" />}
+        </div>
+      )}
       <div className="note">hammer tip · escapement · felt</div>
     </div>
   );

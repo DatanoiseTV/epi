@@ -186,6 +186,9 @@ public:
         double dampTrim       = 0.5;    // "resDamp": intrinsic-alpha trim x0.7..1.5
         double detuneCents    = 0.0;    // master tune + bend
         double material       = 0.0;    // index into kMaterials; 0 = stock music wire
+        // Damper felt condition, 0 stock: fresh grips faster, worn lazily,
+        // hardened lets the high partials escape -- two bands split at 1.2 kHz.
+        double damperFelt     = 0.0;
         bool   unaCorda       = false;  // CC67: shifted action
     };
 
@@ -194,7 +197,7 @@ public:
     // pack with no interior holes, and the engine zero-initialises whole
     // structs, so the tail bytes compare equal too.
     static_assert (std::is_trivially_copyable<Config>::value, "Config must be memcmp-able");
-    static_assert (sizeof (Config) == 9 * sizeof (double), "Config has interior padding");
+    static_assert (sizeof (Config) == 10 * sizeof (double), "Config has interior padding");
 
     void prepare (double sampleRate)
     {
@@ -434,10 +437,15 @@ public:
             const double lift = (pedalV - kPedalSeated) / (kPedalFree - kPedalSeated);
             factor = std::pow (damperFactor, (1.0 - lift) * (1.0 - lift) * (1.0 - lift));
         }
+        // The felt's two grip bands: hardened felt fails to seat on the
+        // fine ripple and the high partials escape it, the zing of an old
+        // damper. Stock is exactly uniform, and costs nothing extra.
+        const double factorLo = (feltWLo == 1.0) ? factor : std::pow (factor, feltWLo);
+        const double factorHi = (feltWHi == feltWLo) ? factorLo : std::pow (factor, feltWHi);
         for (int s = 0; s < numStrings; ++s)
             for (int m = 0; m < str[s].sys.numModes(); ++m)
                 if (str[s].sys.displacement (m) != 0.0)
-                    str[s].sys.scaleMode (m, factor);
+                    str[s].sys.scaleMode (m, str[s].sys.frequency (m) > 1200.0 ? factorHi : factorLo);
     }
 
     // ---- per-string telemetry, for the una corda row ---------------------
@@ -752,6 +760,11 @@ private:
         const double grip = std::clamp (cfg.damperGrip, 0.0, 1.0);
         const double damperT60 = (0.30 - 0.24 * grip) * (1.0 + 1.4 * (1.0 - regOf (note)));
         damperFactor = std::exp (-3.0 * std::log (10.0) / (damperT60 * fs));
+        {
+            const int fFelt = std::clamp (static_cast<int> (cfg.damperFelt + 0.5), 0, 3);
+            feltWLo = (fFelt == 1) ? 1.25 : (fFelt == 2) ? 0.55 : 1.0;
+            feltWHi = (fFelt == 1) ? 1.25 : (fFelt == 2) ? 0.55 : (fFelt == 3) ? 0.12 : 1.0;
+        }
 
         configured = true;
     }
@@ -835,6 +848,7 @@ private:
     double phi[GrandBoard::kModes] {};
     double Ku = 0.0;
     double damperFactor = 1.0;
+    double feltWLo = 1.0, feltWHi = 1.0;
     double knockFeed = 0.0;
     double sinceStrike = 1.0e9;
     double peakEnergy = 1.0e-30;

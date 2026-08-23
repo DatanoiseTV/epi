@@ -141,6 +141,10 @@ public:
         double hammerMassNorm = 0.5;
         double escapementNorm = 0.4;
         double damperGrip     = 0.6;
+        // Damper felt condition, 0 stock: fresh grips faster, worn lazily,
+        // hardened lets the high partials escape -- two bands split at 1.2 kHz.
+        double damperFelt     = 0.0;
+
         double detuneSpread   = 0.5;    // "tipMass" knob: unison beat 0..~0.4 Hz (cents scale as 1/f0)
         double dampTrim       = 0.5;    // "resDamp": global alpha trim x0.7..1.5
         double detuneCents    = 0.0;    // master tune + bend
@@ -229,7 +233,9 @@ public:
     void setPedal (double amount)
     {
         pedalAmt = std::clamp (amount, 0.0, 1.0);
-        damperEff = std::pow (damperFactor, std::pow (1.0 - pedalAmt, 2.5));
+        const double x = std::pow (1.0 - pedalAmt, 2.5);
+        damperEff   = std::pow (damperFactor, feltWLo * x);
+        damperEffHi = std::pow (damperFactor, feltWHi * x);
     }
 
     bool isSounding() const { return sounding; }
@@ -392,7 +398,7 @@ public:
         for (int s = 0; s < numStrings; ++s)
             for (int m = 0; m < str[s].sys.numModes(); ++m)
                 if (str[s].sys.displacement (m) != 0.0)
-                    str[s].sys.scaleMode (m, damperEff);
+                    str[s].sys.scaleMode (m, str[s].sys.frequency (m) > 1200.0 ? damperEffHi : damperEff);
     }
 
 private:
@@ -703,7 +709,12 @@ private:
         const double grip = std::clamp (cfg.damperGrip, 0.0, 1.0);
         const double damperT60 = (0.30 - 0.24 * grip) * (1.0 + 1.4 * (1.0 - reg));
         damperFactor = std::exp (-3.0 * std::log (10.0) / (damperT60 * fs));
-        damperEff = std::pow (damperFactor, std::pow (1.0 - pedalAmt, 2.5));
+        {
+            const int f = std::clamp (static_cast<int> (cfg.damperFelt + 0.5), 0, 3);
+            feltWLo = (f == 1) ? 1.25 : (f == 2) ? 0.55 : 1.0;
+            feltWHi = (f == 1) ? 1.25 : (f == 2) ? 0.55 : (f == 3) ? 0.12 : 1.0;
+        }
+        setPedal (pedalAmt);
 
         configured = true;
     }
@@ -772,7 +783,8 @@ private:
     HuntCrossleyHammer::Config hammerCfg;
     double alphaOfMode[2][kMaxModes] {};
     double damperFactor = 1.0;
-    double damperEff = 1.0;
+    double damperEff = 1.0, damperEffHi = 1.0;
+    double feltWLo = 1.0, feltWHi = 1.0;
     double pedalAmt = 0.0;
     double magScaleP = 1.0;   // eddy-scaled magnetic coupling of the material
     double sinceStrike = 1.0e9;

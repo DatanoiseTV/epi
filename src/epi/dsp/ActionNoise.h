@@ -63,6 +63,22 @@ public:
         next = 0;
     }
 
+    // What the key lands on and returns to: the rail cloth. Stock is the
+    // calibrated punching; fresh felt is quieter and deeper; leather gives
+    // the deep soft thock of an older action; worn-through cloth is the
+    // loud bright clack of bare wood under the punching. Scales and tilts
+    // the thud only -- the knock is the hammer mechanism, not the bed.
+    void setBed (int bed)
+    {
+        switch (bed < 0 ? 0 : bed > 3 ? 3 : bed)
+        {
+            default: bedLevel = 1.0;  bedCut = 1.0;  bedDecay = 1.0;  break;
+            case 1:  bedLevel = 0.6;  bedCut = 0.85; bedDecay = 1.15; break;
+            case 2:  bedLevel = 0.85; bedCut = 0.65; bedDecay = 1.35; break;
+            case 3:  bedLevel = 1.7;  bedCut = 1.6;  bedDecay = 0.7;  break;
+        }
+    }
+
     // A key going down. `tine` is which key, `reg` its place on the keyboard,
     // 0 at the bottom, 1 at the top.
     void strike (int tine, double reg, double velocity)
@@ -92,9 +108,9 @@ public:
         // mechanical residual is roughly uniform across the compass, and the
         // earlier weighting put the bass thump within five decibels of the
         // note itself.
-        v.thudEnv = vel * (0.95 - 0.35 * r);
-        v.thudCut = 260.0 + 260.0 * r;
-        v.thudDecay = std::exp (-1.0 / ((0.0150 - 0.0070 * r) * fs));
+        v.thudEnv = vel * (0.95 - 0.35 * r) * bedLevel;
+        v.thudCut = (260.0 + 260.0 * r) * bedCut;
+        v.thudDecay = std::exp (-1.0 / ((0.0150 - 0.0070 * r) * bedDecay * fs));
     }
 
     // And coming back up: the damper arm dropping onto the tine and the key
@@ -107,9 +123,9 @@ public:
         Voice& v = alloc();
         v.tine = tine;
         v.knockEnv = 0.0;
-        v.thudEnv = 0.30 * (1.05 - 0.5 * r);
-        v.thudCut = 280.0 + 260.0 * r;
-        v.thudDecay = std::exp (-1.0 / (0.0110 * fs));
+        v.thudEnv = 0.30 * (1.05 - 0.5 * r) * bedLevel;
+        v.thudCut = (280.0 + 260.0 * r) * bedCut;
+        v.thudDecay = std::exp (-1.0 / (0.0110 * bedDecay * fs));
     }
 
     bool isActive() const
@@ -194,6 +210,7 @@ private:
     static constexpr double kForce = 7.0;
 
     double fs = 48000.0;
+    double bedLevel = 1.0, bedCut = 1.0, bedDecay = 1.0;
     std::array<Voice, kVoices> voices {};
     int next = 0;
 };

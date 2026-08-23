@@ -280,6 +280,10 @@ public:
         double hammerMassNorm = 0.5;
         double escapementNorm = 0.4;
         double damperGrip     = 0.6;
+        // Damper felt condition, 0 stock: fresh grips faster, worn lazily,
+        // hardened lets the high partials escape -- two bands split at 1.2 kHz.
+        double damperFelt     = 0.0;
+
 
         // Resonator
         double tipMassNorm    = 0.5;   // tongue thickness 0.020 -> 0.026 in, mu re-solved
@@ -307,7 +311,7 @@ public:
     // needs rebuilding, so it must have no padding for that comparison to
     // mean what it says.
     static_assert (std::is_trivially_copyable<Config>::value, "Config must be memcmp-able");
-    static_assert (sizeof (Config) == 11 * sizeof (double), "Config has padding");
+    static_assert (sizeof (Config) == 12 * sizeof (double), "Config has padding");
 
     void prepare (double sampleRate, const MagneticPickup* sharedField = nullptr)
     {
@@ -414,7 +418,9 @@ public:
     void setPedal (double amount)
     {
         pedalAmt = std::clamp (amount, 0.0, 1.0);
-        damperEff = std::pow (damperFactor, std::pow (1.0 - pedalAmt, 2.5));
+        const double x = std::pow (1.0 - pedalAmt, 2.5);
+        damperEff   = std::pow (damperFactor, feltWLo * x);
+        damperEffHi = std::pow (damperFactor, feltWHi * x);
     }
 
     // One sample of mechanics, four subsamples of transduction. Writes kOver
@@ -701,7 +707,7 @@ private:
     {
         for (int m = 0; m < sys.numModes(); ++m)
             if (sys.displacement (m) != 0.0)
-                sys.scaleMode (m, damperEff);
+                sys.scaleMode (m, sys.frequency (m) > 1200.0 ? damperEffHi : damperEff);
     }
 
     void configure (const Config& cfg)
@@ -849,7 +855,12 @@ private:
         const double grip = std::clamp (cfg.damperGrip, 0.0, 1.0);
         const double damperT60 = (0.30 - 0.24 * grip) * (1.0 + 1.4 * (1.0 - reg));
         damperFactor = std::exp (-3.0 * std::log (10.0) / (damperT60 * fs));
-        damperEff = std::pow (damperFactor, std::pow (1.0 - pedalAmt, 2.5));
+        {
+            const int f = std::clamp (static_cast<int> (cfg.damperFelt + 0.5), 0, 3);
+            feltWLo = (f == 1) ? 1.25 : (f == 2) ? 0.55 : 1.0;
+            feltWHi = (f == 1) ? 1.25 : (f == 2) ? 0.55 : (f == 3) ? 0.12 : 1.0;
+        }
+        setPedal (pedalAmt);
 
         // ---- transducer -------------------------------------------------
         // Per-reed rest capacitance, ~3.5 pF bass to ~2 pF treble, folded
@@ -947,7 +958,8 @@ private:
     double c0 = 3.0, invGap = 2000.0, centring = 0.0, dcRest = 0.0, outSens = 1.0;
     double gapT = 0.5e-3, gapNow = 0.5e-3, centringT = 0.0, yScaleReg = 1.0;
     double damperFactor = 1.0;
-    double damperEff = 1.0;
+    double damperEff = 1.0, damperEffHi = 1.0;
+    double feltWLo = 1.0, feltWHi = 1.0;
     double pedalAmt = 0.0;
     double beatDelta = 2.4, beatDepth = 0.08, beatPhase = 0.0;
     double peakEnergy = 1.0e-30;

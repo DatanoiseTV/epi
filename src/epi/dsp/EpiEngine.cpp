@@ -218,6 +218,7 @@ RhodesVoice::Config EpiEngine::rhodesConfig (const EngineParams& p) const
                      + 100.0 * static_cast<double> (bendSemis);
     c.transducer = static_cast<double> (p.transducer);
     c.material   = static_cast<double> (p.material);
+    c.damperFelt = static_cast<double> (p.damperFelt);
     return c;
 }
 
@@ -237,6 +238,7 @@ CP70Voice::Config EpiEngine::cp70Config (const EngineParams& p) const
                      + 100.0 * static_cast<double> (bendSemis);
     c.transducer    = static_cast<double> (p.transducer);
     c.material      = static_cast<double> (p.material);
+    c.damperFelt    = static_cast<double> (p.damperFelt);
     // The point pickups gain the coordinate the bridge never had: position
     // along the string from the height knob, gap from the gap knob.
     c.pickupPosNorm = 0.5 + 0.5 * static_cast<double> (p.pickupPos);
@@ -264,6 +266,7 @@ WurliVoice::Config EpiEngine::wurliConfig (const EngineParams& p) const
                      + 100.0 * static_cast<double> (bendSemis);
     c.transducer = static_cast<double> (p.transducer);
     c.material   = static_cast<double> (p.material);
+    c.damperFelt = static_cast<double> (p.damperFelt);
     return c;
 }
 
@@ -282,6 +285,7 @@ GrandVoice::Config EpiEngine::grandConfig (const EngineParams& p) const
     c.detuneCents    = static_cast<double> (p.tuneCents)
                      + 100.0 * static_cast<double> (bendSemis);
     c.material       = static_cast<double> (p.material);
+    c.damperFelt     = static_cast<double> (p.damperFelt);
     c.unaCorda       = unaCorda;
     return c;
 }
@@ -693,6 +697,7 @@ void EpiEngine::processActive (float* outL, float* outR, int numSamples,
     cabinetBL.setMix (sm.cabMix);
     cabinetBR.setMix (sm.cabMix);
     harp.setBody (p.bodyMat, p.bodySize);
+    action.setBed (p.keyBed);
     if (cabDirty.exchange (false, std::memory_order_acq_rel))
     {
         const double b = cabBox.load (std::memory_order_relaxed);
@@ -1389,6 +1394,7 @@ void EpiEngine::processCP70 (float* outL, float* outR, int numSamples,
     cabinetBL.setMix (sm.cabMix);
     cabinetBR.setMix (sm.cabMix);
     cp70Frame.setBody (p.bodyMat, p.bodySize);
+    action.setBed (p.keyBed);
     if (cabDirty.exchange (false, std::memory_order_acq_rel))
     {
         const double b = cabBox.load (std::memory_order_relaxed);
@@ -1641,6 +1647,7 @@ void EpiEngine::processWurli (float* outL, float* outR, int numSamples,
     cabinetBL.setMix (sm.cabMix);
     cabinetBR.setMix (sm.cabMix);
     wurliFrame.setBody (p.bodyMat, p.bodySize);
+    action.setBed (p.keyBed);
     if (cabDirty.exchange (false, std::memory_order_acq_rel))
     {
         const double b = cabBox.load (std::memory_order_relaxed);

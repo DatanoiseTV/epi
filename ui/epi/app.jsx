@@ -47,7 +47,7 @@ function App() {
         <Header onOpenBrowser={() => setBrowser(true)} />
         <VizCard />
         <div className="rack">
-          <ActionPanel />
+          <ActionPanel inst={instIdx} />
           <TinePanel inst={instIdx} />
           <PickupPanel inst={instIdx} />
           <AmpPanel inst={instIdx} />

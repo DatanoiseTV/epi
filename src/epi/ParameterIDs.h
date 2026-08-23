@@ -68,6 +68,11 @@ namespace epi::ids
     inline constexpr const char* coilSat    = "coilSat";    // 0..1 core saturation
 
     // Clavinet pickup switching. Order must match epi::PickupSelect.
+    inline const juce::StringArray damperFeltNames {
+        "Stock", "Fresh", "Worn", "Hardened" };
+    inline const juce::StringArray keyBedNames {
+        "Stock", "Fresh Felt", "Leather", "Worn" };
+
     inline const juce::StringArray bodyMatNames {
         // Index 0 is whatever the instrument was calibrated with.
         "Stock", "Spruce", "Maple", "Birch Ply",
@@ -104,6 +109,8 @@ namespace epi::ids
     inline constexpr const char* clavSoft    = "clavSoft";    // rocker: Soft
     inline constexpr const char* bodyMat     = "bodyMat";     // choice: frame/board material
     inline constexpr const char* bodySize    = "bodySize";    // 0..1, 0.5 = stock scale
+    inline constexpr const char* damperFelt  = "damperFelt";  // choice: felt condition
+    inline constexpr const char* keyBed      = "keyBed";      // choice: rail cloth
     inline constexpr const char* tremStereo  = "tremStereo";  // 0..1
     inline constexpr const char* cabMix      = "cabMix";      // 0..1
     inline constexpr const char* phaserMix   = "phaserMix";   // 0..1
@@ -280,6 +287,14 @@ namespace epi::ids
                                    bodyMatNames, 0));
         add (std::make_unique<P> (juce::ParameterID { bodySize, 1 }, "Body Size",
                                    juce::NormalisableRange<float> { 0.0f, 1.0f, 0.0f }, 0.5f));
+
+        // The action bench: the damper felt's condition (hardened felt lets
+        // the high partials escape -- the zing) and the rail cloth the keys
+        // land on. Stock is the calibrated instrument.
+        add (std::make_unique<Pc> (juce::ParameterID { damperFelt, 1 }, "Damper Felt",
+                                   damperFeltNames, 0));
+        add (std::make_unique<Pc> (juce::ParameterID { keyBed, 1 }, "Key Bed",
+                                   keyBedNames, 0));
 
         return { params.begin(), params.end() };
     }

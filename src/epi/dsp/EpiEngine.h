@@ -93,6 +93,8 @@ struct EngineParams
     int   clavSwitch  = 0;
     int   bodyMat     = 0;
     float bodySize    = 0.5f;
+    int   damperFelt  = 0;
+    int   keyBed      = 0;
     bool  clavBrill   = false;
     bool  clavTreb    = false;
     bool  clavMed     = true;

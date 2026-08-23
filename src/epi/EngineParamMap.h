@@ -72,6 +72,8 @@ inline EngineParams engineParamsFrom (const RawFn& raw)
     p.clavSwitch  = static_cast<int> (raw ("clavSwitch"));
     p.bodyMat     = static_cast<int> (raw ("bodyMat"));
     p.bodySize    = raw ("bodySize");
+    p.damperFelt  = static_cast<int> (raw ("damperFelt"));
+    p.keyBed      = static_cast<int> (raw ("keyBed"));
     p.clavBrill   = raw ("clavBrill") > 0.5f;
     p.clavTreb    = raw ("clavTreb") > 0.5f;
     p.clavMed     = raw ("clavMed") > 0.5f;
