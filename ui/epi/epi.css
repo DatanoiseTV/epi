@@ -438,3 +438,11 @@ html, body {
 .wsvcanvas { display: block; margin: 10px auto; background: #14110c; border: 1px solid #2c271d; border-radius: 6px; touch-action: none; cursor: crosshair; }
 .wsvmode { font-size: 8px; letter-spacing: .12em; color: var(--mute); margin-left: 10px; }
 .wschip.on { color: #caa45e; border-color: #caa45e; }
+
+/* The mic stage: a top-down field below the instrument outline. */
+.wstage { display: block; background: #141210; border: 1px solid #2a2419;
+          border-radius: 6px; margin: 8px 0; user-select: none; }
+.wstagetxt { font-size: 8px; letter-spacing: 0.12em;
+             fill: rgba(255,255,255,0.3); }
+.wstagemic { font-size: 8px; font-weight: 700; fill: #14100a;
+             pointer-events: none; }

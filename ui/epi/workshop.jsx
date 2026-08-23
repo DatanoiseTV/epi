@@ -536,8 +536,151 @@ const WSM_TEMPLATES = [
   ['PAST THE RIM', [ (1.2 - 0.25) / 1.75, 0.5, 0.75, (0.9 - 0.25) / 1.75, (0.9 - 0.25) / 1.75 ]],
 ];
 
+/* ------------------------------------------------------------
+   The stage: up to five freely positionable virtual microphones
+   (GrandMicStage contract, kMaxMics = 5). Engine units per mic:
+   x -2..2 m along the bridge (bass left), z 0.2..5 m out from the
+   rim, h -1..2 m about the soundboard plane (negative = under),
+   gain -24..+12 dB, pan -1..1. Mode 0 is the classic calibrated
+   pair, bit-exact with the shipped chain; mode 1 renders each
+   mic from real geometry: inverse distance, arrival delay, the
+   board dipole, and the lid image.
+   ------------------------------------------------------------ */
+const WST_MICS = 5;
+const WST_DEFAULT = [0,
+  1, -0.5, 1.2, 0.6, 0, -0.7,
+  1,  0.5, 1.2, 0.6, 0,  0.7,
+  0,  0.0, 2.5, 1.0, 0,  0.0,
+  0, -1.2, 0.4, 0.3, -6, -1,
+  0,  1.2, 0.4, 0.3, -6,  1];
+const WST_TEMPLATES = [
+  /* mode + 5 x (on x z h gain pan) */
+  ['CLASSIC PAIR', WST_DEFAULT],
+  ['JAZZ LID', [1,
+    1, 0.3, 0.6, 0.5, 0, -0.6,
+    1, 0.9, 0.7, 0.5, 0, 0.6,
+    0, 0, 2.5, 1, 0, 0,  0, -1.2, 0.4, 0.3, -6, -1,  0, 1.2, 0.4, 0.3, -6, 1]],
+  ['AMBIENT', [1,
+    1, -0.8, 3.2, 1.4, 0, -0.8,
+    1, 0.8, 3.2, 1.4, 0, 0.8,
+    1, 0, 1.2, 0.7, -4, 0,  0, -1.2, 0.4, 0.3, -6, -1,  0, 1.2, 0.4, 0.3, -6, 1]],
+  ['UNDER + PAIR', [1,
+    1, -0.5, 1.0, 0.6, 0, -0.7,
+    1, 0.5, 1.0, 0.6, 0, 0.7,
+    1, 0, 0.6, -0.5, -3, 0,  0, -1.2, 0.4, 0.3, -6, -1,  0, 1.2, 0.4, 0.3, -6, 1]],
+];
+const wstMic = (v, i) => ({ on: v[1 + i * 6], x: v[2 + i * 6], z: v[3 + i * 6],
+                            h: v[4 + i * 6], g: v[5 + i * 6], p: v[6 + i * 6] });
+
+function StageView({ v, sel, onSelect, onMove }) {
+  /* Top-down: the piano at the top, tail toward the mic field.
+     x maps linearly, z on a square root so the close metre has room. */
+  const W = 440, H = 232, PAD = 16;
+  const px = (x) => PAD + ((x + 2) / 4) * (W - 2 * PAD);
+  const pz = (z) => 46 + Math.sqrt((z - 0.2) / 4.8) * (H - 46 - 12);
+  const ux = (X) => Math.max(-2, Math.min(2, ((X - PAD) / (W - 2 * PAD)) * 4 - 2));
+  const uz = (Y) => { const t = Math.max(0, Math.min(1, (Y - 46) / (H - 46 - 12)));
+                      return 0.2 + 4.8 * t * t; };
+  const drag = (i) => (e) => {
+    e.preventDefault();
+    onSelect(i);
+    const svg = e.currentTarget.ownerSVGElement;
+    const move = (ev) => {
+      const r = svg.getBoundingClientRect();
+      onMove(i, ux((ev.clientX - r.left) * (W / r.width)),
+                uz((ev.clientY - r.top) * (H / r.height)));
+    };
+    const up = () => { window.removeEventListener('pointermove', move);
+                       window.removeEventListener('pointerup', up); };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
+  return (
+    <svg className="wstage" viewBox={'0 0 ' + W + ' ' + H}
+         style={{ width: '100%', touchAction: 'none' }}>
+      {/* the instrument, keyboard away from the mics, bridge bass-left */}
+      <path d={'M ' + px(-0.9) + ' 8 L ' + px(0.9) + ' 8 L ' + px(0.9) + ' 26 ' +
+               'C ' + px(0.9) + ' 44 ' + px(0.45) + ' 46 ' + px(0.1) + ' 44 ' +
+               'C ' + px(-0.5) + ' 42 ' + px(-0.9) + ' 34 ' + px(-0.9) + ' 22 Z'}
+            fill="rgba(255,255,255,0.05)" stroke="rgba(255,255,255,0.28)" />
+      <line x1={px(-0.7)} y1={20} x2={px(0.7)} y2={38}
+            stroke="rgba(255,255,255,0.35)" strokeDasharray="3 3" />
+      <text x={px(-0.85)} y={18} className="wstagetxt">BASS</text>
+      <text x={px(0.55)} y={18} className="wstagetxt">TREBLE</text>
+      {[1, 2, 3, 4].map((m) => (
+        <g key={m}>
+          <path d={'M ' + PAD + ' ' + pz(m) + ' L ' + (W - PAD) + ' ' + pz(m)}
+                stroke="rgba(255,255,255,0.07)" fill="none" />
+          <text x={W - PAD - 2} y={pz(m) - 3} textAnchor="end" className="wstagetxt">{m} m</text>
+        </g>
+      ))}
+      {Array.from({ length: WST_MICS }, (_, i) => {
+        const m = wstMic(v, i);
+        const active = m.on >= 0.5;
+        return (
+          <g key={i} transform={'translate(' + px(m.x) + ' ' + pz(m.z) + ')'}
+             onPointerDown={drag(i)} style={{ cursor: 'grab' }}>
+            <circle r="11" fill="transparent" />
+            <circle r={sel === i ? 7 : 5.5}
+                    fill={active ? (sel === i ? '#caa45e' : 'rgba(202,164,94,0.55)')
+                                 : 'rgba(255,255,255,0.14)'}
+                    stroke={sel === i ? '#e6cf8e' : 'rgba(255,255,255,0.4)'} />
+            <text y="3.5" textAnchor="middle" className="wstagemic">{i + 1}</text>
+            {active && m.h < 0 && <circle r="9" fill="none"
+                    stroke="rgba(255,255,255,0.35)" strokeDasharray="2 2" />}
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+function MicStage({ v, push }) {
+  const [sel, setSel] = useState(0);
+  const m = wstMic(v, sel);
+  const setF = (off, val) => { const c = v.slice(); c[1 + sel * 6 + off] = val; push(c); };
+  return (
+    <div>
+      <div className="wstools">
+        <span className="wstoollabel">MICS</span>
+        {Array.from({ length: WST_MICS }, (_, i) => (
+          <button key={i}
+                  className={'wschip' + (sel === i ? ' on' : '')}
+                  style={wstMic(v, i).on >= 0.5 ? {} : { opacity: 0.45 }}
+                  onClick={() => {
+                    if (sel === i) setF(0, m.on >= 0.5 ? 0 : 1);
+                    else setSel(i);
+                  }}>{i + 1}</button>
+        ))}
+        <span className="wstoollabel">CLICK AGAIN TO MUTE</span>
+      </div>
+      <StageView v={v} sel={sel} onSelect={setSel}
+                 onMove={(i, x, z) => { const c = v.slice();
+                   c[2 + i * 6] = x; c[3 + i * 6] = z; push(c); }} />
+      <div className="wscabknobs">
+        <Knob value={(m.h + 1) / 3} size="lg" label="HEIGHT" defaultValue={(0.6 + 1) / 3}
+              format={(x) => (x * 3 - 1).toFixed(2) + ' m'}
+              onChange={(nv) => setF(3, nv * 3 - 1)} />
+        <Knob value={(m.g + 24) / 36} size="lg" label="GAIN" defaultValue={24 / 36}
+              format={(x) => (x * 36 - 24).toFixed(1) + ' dB'}
+              onChange={(nv) => setF(4, nv * 36 - 24)} />
+        <Knob value={(m.p + 1) / 2} size="lg" label="PAN" defaultValue={0.5}
+              format={(x) => { const p = x * 2 - 1;
+                return Math.abs(p) < 0.02 ? 'C' : (p < 0 ? 'L' : 'R') + Math.abs(p * 100).toFixed(0); }}
+              onChange={(nv) => setF(5, nv * 2 - 1)} />
+      </div>
+      <div className="wsnote">
+        DRAG A MIC ON THE STAGE · A NEGATIVE HEIGHT PUTS IT UNDER THE BOARD
+        (DASHED RING, INVERTED LOW BAND) · CLOSE TO THE OPEN LID IS BRIGHT
+        BECAUSE THE LID IMAGE ARRIVES WITH THE DIRECT SOUND
+      </div>
+    </div>
+  );
+}
+
 function MicStudio({ onClose }) {
   const [v, setV] = useState(null);
+  const [st, setSt] = useState(null);
 
   useEffect(() => {
     let alive = true;
@@ -547,42 +690,72 @@ function MicStudio({ onClose }) {
         const flat = a ? Array.from(a).map(Number) : [];
         setV(flat.length === 5 ? wsmFromEngine(flat) : WSM_DEFAULTS.slice());
       });
-    } catch (_) { setV(WSM_DEFAULTS.slice()); }
+      Juce.getNativeFunction('getMicStage')().then((a) => {
+        if (!alive) return;
+        const flat = a ? Array.from(a).map(Number) : [];
+        setSt(flat.length === 1 + 6 * WST_MICS ? flat : WST_DEFAULT.slice());
+      }).catch(() => { if (alive) setSt(WST_DEFAULT.slice()); });
+    } catch (_) { setV(WSM_DEFAULTS.slice()); setSt(WST_DEFAULT.slice()); }
     return () => { alive = false; };
   }, []);
 
-  if (!v) return null;
+  if (!v || !st) return null;
 
   const push = (arr) => {
     setV(arr);
     JuceBridge.emitNative('mic_mod', wsmToEngine(arr));
   };
+  const pushStage = (arr) => {
+    setSt(arr);
+    JuceBridge.emitNative('mic_stage', { v: arr });
+  };
+  const stageOn = st[0] >= 0.5;
 
   return (
     <WsModal title="Mic Studio" onClose={onClose}
-             onReset={() => { JuceBridge.emitNative('mic_mod_reset'); setV(wsmFromEngine([1, 0, 0, 1, 1])); }}>
+             onReset={() => {
+               JuceBridge.emitNative('mic_mod_reset');
+               setV(wsmFromEngine([1, 0, 0, 1, 1]));
+               pushStage(WST_DEFAULT.slice());
+             }}>
       <div className="wstools">
+        <span className="wstoollabel">MODE</span>
+        <button className={'wschip' + (stageOn ? '' : ' on')}
+                onClick={() => { const c = st.slice(); c[0] = 0; pushStage(c); }}>
+          CLASSIC PAIR</button>
+        <button className={'wschip' + (stageOn ? ' on' : '')}
+                onClick={() => { const c = st.slice(); c[0] = 1; pushStage(c); }}>
+          STAGE</button>
         <span className="wstoollabel">PLACEMENTS</span>
-        {WSM_TEMPLATES.map(([n, t]) => (
-          <button key={n} className="wschip" onClick={() => push(t.slice())}>{n}</button>
-        ))}
+        {stageOn
+          ? WST_TEMPLATES.map(([n, t]) => (
+              <button key={n} className="wschip" onClick={() => pushStage(t.slice())}>{n}</button>
+            ))
+          : WSM_TEMPLATES.map(([n, t]) => (
+              <button key={n} className="wschip" onClick={() => push(t.slice())}>{n}</button>
+            ))}
       </div>
-      <div className="wscabknobs">
-        {WSM_KNOBS.map(([, label, fmt], k) => (
-          <Knob key={label} value={v[k]} size="lg" label={label} format={fmt}
-                defaultValue={wsmFromEngine([1, 0, 0, 1, 1])[k]}
-                onChange={(nv) => { const c = v.slice(); c[k] = nv; push(c); }} />
-        ))}
-      </div>
-      <div className="wsnote">
-        SPREAD WIDENS THE PAIR AND DEEPENS THE BASS-LEFT IMAGE · DISTANCE IS THE
-        LID SHADOW, NOT A TONE CONTROL · DEFAULTS ARE THE CALIBRATED PAIR ·
-        SAVED WITH THE PROJECT AND YOUR PRESETS
-      </div>
+      {stageOn
+        ? <MicStage v={st} push={pushStage} />
+        : (
+          <div>
+            <div className="wscabknobs">
+              {WSM_KNOBS.map(([, label, fmt], k) => (
+                <Knob key={label} value={v[k]} size="lg" label={label} format={fmt}
+                      defaultValue={wsmFromEngine([1, 0, 0, 1, 1])[k]}
+                      onChange={(nv) => { const c = v.slice(); c[k] = nv; push(c); }} />
+              ))}
+            </div>
+            <div className="wsnote">
+              SPREAD WIDENS THE PAIR AND DEEPENS THE BASS-LEFT IMAGE · DISTANCE IS THE
+              LID SHADOW, NOT A TONE CONTROL · DEFAULTS ARE THE CALIBRATED PAIR ·
+              SAVED WITH THE PROJECT AND YOUR PRESETS
+            </div>
+          </div>
+        )}
     </WsModal>
   );
 }
-
 
 /* ============================================================
    Velocity curve editor.
