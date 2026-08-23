@@ -2,9 +2,9 @@
 
 # Epi
 
-### Four pianos, built from physics — no samples anywhere
+### Five instruments, built from physics — no samples anywhere
 
-**Tine · E-Grand · Reed · Grand** — VST3 · AU · CLAP · Standalone
+**Tine · E-Grand · Reed · Grand · Clav** — VST3 · AU · CLAP · Standalone
 
 ![License](https://img.shields.io/badge/license-GPL--3.0-blue)
 ![Formats](https://img.shields.io/badge/formats-VST3%20%C2%B7%20AU%20%C2%B7%20CLAP%20%C2%B7%20Standalone-caa45e)
@@ -17,12 +17,13 @@
 ## What this is
 
 Epi computes every note from the physics of the instrument: a hammer strikes
-a piece of steel, the steel rings, and a transducer turns its motion into an
-electrical signal. There is no sample library and no oscillator standing in
-for one — when you change the hammer, the pickup, or the steel itself, the
-sound changes the way it would on the real bench.
+a piece of steel, the steel rings, and a transducer — or, on the acoustic
+grand, a pair of microphones — turns its motion into a signal. There is no
+sample library and no oscillator standing in for one — when you change the
+hammer, the pickup, or the steel itself, the sound changes the way it would
+on the real bench.
 
-Four instruments live behind one selector:
+Five instruments live behind one selector:
 
 - **Tine** — the classic tine piano: 88 tuned steel rods with tone bars,
   magnetic pickups, and the stereo panner its amplifier called vibrato. The
@@ -41,11 +42,57 @@ Four instruments live behind one selector:
   bass-left stereo image, half-pedal and the pedal-open board wash all come
   out of the same coupled model, verified row by row against measurements
   of a real instrument.
+- **Clav** — a tangent-action string keyboard: sixty strings struck and
+  held against an anvil, twin bar pickups at their measured distances with
+  a 4-way selector (center, bridge, both, out of phase), four tone rockers
+  computed as the real RC networks behind them, and the measured
+  three-semitone pitch drop when the tangent lets go and the yarn-wrapped
+  dead length rejoins the string.
+
+<div align="center">
+<img src="docs/img/epi-grand.png" width="100%" alt="The acoustic grand: soundboard and mic pair" />
+</div>
 
 Every voice is its own mechanism. All 88 notes have their own hammer, their
-own resonator, their own pickup — chords never steal voices, repeated notes
-meet steel that is already moving, and the sustain pedal wakes the whole
-harp sympathetically.
+own resonator, their own pickup — chords never steal voices and repeated
+notes meet steel that is already moving. Sympathetic resonance runs on
+every model, with the partial-coincidence hierarchy of a real harp: on the
+string piano a struck note rings its octave partner 19 dB down, the
+twelfth 26 dB down, and the non-coincident wash 38 dB down.
+
+<div align="center">
+<img src="docs/img/epi-clav.png" width="100%" alt="Clav: tangent strings, twin bar pickups, tone rockers" />
+</div>
+
+## Materials
+
+Every resonator has a MATERIAL selector: music wire, stainless, bronze,
+brass, titanium, aluminium, tungsten, nylon. These are real material
+constants, not tone presets. The geometry re-solves at the same pitch, so
+inharmonicity scales as stiffness over density — bronze halves the partial
+stretch, and titanium lands on steel's curve because its ratio genuinely
+matches. Internal loss enters per mode, and on strings only through the
+bending share — which is why a nylon string sustains while a nylon rod
+clunks. A bare conductor reaches a magnetic pickup only as the faint eddy
+signal its conductivity allows: aluminium sits 17 dB under steel, titanium
+is a whisper, and nylon — an insulator — is silent, exactly where it must be.
+
+The transducer is swappable too: magnetic, the instrument's native
+transducer, electrostatic, or contact, on any resonator, with a position
+control wherever the geometry supports one. The factory presets are tested
+against the pairing rules, so no shipped sound is a silent
+material-transducer combination.
+
+## Pedals
+
+- **Sustain (CC64)** is read as a continuous value, not a switch: the
+  damper felt compresses the way a real damper rail does, so half-pedalling
+  works, with the felt-compression curve included.
+- **Sostenuto (CC66)** latches exactly the keys held at the moment the
+  pedal falls (the grand — the electrics never had a middle pedal).
+- **Una corda (CC67)** shifts the grand's action so the hammer meets two
+  strings of a trichord and one of a bichord, and monochords meet fresh,
+  softer felt.
 
 ## The workshops
 
@@ -71,15 +118,27 @@ instrument.
   response: box volume sets the resonance, cone size sets the breakup, the
   microphone has distance and angle, and the suspension decides when it
   grinds. Five cabinets ship as one-click starting points.
+- **Mic Studio** — the grand's bench: spread widens the pair and deepens
+  the bass-left image, balance walks it, distance is the lid's high-band
+  shadow rather than a tone control, and each mic has its own level trim.
+  Four placements ship as one-click starting points; the defaults are
+  exactly the calibrated pair.
+
+<div align="center">
+<img src="docs/img/epi-mic-studio.png" width="100%" alt="Mic Studio: the grand's spaced pair on the bench" />
+</div>
 
 Everything the workshops hold is saved in your project **and inside every
-preset you save** — a saved sound is the whole sound.
+preset you save** — a saved sound is the whole sound. 46 factory presets
+ship across the five instruments, and every one is rendered and measured
+by its own test harness (levels, character claims, legal
+material-transducer pairings) before it ships.
 
 ## Playing it
 
 - Click the drawn keys (deeper on the key is louder) or play A–; on your
-  computer keyboard — or just send it MIDI, including sustain (CC64),
-  expression (CC11), and pitch bend.
+  computer keyboard — or just send it MIDI, including the three pedals
+  (CC64/66/67), expression (CC11), and pitch bend.
 - The visualizer is telemetry, not animation: every rod swings at its true
   frequency by the measured amount, hammers fire when the engine strikes,
   and a SUSTAIN lamp shows the pedal state your keyboard is actually
@@ -87,6 +146,11 @@ preset you save** — a saved sound is the whole sound.
 - BASS, TREBLE, and CLARITY are the channel strip; DRIVE and CORE SAT (or
   SUPPLY, on the reed piano) are where the dirt lives, because that is
   where it lives on the instruments.
+- The five instruments are level-matched to within a decibel at a shared
+  -24 dBFS mezzo-forte bench — except the grand, deliberately about 6 dB
+  under, because its real 22 dB attack crest must clear the output rail
+  (transparent below 0.85, bounded at 1.0). Switching instruments fades
+  through silence, and fast knob sweeps glide instead of clicking.
 
 ## Install
 
@@ -113,18 +177,21 @@ submodule. `cmake -S . -B build && cmake --build build --target Epi_All`.
 Measured, not asserted. The models are calibrated against recordings of the
 real instruments and against the published measurements of the people who
 put them under high-speed cameras and spectrum analysers — and the repo
-carries the receipts: four test suites (130+ numbered rows) render audio
+carries the receipts: six test suites (350+ numbered rows) render audio
 offline and measure it, from inharmonicity curves and per-partial decay
 rates to "a chord must equal the sum of its notes on the piezo bridge, and
-must NOT on a coupled soundboard". `docs/` holds the implementation plans
-and the research notes with every number's provenance.
+must NOT on a coupled soundboard". One suite per model family (tine, reed,
+grand, clav), one for the DSP cores, and one that renders every factory
+preset and holds it to its own claims — all run in CI on macOS, Windows,
+and Linux. `docs/` holds the implementation plans and the research notes
+with every number's provenance.
 
 ## Trademarks
 
-Fender, Rhodes, Wurlitzer, and Yamaha are trademarks of their respective
-owners. Epi is not affiliated with, endorsed by, or sponsored by any of
-them; their names appear only in the documentation, factually, to identify
-which instruments were measured.
+Fender, Rhodes, Wurlitzer, Yamaha, and Hohner are trademarks of their
+respective owners. Epi is not affiliated with, endorsed by, or sponsored by
+any of them; their names appear only in the documentation, factually, to
+identify which instruments were measured.
 
 ## License
 
