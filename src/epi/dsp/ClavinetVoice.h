@@ -457,8 +457,9 @@ public:
                 ob = kPickupOut * (fb - fluxPrev[1]) * fsOs;
                 fluxPrev[0] = fc;
                 fluxPrev[1] = fb;
-                if (! matFerro) { oc = ob = 0.0; }   // a bronze string is
-                                                     // invisible to a magnet
+                // A bare conductor reaches the magnets only as its eddy
+                // signal; an insulator not at all -- the shared law.
+                if (! matFerro) { oc *= magCoupleC; ob *= magCoupleC; }
             }
             else if (trans == 0)
             {
@@ -466,9 +467,9 @@ public:
                 // tap, riding the shared field table (transducers-and-chassis
                 // 1.5's reverse of the Clavinet-under-a-tine trick).
                 const double vv = hermite (cHist[0], cHist[1], cHist[2], yc, t);
-                oc = (matFerro && field != nullptr)
+                oc = (field != nullptr)
                        ? (field->flux (static_cast<float> (kMagOff + vv), static_cast<float> (gap0))
-                          - magRest) * kMagOut
+                          - magRest) * kMagOut * magCoupleC
                        : 0.0;
                 ob = 0.0;
             }
@@ -547,7 +548,7 @@ private:
     static constexpr double kMagOff     = -0.9e-3;
     static constexpr double kMagOut     = 4.0;
     static constexpr double kElecOut    = 0.35;
-    static constexpr double kContactOut = 0.02;
+    static constexpr double kContactOut = 0.9;   // benched to the native twin-bar level by the engine suite (was 33 dB shy)
 
     static double hermite (double y0, double y1, double y2, double y3, double t)
     {
@@ -645,6 +646,7 @@ private:
         // adds on top of the fitted clamp-and-air curve.
         const Material& mat = kMaterials[std::clamp (static_cast<int> (cfg.material), 0, kNumMaterials - 1)];
         matFerro = mat.ferro;
+        magCoupleC = magneticCoupling (mat);
         matCond = mat.conductive;
         const double matB = (static_cast<double> (mat.youngs) / static_cast<double> (mat.density))
                           / (static_cast<double> (kMusicWire.youngs) / static_cast<double> (kMusicWire.density));
@@ -843,6 +845,7 @@ private:
     int sel = 0, trans = 1;
     double magRest = 0.0;
     bool matFerro = true, matCond = true;
+    double magCoupleC = 1.0;
 
     double beatDepth = 0.25;
     double lastTipV = 0.0;
