@@ -217,14 +217,33 @@ public:
     // the string side and the force law; see GrandVoice.
     double bridgeDisplacement (const double* phi) const
     {
-        double u = 0.0;
-        for (int m = 0; m < kModes; ++m) u += phi[m] * sys.displacement (m);
-        return u;
+        // Four independent accumulators: a single-accumulator reduction
+        // serialises on the FMA latency chain (this dot runs once per voice
+        // per sample, close to ninety times a sample with the pedal down,
+        // and was the grand's largest remaining line). Deterministic -- the
+        // association is fixed by hand, no fast-math involved.
+        const double* q = sys.displacementData();
+        double u0 = 0.0, u1 = 0.0, u2 = 0.0, u3 = 0.0;
+        double u4 = 0.0, u5 = 0.0, u6 = 0.0, u7 = 0.0;
+        static_assert (kModes % 8 == 0);
+        for (int m = 0; m < kModes; m += 8)
+        {
+            u0 += phi[m]     * q[m];
+            u1 += phi[m + 1] * q[m + 1];
+            u2 += phi[m + 2] * q[m + 2];
+            u3 += phi[m + 3] * q[m + 3];
+            u4 += phi[m + 4] * q[m + 4];
+            u5 += phi[m + 5] * q[m + 5];
+            u6 += phi[m + 6] * q[m + 6];
+            u7 += phi[m + 7] * q[m + 7];
+        }
+        return ((u0 + u1) + (u2 + u3)) + ((u4 + u5) + (u6 + u7));
     }
 
     void addBridgeForce (const double* phi, double force)
     {
-        for (int m = 0; m < kModes; ++m) sys.addForce (m, phi[m] * force);
+        double* d = sys.driveData();
+        for (int m = 0; m < kModes; ++m) d[m] += phi[m] * force;
     }
 
     // Once per engine sample, after every voice has exchanged. The stereo

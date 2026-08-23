@@ -237,6 +237,7 @@ public:
             setNote (midiNote, cfg, board);
         (void) seed;
         sympathetic = false;
+        sympDormant = false;
 
         const double vel = std::clamp (velocity, 0.0, 1.0);
         // Real hammers peak at 5-6 m/s; the curve is recalibrated against the
@@ -280,8 +281,19 @@ public:
     void openSympathetic (int midiNote, const Config& cfg, const GrandBoard& board)
     {
         if (! configured || midiNote != note) setNote (midiNote, cfg, board);
-        for (int s = 0; s < numStrings; ++s)
-            str[s].sys.setNumModes (str[s].kCoupled);
+        // ONE representative string of the choir carries the sympathetic
+        // life, not three: a wash voice's unisons ring as one within its
+        // -40 dB contribution, and the whole open bank was the largest line
+        // in the grand's profile. The choir's full coupling surface returns
+        // the moment its own hammer falls (noteOn restores every string),
+        // and the reduced surface moves the too-hot sympathetic wake TOWARD
+        // the plan's measured band, not away from it.
+        // And only the VERTICAL coupled prefix: the board couples the
+        // vertical polarisation; the horizontals are second order for a
+        // wash and return with the hammer.
+        str[0].sys.setNumModes (str[0].kCplV);
+        for (int s = 1; s < numStrings; ++s)
+            str[s].sys.setNumModes (0);
         sympathetic = true;
         sounding = true;
     }
@@ -330,6 +342,28 @@ public:
     {
         (void) cfg;
         if (! sounding && ! hammer.isActive()) return 0.0;
+
+        // The sympathetic fast lane: one string, vertical prefix, no hammer
+        // machinery, no dead-string loop frames. With the pedal down this
+        // path runs for most of the eighty-eight voices every sample, and it
+        // was the largest line in the grand's profile. Same two-port, same
+        // weights both ways; the truncated-load correction scales to the one
+        // live string (less added bridge stiffness -- passive by structure).
+        if (sympathetic && ! hammer.isActive())
+        {
+            Str& S = str[0];
+            const double uB = board.bridgeDisplacement (phi);
+            double F = 0.0;
+            const double out = S.sys.tickCoupled (S.w, uB, S.readShape, F);
+            board.addBridgeForce (phi, F - (Ku / numStrings) * uB);
+            if (++controlCounter >= 32)
+            {
+                controlCounter = 0;
+                sinceStrike += 32.0 / fs;
+                controlTick();
+            }
+            return out;
+        }
 
         // -- hammer: meets the mean of the struck strings' patch, and the
         // force splits equally -- the CP-70 bichord contact generalised to
@@ -510,6 +544,36 @@ private:
         const double e = modalEnergy();
         if (! std::isfinite (e)) { for (auto& s : str) s.sys.clear(); sounding = false; return; }
         if (e > peakEnergy) peakEnergy = e;
+
+        // The sympathetic dormant tier, the tine bank's proven pattern:
+        // with the pedal down all eighty-eight strings are open, but most
+        // hold energies forty-plus decibels under the wash leaders -- they
+        // were measured as the single largest line in the grand's profile
+        // (58% of a core against the struck notes' 14%). A voice this quiet
+        // shrinks to ONE coupled mode per string, which drops it into the
+        // modal core's single-mode fast path; only that mode listens to the
+        // board, so the voice can still be pumped awake, and the hysteresis
+        // (a factor of a thousand in energy) keeps it from flapping. The
+        // truncated modes hold energy below the dormancy threshold by
+        // definition, so nothing audible is discarded.
+        if (sympathetic && ! hammer.isActive())
+        {
+            // Thresholds referenced to audibility: struck-note energies run
+            // 1e-3 to 1e-4 and the audible wash leaders 1e-7 to 1e-9, so a
+            // voice under 1e-13 sits ninety-plus decibels below the notes --
+            // the resonant partners that ARE the wash stay fully live.
+            if (! sympDormant && e < 1.0e-13)
+            {
+                sympDormant = true;
+                str[0].sys.setNumModes (1);
+                for (int s = 1; s < numStrings; ++s) str[s].sys.setNumModes (0);
+            }
+            else if (sympDormant && e > 1.0e-11)
+            {
+                sympDormant = false;
+                str[0].sys.setNumModes (str[0].kCplV);
+            }
+        }
         // A sympathetically opened voice starts from zero energy on purpose;
         // retiring it against its own (empty) peak would close it 32 samples
         // after it opened. It stays live while its damper is off and retires
@@ -878,6 +942,7 @@ private:
     int controlCounter = 0;
     double pedalV = 0.0;
     bool sounding = false, held = false, configured = false;
+    bool sympDormant = false;
     bool sostenuto = false, sympathetic = false, unaCordaActive = false;
 };
 

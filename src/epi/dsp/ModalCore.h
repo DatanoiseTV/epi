@@ -256,6 +256,54 @@ public:
     void disableTerm (int p) { if (p >= 0 && p < MaxP) { termActive[p] = false; psi[p] = 0.0; } }
 
     // ---- the step -------------------------------------------------------
+    // The sympathetic fast path, for a bank of linear modes coupled to a
+    // bridge through one weight vector: accumulate the bridge-sense force
+    // from the pre-step displacements, add the bridge drive, step the
+    // leapfrog, and read the output shape from the post-step state -- all in
+    // one pass over the arrays. Identical arithmetic to addForce + tick +
+    // displacementAt in that order; the fusion exists because the grand runs
+    // this for close to eighty open strings every sample and the separate
+    // passes re-read every coefficient stream three times. Preconditions:
+    // no active terms (the grand's strings are linear) and the coupled
+    // prefix is the whole active bank (n == nc), both true by construction
+    // for a sympathetic grand voice.
+    double tickCoupled (const double* w, double uB,
+                        const double* readShape, double& senseOut)
+    {
+        // Two-way split accumulators for the same reason as the board's
+        // bridge dot: keep the reduction off the FMA latency chain.
+        double F0 = 0.0, F1 = 0.0, o0 = 0.0, o1 = 0.0;
+        int i = 0;
+        for (; i + 1 < n; i += 2)
+        {
+            const double qa = q[i], qb = q[i + 1];
+            F0 += w[i] * qa;
+            F1 += w[i + 1] * qb;
+            const double ba = cAK[i] * qa - cB[i] * qPrev[i]
+                            + cD[i] * (drive[i] + w[i] * uB);
+            const double bb = cAK[i + 1] * qb - cB[i + 1] * qPrev[i + 1]
+                            + cD[i + 1] * (drive[i + 1] + w[i + 1] * uB);
+            qPrev[i] = qa;         qPrev[i + 1] = qb;
+            q[i] = ba;             q[i + 1] = bb;
+            drive[i] = 0.0;        drive[i + 1] = 0.0;
+            o0 += readShape[i] * ba;
+            o1 += readShape[i + 1] * bb;
+        }
+        for (; i < n; ++i)
+        {
+            const double qo = q[i];
+            F0 += w[i] * qo;
+            const double bi = cAK[i] * qo - cB[i] * qPrev[i]
+                            + cD[i] * (drive[i] + w[i] * uB);
+            qPrev[i] = qo;
+            q[i] = bi;
+            drive[i] = 0.0;
+            o0 += readShape[i] * bi;
+        }
+        senseOut = (F0 + F1);
+        return (o0 + o1);
+    }
+
     void tick()
     {
         // b = (2I - k^2 Minv K) q - (I - alpha beta^T) qPrev - 2k alpha psi
@@ -406,20 +454,39 @@ public:
 
     // ---- readout ---------------------------------------------------------
     double displacement (int i) const { return (i >= 0 && i < MaxN) ? q[i] : 0.0; }
+
+    // Raw views for hot exchange loops (the grand's bridge two-port runs a
+    // dot with every voice's shape vector every sample; per-element checked
+    // accessors defeat vectorisation there). Read-only displacements and a
+    // writable drive accumulator; bounds are the caller's mode count.
+    const double* displacementData() const { return q; }
+    double*       driveData()              { return drive; }
     double psiValue (int p) const { return (p >= 0 && p < MaxP) ? psi[p] : 0.0; }
     bool   termIsActive (int p) const { return (p >= 0 && p < MaxP) && termActive[p]; }
 
     double displacementAt (const double* shape) const
     {
-        double u = 0.0;
-        for (int i = 0; i < n; ++i) if (live[i]) u += shape[i] * q[i];
-        return u;
+        // No live[] gate: a dead mode's q is zeroed at deactivation and its
+        // coefficients keep it there, so the term is exactly zero and the
+        // branch only cost the vectoriser the loop. Split accumulators keep
+        // the reduction off the FMA latency chain.
+        double u0 = 0.0, u1 = 0.0, u2 = 0.0, u3 = 0.0;
+        int i = 0;
+        for (; i + 3 < n; i += 4)
+        {
+            u0 += shape[i]     * q[i];
+            u1 += shape[i + 1] * q[i + 1];
+            u2 += shape[i + 2] * q[i + 2];
+            u3 += shape[i + 3] * q[i + 3];
+        }
+        for (; i < n; ++i) u0 += shape[i] * q[i];
+        return (u0 + u1) + (u2 + u3);
     }
 
     double velocityAt (const double* shape) const
     {
         double v = 0.0;
-        for (int i = 0; i < n; ++i) if (live[i]) v += shape[i] * (q[i] - qPrev[i]) * fs;
+        for (int i = 0; i < n; ++i) v += shape[i] * (q[i] - qPrev[i]) * fs;
         return v;
     }
 
