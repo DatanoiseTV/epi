@@ -596,9 +596,15 @@ function MicStudio({ onClose }) {
 const WSV_IDENT = [0, 0.25, 0.5, 0.75, 1];
 const WSV_PRESETS = [
   ['REAL', WSV_IDENT],
+  /* CONCERT: the Dannenberg square law at the measured 30 dB piano span,
+     solved through the launch law -- within 0.6 dB of REAL, which is the
+     research's own validation of the default physics. */
+  ['CONCERT', [0, 0.265, 0.505, 0.749, 1]],
   ['LIGHT', [0, 0.38, 0.62, 0.83, 1]],
   ['HEAVY', [0, 0.14, 0.36, 0.66, 1]],
-  ['STAGE', [0.06, 0.32, 0.55, 0.78, 1]],
+  /* STAGE: hardware-synth feel -- the raised floor compresses the span to
+     ~15 dB, matching the measured 11-21 dB of stage keyboards. */
+  ['STAGE', [0.30, 0.475, 0.65, 0.825, 1]],
 ];
 function VelocityWorkshop({ onClose }) {
   const [y, setY] = useState(null);

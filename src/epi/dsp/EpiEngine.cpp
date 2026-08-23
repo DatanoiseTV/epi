@@ -339,9 +339,11 @@ void EpiEngine::handleEvent (const NoteEvent& e, const EngineParams& p)
             const int i = e.note - kLoNote;
             if (i < 0 || i >= kNumTines) break;   // outside the instrument
 
-            // Velocity curve. At 0.5 the response is linear; below it the
-            // instrument gives more for a light touch, above it the player has
-            // to work for the top of the range.
+            // Velocity curve shape. Linear sits at about 0.34 on the knob
+            // (shape = 1.0); the 0.5 default gives shape 1.30, which stacked
+            // on the launch law's own exponent is the measured-piano response
+            // (velocity-curves-measured.md) -- below it a light touch gives
+            // more, above it the player works for the top.
             const float shape = 0.35f + 1.9f * std::clamp (p.velCurve, 0.0f, 1.0f);
             const float vel = std::pow (velMapEval (std::clamp (e.velocity, 0.0f, 1.0f)), shape)
                             * std::clamp (expression, 0.0f, 2.0f);
