@@ -281,19 +281,19 @@ public:
     void openSympathetic (int midiNote, const Config& cfg, const GrandBoard& board)
     {
         if (! configured || midiNote != note) setNote (midiNote, cfg, board);
-        // ONE representative string of the choir carries the sympathetic
-        // life, not three: a wash voice's unisons ring as one within its
-        // -40 dB contribution, and the whole open bank was the largest line
-        // in the grand's profile. The choir's full coupling surface returns
-        // the moment its own hammer falls (noteOn restores every string),
-        // and the reduced surface moves the too-hot sympathetic wake TOWARD
-        // the plan's measured band, not away from it.
-        // And only the VERTICAL coupled prefix: the board couples the
-        // vertical polarisation; the horizontals are second order for a
-        // wash and return with the hammer.
-        str[0].sys.setNumModes (str[0].kCplV);
-        for (int s = 1; s < numStrings; ++s)
-            str[s].sys.setNumModes (0);
+        // The FULL course rings sympathetically -- every string, both
+        // coupled prefixes -- because the course's deliberate unison detune
+        // is audible exactly here: strings a cent or two apart, driven by
+        // the same bridge motion, beat against each other slowly, and that
+        // shimmer is a real property of a pedal-down wash. (A one-string
+        // representative was tried during the profiling campaign; it saved
+        // little once the bridge exchange -- per VOICE, not per string --
+        // was made to pipeline, and it silenced the intra-course beats.)
+        // The reduced set is the coupled prefix per string: the board stops
+        // at 1.3 kHz, so modes above it cannot receive anything through the
+        // two-port -- setNumModes(kCoupled) is the physics, not a budget.
+        for (int s = 0; s < numStrings; ++s)
+            str[s].sys.setNumModes (str[s].kCoupled);
         sympathetic = true;
         sounding = true;
     }
@@ -343,19 +343,23 @@ public:
         (void) cfg;
         if (! sounding && ! hammer.isActive()) return 0.0;
 
-        // The sympathetic fast lane: one string, vertical prefix, no hammer
-        // machinery, no dead-string loop frames. With the pedal down this
-        // path runs for most of the eighty-eight voices every sample, and it
-        // was the largest line in the grand's profile. Same two-port, same
-        // weights both ways; the truncated-load correction scales to the one
-        // live string (less added bridge stiffness -- passive by structure).
+        // The sympathetic fast lane: the full course at its coupled
+        // prefixes, no hammer machinery. With the pedal down this path runs
+        // for most of the eighty-eight voices every sample; the expensive
+        // part is the per-voice bridge exchange, which is shared by the
+        // whole course, so every string of the choir rings for the price of
+        // its own prefix tick. Same two-port, same weights both ways.
         if (sympathetic && ! hammer.isActive())
         {
-            Str& S = str[0];
             const double uB = board.bridgeDisplacement (phi);
-            double F = 0.0;
-            const double out = S.sys.tickCoupled (S.w, uB, S.readShape, F);
-            board.addBridgeForce (phi, F - (Ku / numStrings) * uB);
+            double F = 0.0, out = 0.0;
+            for (int s = 0; s < numStrings; ++s)
+            {
+                double Fs = 0.0;
+                out += str[s].sys.tickCoupled (str[s].w, uB, str[s].readShape, Fs);
+                F += Fs;
+            }
+            board.addBridgeForce (phi, F - Ku * uB);
             if (++controlCounter >= 32)
             {
                 controlCounter = 0;
@@ -571,7 +575,8 @@ private:
             else if (sympDormant && e > 1.0e-11)
             {
                 sympDormant = false;
-                str[0].sys.setNumModes (str[0].kCplV);
+                for (int s = 0; s < numStrings; ++s)
+                    str[s].sys.setNumModes (str[s].kCoupled);
             }
         }
         // A sympathetically opened voice starts from zero energy on purpose;
