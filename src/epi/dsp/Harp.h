@@ -13,6 +13,7 @@
 #pragma once
 
 #include "ModalCore.h"
+#include "EpiModel.h"
 
 namespace epi
 {
@@ -52,14 +53,28 @@ public:
         // A cast frame in a tolex case. Low, closely spaced, and dead within a
         // fraction of a second -- the sustain a player hears with the pedal
         // down belongs to the tines, not to this.
-        static constexpr double kHz[kModes]  = { 47.0, 88.0, 143.0, 211.0, 305.0, 418.0 };
-        static constexpr double kT60[kModes] = { 0.42, 0.33, 0.26,  0.20,  0.15,  0.11 };
         for (int m = 0; m < kModes; ++m)
-        {
-            sys.setMode (m, kHz[m], kT60[m], kMass);
             shape[m] = 1.0 / (1.0 + 0.35 * m);   // higher modes move the rail less
-        }
+        applyBody();
         reset();
+    }
+
+    // What the frame is made of and how big it is, relative to stock. Beam
+    // and plate alike, a uniform size scale s moves every mode by 1/s (t/L^2
+    // with all dimensions scaled) and the material by sqrt(E/rho); modal
+    // mass follows rho s^3; the material's internal loss adds to the
+    // calibrated structural loss on a rate basis, zero for stock. State is
+    // kept across retunes, so a sweep re-pitches the ring instead of
+    // cutting it.
+    void setBody (int materialIndex, double sizeNorm)
+    {
+        // Exactly 1.0 at the default half: s = 1.43^(2x-1), spanning 0.7 to
+        // 1.43 with the stock scale bit-exact at centre.
+        const double s = std::pow (1.43, 2.0 * std::clamp (sizeNorm, 0.0, 1.0) - 1.0);
+        if (materialIndex == bodyMat && std::abs (s - bodySize) < 1.0e-9) return;
+        bodyMat = materialIndex;
+        bodySize = s;
+        applyBody();
     }
 
     void reset() { sys.clear(); sys.setNumModes (kModes); }
@@ -68,6 +83,7 @@ public:
 
     void addForce (double f)
     {
+        f *= forceScale;
         for (int m = 0; m < kModes; ++m) sys.addForce (m, f * shape[m]);
     }
 
@@ -80,6 +96,35 @@ private:
     // is why a single note barely moves it and a held chord does.
     static constexpr double kMass = 4.0;
 
+    void applyBody()
+    {
+        // A cast frame in a tolex case. Low, closely spaced, and dead within a
+        // fraction of a second -- the sustain a player hears with the pedal
+        // down belongs to the tines, not to this. The body scalers move the
+        // whole ladder together.
+        static constexpr double kHz[kModes]  = { 47.0, 88.0, 143.0, 211.0, 305.0, 418.0 };
+        static constexpr double kT60[kModes] = { 0.42, 0.33, 0.26,  0.20,  0.15,  0.11 };
+        const BodyScalers sc = bodyScalers (bodyMat);
+        const double fScale = sc.freq / bodySize;
+        // Mass enters as a force scale: the response of a mode is F/(m w^2),
+        // so dividing the drive by the mass ratio is exactly the heavier
+        // frame, and it works under a live retune where the modal state must
+        // be kept.
+        forceScale = 1.0 / (sc.mass * bodySize * bodySize * bodySize);
+        for (int m = 0; m < kModes; ++m)
+        {
+            const double f = kHz[m] * fScale;
+            const double sigma = 6.9078 / kT60[m] + kPiD * f * sc.etaAdd;
+            if (sys.frequency (m) > 0.0)
+                sys.retuneKeepingState (m, f, 6.9078 / sigma);
+            else
+                sys.setMode (m, f, 6.9078 / sigma, kMass);
+        }
+    }
+
+    double forceScale = 1.0;
+    int    bodyMat = 0;
+    double bodySize = 1.0;
     double fs = 48000.0;
     SavModalSystem<kModes, 1> sys;
     double shape[kModes] {};

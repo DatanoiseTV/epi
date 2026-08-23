@@ -691,6 +691,7 @@ void EpiEngine::processActive (float* outL, float* outR, int numSamples,
     cabinetR.setMix (sm.cabMix);
     cabinetBL.setMix (sm.cabMix);
     cabinetBR.setMix (sm.cabMix);
+    harp.setBody (p.bodyMat, p.bodySize);
     if (cabDirty.exchange (false, std::memory_order_acq_rel))
     {
         const double b = cabBox.load (std::memory_order_relaxed);
@@ -1382,6 +1383,7 @@ void EpiEngine::processCP70 (float* outL, float* outR, int numSamples,
     cabinetR.setMix (sm.cabMix);
     cabinetBL.setMix (sm.cabMix);
     cabinetBR.setMix (sm.cabMix);
+    cp70Frame.setBody (p.bodyMat, p.bodySize);
     if (cabDirty.exchange (false, std::memory_order_acq_rel))
     {
         const double b = cabBox.load (std::memory_order_relaxed);
@@ -1633,6 +1635,7 @@ void EpiEngine::processWurli (float* outL, float* outR, int numSamples,
     phaserR.setParams (p.phaserRate, p.phaserDepth, p.phaserFb, p.phaserMix);
     cabinetBL.setMix (sm.cabMix);
     cabinetBR.setMix (sm.cabMix);
+    wurliFrame.setBody (p.bodyMat, p.bodySize);
     if (cabDirty.exchange (false, std::memory_order_acq_rel))
     {
         const double b = cabBox.load (std::memory_order_relaxed);

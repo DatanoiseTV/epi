@@ -91,6 +91,8 @@ struct EngineParams
     int   material    = 0;
     // The Clavinet's own switches: the 4-way pickup matrix and the rockers.
     int   clavSwitch  = 0;
+    int   bodyMat     = 0;
+    float bodySize    = 0.5f;
     bool  clavBrill   = false;
     bool  clavTreb    = false;
     bool  clavMed     = true;

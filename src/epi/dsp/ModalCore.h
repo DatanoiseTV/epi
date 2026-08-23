@@ -211,6 +211,17 @@ public:
         setModeKeepingState (i, freqHz, t60[i]);
     }
 
+    // Retune AND redamp without touching stored energy: the body benches
+    // re-pitch a ringing frame, and a live sweep must move the ring, not cut
+    // it.
+    void retuneKeepingState (int i, double freqHz, double t60Sec)
+    {
+        if (i < 0 || i >= MaxN || ! live[i]) return;
+        if (! (freqHz > 0.0) || freqHz >= kModeBudget * fs) return;
+        setModeKeepingState (i, freqHz, t60Sec);
+        t60[i] = t60Sec;
+    }
+
     double baseFrequency (int i) const { return (i >= 0 && i < MaxN) ? baseFreq[i] : 0.0; }
     double frequency (int i) const { return (i >= 0 && i < MaxN) ? freq[i] : 0.0; }
     bool   isLive (int i) const { return i >= 0 && i < MaxN && live[i]; }

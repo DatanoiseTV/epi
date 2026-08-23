@@ -92,6 +92,59 @@ inline double magneticCoupling (const Material& m)
     return 0.092 * static_cast<double> (m.sigmaRel);
 }
 
+// ---------------------------------------------------------------------------
+// Body materials: what the frame, bar, case or soundboard is made of. Index 0
+// is always "stock" -- whatever the instrument was calibrated with -- and the
+// scalers below are RELATIVE to stock, so the default is bit-exact by
+// construction. Wood constants are along-grain values for soundboard-grade
+// stock; loss factors are room-temperature order-of-magnitude values from the
+// wood-acoustics and damping literature (Haines; Lazan). A body's modal
+// frequencies scale with sqrt(E/rho) at fixed geometry and with 1/s under a
+// uniform size scale s (plate and beam alike: t/L^2 with every dimension
+// scaled); modal mass scales with rho times s cubed; the material's internal
+// loss adds to the calibrated structural loss on a per-mode rate basis, zero
+// for stock.
+// ---------------------------------------------------------------------------
+struct BodyMaterial
+{
+    float youngs;    // Pa, along grain for woods
+    float density;   // kg/m^3
+    float lossEta;   // internal loss factor
+};
+
+inline constexpr BodyMaterial kBodyMaterials[] = {
+    {  11.0e9f,  450.0f, 8.0e-3f },  // 0 stock (spruce-class reference; scalers vs this cancel at index 0 by definition)
+    {  11.0e9f,  450.0f, 8.0e-3f },  // 1 spruce
+    {  12.6e9f,  700.0f, 1.0e-2f },  // 2 maple
+    {  13.0e9f,  680.0f, 1.5e-2f },  // 3 birch ply
+    {  69.0e9f, 2700.0f, 1.0e-3f },  // 4 aluminium
+    { 200.0e9f, 7850.0f, 2.0e-4f },  // 5 steel
+    { 100.0e9f, 8500.0f, 8.0e-4f },  // 6 brass
+    {  60.0e9f, 1550.0f, 3.0e-3f },  // 7 carbon composite
+};
+inline constexpr int kNumBodyMaterials = 8;
+
+// The three relative scalers every body consumer needs, against the stock
+// entry. At index 0 all three are exactly one.
+struct BodyScalers
+{
+    double freq = 1.0;   // sqrt(E/rho) ratio: where the modes sit
+    double mass = 1.0;   // rho ratio: how heavy each mode is
+    double etaAdd = 0.0; // added internal loss vs stock (>= 0)
+};
+
+inline BodyScalers bodyScalers (int index)
+{
+    const BodyMaterial& m = kBodyMaterials[index < 0 ? 0 : index >= kNumBodyMaterials ? kNumBodyMaterials - 1 : index];
+    const BodyMaterial& s = kBodyMaterials[0];
+    BodyScalers r;
+    r.freq = std::sqrt ((static_cast<double> (m.youngs) / static_cast<double> (m.density))
+                      / (static_cast<double> (s.youngs) / static_cast<double> (s.density)));
+    r.mass = static_cast<double> (m.density) / static_cast<double> (s.density);
+    r.etaAdd = std::max (0.0, static_cast<double> (m.lossEta) - static_cast<double> (s.lossEta));
+    return r;
+}
+
 // A measured T60 is a clamp-limited number: steel's internal loss is
 // negligible against what the mount takes (the comment above), so the
 // calibrated decay IS the clamp. A different material adds its own internal

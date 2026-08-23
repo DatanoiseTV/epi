@@ -427,3 +427,7 @@ html, body {
   background: #17140f; color: var(--mute); border: 1px solid #2c271d;
   border-radius: 4px; cursor: pointer; }
 .wsrocker.on { color: #caa45e; border-color: #caa45e; background: #221c11; }
+
+/* Body bench row: material cycler beside a small size knob. */
+.bodyrow { display: flex; align-items: center; justify-content: center; gap: 10px; }
+.bodysize .knob { width: 52px; }

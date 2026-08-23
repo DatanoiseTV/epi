@@ -50,6 +50,8 @@
   // Must match epi::ids::instrumentNames.
   const INSTRUMENTS = ['Tine', 'E-Grand', 'Reed', 'Grand', 'Clav'];
   const PICKUP_SEL  = ['MAGNETIC', 'NATIVE', 'ELECTRO', 'CONTACT'];
+  const BODY_MATERIALS = ['STOCK', 'SPRUCE', 'MAPLE', 'BIRCH PLY',
+                          'ALUMINIUM', 'STEEL', 'BRASS', 'CARBON'];
   const MATERIALS   = ['MUSIC WIRE', 'STAINLESS', 'BRONZE', 'BRASS',
                        'TITANIUM', 'ALUMINIUM', 'TUNGSTEN', 'NYLON'];
   /* Transducer facts per material: which pickups can hear it at all. */
@@ -115,6 +117,7 @@
     clavTreb:    { label: 'Treble',    map: M.unit, def: 0, format: (x) => x >= 0.5 ? 'ON' : 'OFF' },
     clavMed:     { label: 'Medium',    map: M.unit, def: 1, format: (x) => x >= 0.5 ? 'ON' : 'OFF' },
     clavSoft:    { label: 'Soft',      map: M.unit, def: 0, format: (x) => x >= 0.5 ? 'ON' : 'OFF' },
+    bodySize:    { label: 'Body Size', map: M.unit, def: 0.5, format: (x) => Math.pow(1.43, 2 * x - 1).toFixed(2) + 'x' },
     spaceMix:    { label: 'Space',     map: M.unit,      def: 0.15, format: pct },
     spaceSize:   { label: 'Size',      map: M.unit,      def: 0.40, format: pct },
     outGain:     { label: 'Output',    map: M.outGain,   def: M.outGain.from(0),  format: dbOf(M.outGain), bipolar: true },
@@ -143,7 +146,7 @@
       const ev = mk();
       sliders[id] = { getNormalisedValue: () => v, setNormalisedValue: (n) => { v = n; ev.fire(); }, valueChangedEvent: ev };
     });
-    [['pickupSel', 1], ['instrument', 0], ['material', 0], ['clavSwitch', 0]].forEach(([id, d]) => {
+    [['pickupSel', 1], ['instrument', 0], ['material', 0], ['clavSwitch', 0], ['bodyMat', 0]].forEach(([id, d]) => {
       let i = d; const ev = mk();
       combos[id] = { getChoiceIndex: () => i, setChoiceIndex: (n) => { i = n; ev.fire(); }, valueChangedEvent: ev };
     });
@@ -338,11 +341,12 @@
   }
 
   global.JuceBridge = { useJuceSlider, useJuceToggle, useJuceChoice, useJuceEvent, useEventRef,
-                        emitNative, PARAMS, INSTRUMENTS, PICKUP_SEL, MATERIALS, MAT_FERRO, MAT_COND, M };
+                        emitNative, PARAMS, INSTRUMENTS, PICKUP_SEL, MATERIALS, BODY_MATERIALS, MAT_FERRO, MAT_COND, M };
   global.PARAMS = PARAMS;
   global.INSTRUMENTS = INSTRUMENTS;
   global.PICKUP_SEL = PICKUP_SEL;
   global.MATERIALS = MATERIALS;
+  global.BODY_MATERIALS = BODY_MATERIALS;
   global.MAT_FERRO = MAT_FERRO;
   global.MAT_COND = MAT_COND;
 })(window);

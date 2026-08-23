@@ -38,6 +38,23 @@ function PRocker({ id }) {
   );
 }
 
+/* ---- BODY: what the frame, bar or board is made of, and how big ----
+   Index 0 is the calibrated stock body; size 0.5 is the stock scale. A
+   uniform size scale moves every frame mode by 1/s and the material by
+   sqrt(E/rho); the modal mass follows rho s^3. Live retunes keep the
+   frame's ring. */
+function BodyRow() {
+  return (
+    <div className="matrow bodyrow">
+      <PCycle id="bodyMat" options={BODY_MATERIALS} label="BODY" />
+      <Knob2Inline id="bodySize" />
+    </div>
+  );
+}
+function Knob2Inline({ id }) {
+  return <div className="bodysize"><PKnob id={id} size="sm" label="SIZE" /></div>;
+}
+
 /* ---- MATERIAL: what the resonator is made of ----
    Index 0 is the calibrated stock metal. The row also states the one hard
    transducer fact: a non-magnetic metal is invisible to a magnetic pickup,
@@ -50,8 +67,8 @@ function MaterialRow({ inst }) {
   const ferro = MAT_FERRO[mi], cond = MAT_COND[mi];
   /* Which selected transducer is deaf to this material, per instrument. */
   let deaf = null;
-  const magnetic = (inst === 0 || inst === 4) ? tr <= 1 : tr === 0;
-  const electro  = inst === 2 ? (tr === 1 || tr === 2) : tr === 2;
+  const magnetic = inst === 3 ? false : (inst === 0 || inst === 4) ? tr <= 1 : tr === 0;
+  const electro  = inst === 3 ? false : inst === 2 ? (tr === 1 || tr === 2) : tr === 2;
   if (magnetic && !ferro) deaf = cond
     ? 'a ' + MATERIALS[mi].toLowerCase() + ' resonator reaches a magnetic pickup only as a faint eddy signal'
     : 'an insulator is silent through a magnetic pickup';
@@ -100,6 +117,8 @@ function TinePanel({ inst }) {
           tuner's hairsbreadth between them; body trims the string-to-board
           coupling about the measured mobility; the pedal opens every
           undamped string to the board. */}
+      <MaterialRow inst={3} />
+      <BodyRow />
       <div className="note">unison hairsbreadth · board coupling · pedal-open board wash</div>
     </div>
   );
@@ -118,6 +137,7 @@ function TinePanel({ inst }) {
           Body couples every reed through the shared bar: hold the pedal and
           undamped neighbours pick up the strike through the casting. */}
       <MaterialRow inst={2} />
+      <BodyRow />
       <div className="note">tongue thickness · knife-edge loss · pedal-down bar wash</div>
     </div>
   );
@@ -141,6 +161,7 @@ function TinePanel({ inst }) {
           down the strings whose partials coincide ring back -- the octave
           above a struck note lands ~13 dB over the background wash. */}
       <MaterialRow inst={1} />
+      <BodyRow />
       <div className="note">unison spread · decay trim · pedal-down frame wash</div>
       {shop && <TineWorkshop strings onClose={() => setShop(false)} />}
     </div>
@@ -166,6 +187,7 @@ function TinePanel({ inst }) {
           different fraction of every mode's shape, so it re-voices the
           overtones on the way. */}
       <MaterialRow inst={0} />
+      <BodyRow />
       <div className="note">spring position · tone bar · bloom</div>
       {shop && <TineWorkshop onClose={() => setShop(false)} />}
     </div>

@@ -70,6 +70,8 @@ inline EngineParams engineParamsFrom (const RawFn& raw)
     p.transducer  = static_cast<int> (raw ("pickupSel"));
     p.material    = static_cast<int> (raw ("material"));
     p.clavSwitch  = static_cast<int> (raw ("clavSwitch"));
+    p.bodyMat     = static_cast<int> (raw ("bodyMat"));
+    p.bodySize    = raw ("bodySize");
     p.clavBrill   = raw ("clavBrill") > 0.5f;
     p.clavTreb    = raw ("clavTreb") > 0.5f;
     p.clavMed     = raw ("clavMed") > 0.5f;
