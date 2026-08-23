@@ -838,21 +838,18 @@ static void sectionKnobs()
     // chord itself measures 0.0005..0.0033 across the five instruments, so
     // anything above the bound is the knob, not the signal.
     //
-    // KNOWN GAPS, each a real click, pinned at its measured value:
-    //  - cabMix: the cabinet morph re-derives every biquad corner once per
-    //    block from the 40 ms smoothed target; the coefficient steps ring
-    //    the resonant sections. Measured 0.128 (Tine), 0.237 (E-Grand),
-    //    0.048 (Reed) -- and 0.128 even with per-block (non-chunky)
-    //    automation, so it is the morph, not the host's update rate.
-    //  - treble/clarity on the base-rate paths: shelf coefficients step at
-    //    block rate (0.047 / 0.040 E-Grand, 0.025 Reed).
-    //  - pickupDist on the Tine: the gap glide measured -36 dB (0.016) for
-    //    continuous moves; chunky automation lands at 0.029.
-    struct KnobHold { const char* name; double hold; };
-    static const KnobHold kHolds[] = {
-        { "cabMix", 0.30 }, { "treble", 0.06 }, { "clarity", 0.06 },
-        { "pickupDist", 0.045 },
-    };
+    // The click history this section forced, all fixed and now fenced by
+    // the plain 0.025 bound:
+    //  - cabMix measured 0.128..0.237: NOT the coefficient morph (the
+    //    component alone measured 0.0012 under the same sweep) but the hard
+    //    mix<=0 bypass branch switching in and out as automation crossed
+    //    zero; fixed with a crossfaded bypass below mix 0.02.
+    //  - treble/clarity: RBJ shelf coefficients stepped at block rate;
+    //    fixed with rate-limited application (0.15 dB per block) in the
+    //    air shelf and the E-Grand preamp.
+    //  - pickupDist on the Tine: the electrostatic gap glide was a touch
+    //    fast for chunky automation; eased 20 to 35 ms.
+
 
     const double fs = 48000.0;
     const int block = 512;
@@ -889,14 +886,8 @@ static void sectionKnobs()
              fmt ("%.4f", worstClean) + " (" + worstCleanName + ")",
              verdict (worstClean <= 0.025));
         for (const auto& o : over)
-        {
-            double hold = 0.0;
-            for (const auto& h : kHolds)
-                if (std::string (o.first) == h.name) hold = h.hold;
             row (idb, (std::string (kInstName[inst]) + " " + o.first + " click").c_str(),
-                 "d2 <= 0.025", fmt ("%.4f", o.second),
-                 gapIf (false, o.second <= hold));
-        }
+                 "d2 <= 0.025", fmt ("%.4f", o.second), verdict (false));
     }
 }
 
