@@ -76,3 +76,18 @@ target_include_directories(epi_preset_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_features(epi_preset_tests PRIVATE cxx_std_20)
 add_test(NAME epi_presets COMMAND epi_preset_tests)
 set_tests_properties(epi_presets PROPERTIES TIMEOUT 900)
+
+# ---------------------------------------------------------------------------
+# Epi engine integration suite. The layer the voice and chain suites cannot
+# see: instrument-switch seams, the pending-note guarantee, pedals, the
+# material x transducer coupling matrix, knob-sweep click fences, the output
+# rail under fortissimo abuse, MIDI robustness and rate independence.
+# Framework-free: no JUCE.
+# ---------------------------------------------------------------------------
+add_executable(epi_engine_tests
+    test_epi_engine.cpp
+    ${CMAKE_SOURCE_DIR}/src/epi/dsp/EpiEngine.cpp)
+target_include_directories(epi_engine_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_features(epi_engine_tests PRIVATE cxx_std_20)
+add_test(NAME epi_engine COMMAND epi_engine_tests)
+set_tests_properties(epi_engine PROPERTIES TIMEOUT 900)
