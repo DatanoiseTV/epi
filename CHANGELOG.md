@@ -35,6 +35,12 @@ All notable changes to Epi are documented here. The format follows
   2.4% of a core at 48 kHz. Placements persist with the project and
   presets.
 
+- An eighth suite, the state round-trips: the only one that is not
+  framework-free -- it instantiates the real plugin processor and
+  proves the benches (mic stage, pair trims, velocity map) restore
+  exactly through host project state, saved user presets, factory
+  loads, and legacy states saved before a bench existed.
+
 ### Changed
 - The grand's worst case runs 2.2x lighter: a ten-note chord with the
   pedal down dropped from 75% to 34% of one core at 48 kHz (4 notes

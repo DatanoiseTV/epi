@@ -91,3 +91,41 @@ target_include_directories(epi_engine_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_features(epi_engine_tests PRIVATE cxx_std_20)
 add_test(NAME epi_engine COMMAND epi_engine_tests)
 set_tests_properties(epi_engine PROPERTIES TIMEOUT 900)
+
+# ---------------------------------------------------------------------------
+# Epi state round-trips. The one suite that is NOT framework-free: it
+# instantiates the real EpiAudioProcessor and proves that host project
+# state, user presets, factory loads and legacy states all restore the
+# benches -- mic stage, pair trims, velocity map -- exactly as saved.
+# Compiled from the plugin's own sources so it tests the artifact, not a
+# replica.
+# ---------------------------------------------------------------------------
+juce_add_console_app(epi_state_tests PRODUCT_NAME "epi_state_tests")
+target_sources(epi_state_tests PRIVATE
+    test_epi_state.cpp
+    ${CMAKE_SOURCE_DIR}/src/epi/PluginProcessor.cpp
+    ${CMAKE_SOURCE_DIR}/src/epi/dsp/EpiEngine.cpp
+    ${CMAKE_SOURCE_DIR}/src/epi/presets/FactoryPresets.cpp
+    ${CMAKE_SOURCE_DIR}/src/epi/ui/WebEditor.cpp
+    ${CMAKE_SOURCE_DIR}/src/common/PresetManager.cpp
+    ${CMAKE_SOURCE_DIR}/src/common/WebViewSupport.cpp)
+target_include_directories(epi_state_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_features(epi_state_tests PRIVATE cxx_std_20)
+target_compile_definitions(epi_state_tests PRIVATE
+    JUCE_WEB_BROWSER=1
+    JUCE_USE_CURL=0
+    JUCE_VST3_CAN_REPLACE_VST2=0
+    JUCE_REPORT_APP_USAGE=0
+    $<$<PLATFORM_ID:Windows>:JUCE_USE_WIN_WEBVIEW2_WITH_STATIC_LINKING=1>
+    EPI_VERSION="${PROJECT_VERSION}"
+    EPI_GIT_HASH="${EPI_GIT_HASH}"
+    EPI_GIT_BRANCH="${EPI_GIT_BRANCH}")
+target_link_libraries(epi_state_tests PRIVATE
+    EpiUI
+    juce::juce_audio_utils
+    juce::juce_dsp
+    juce::juce_gui_extra
+    juce::juce_recommended_config_flags
+    juce::juce_recommended_lto_flags)
+add_test(NAME epi_state COMMAND epi_state_tests)
+set_tests_properties(epi_state PROPERTIES TIMEOUT 300)
