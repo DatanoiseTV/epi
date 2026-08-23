@@ -8,7 +8,14 @@
   something measurable, a character row that measures it (a dark preset has a
   lower spectral centroid than its reference, a bark preset more high-band
   energy than its clean sibling, a tremolo preset amplitude modulation at its
-  set rate, a phaser preset spectral movement).
+  set rate, a phaser preset spectral movement). The bench presets get the
+  same treatment against their own twins -- the identical preset with the
+  bench overridden back to stock, which the deterministic render makes an
+  exact baseline: the hardened-felt preset must show more post-release high
+  tail, the worn-rail preset a louder release thud (isolated against a
+  noise-free twin, at the thud's own level, since a full chord masks it),
+  a swapped frame an audible change in the render, a scaled grand board a
+  shifted low signature.
 
   The structural rows run first: every id a preset names must exist in the
   replica of the APVTS layout below, with its value inside the parameter's
@@ -161,6 +168,9 @@ struct Measured
     double centroid   = 0.0;    // Hz, sustained-chord window
     double highRatio  = 0.0;    // energy above 1.5 kHz / total, same window
     double topRatio   = 0.0;    // energy above 4 kHz / total, same window
+    double lowRatio   = 0.0;    // energy below 250 Hz / total, same window
+    double postHighDb = -300.0;   // absolute >1.5 kHz energy dB after the pedal lifts
+    double postLowMidDb = -300.0; // absolute 100..250 Hz energy dB, same window
     double centStdHz  = 0.0;    // centroid movement across 100 ms hops
     double sideRatio  = 0.0;    // rms(l-r) / rms(l+r)
     double amFreq     = 0.0;    // strongest 3..8 Hz envelope line, Hz
@@ -168,8 +178,13 @@ struct Measured
 };
 
 // One FFT window's spectral centroid and band ratios, 30 Hz .. 12 kHz.
+// `highAbsDb` / `lowMidAbsDb` are un-normalised band energies in dB --
+// comparable between renders of the same window length, which is all the
+// character rows ask of them.
 static void spectrum (const std::vector<double>& mono, std::size_t start, std::size_t n,
-                      double& centroid, double& highRatio, double* topRatio = nullptr)
+                      double& centroid, double& highRatio, double* topRatio = nullptr,
+                      double* lowRatio = nullptr, double* highAbsDb = nullptr,
+                      double* lowMidAbsDb = nullptr)
 {
     std::vector<an::cplx> buf (n);
     for (std::size_t i = 0; i < n; ++i)
@@ -180,7 +195,7 @@ static void spectrum (const std::vector<double>& mono, std::size_t start, std::s
     }
     an::fft (buf);
 
-    double num = 0.0, den = 0.0, high = 0.0, top = 0.0;
+    double num = 0.0, den = 0.0, high = 0.0, top = 0.0, low = 0.0, lowMid = 0.0;
     for (std::size_t k = 1; k < n / 2; ++k)
     {
         const double f = static_cast<double> (k) * kFs / static_cast<double> (n);
@@ -190,19 +205,28 @@ static void spectrum (const std::vector<double>& mono, std::size_t start, std::s
         den += e;
         if (f > 1500.0) high += e;
         if (f > 4000.0) top += e;
+        if (f < 250.0)  low += e;
+        if (f >= 100.0 && f < 250.0) lowMid += e;
     }
     centroid  = den > 0.0 ? num / den : 0.0;
     highRatio = den > 0.0 ? high / den : 0.0;
-    if (topRatio != nullptr) *topRatio = den > 0.0 ? top / den : 0.0;
+    if (topRatio != nullptr)  *topRatio  = den > 0.0 ? top / den : 0.0;
+    if (lowRatio != nullptr)  *lowRatio  = den > 0.0 ? low / den : 0.0;
+    if (highAbsDb != nullptr) *highAbsDb = 10.0 * std::log10 (std::max (1.0e-30, high));
+    if (lowMidAbsDb != nullptr) *lowMidAbsDb = 10.0 * std::log10 (std::max (1.0e-30, lowMid));
 }
 
-// `overrideId` forces one parameter after resolution -- used to render a
-// preset's own dry twin (phaser bypassed) as the baseline for movement rows.
-static Measured renderPreset (const pd::Preset& p,
-                              const char* overrideId = nullptr, float overrideVal = 0.0f)
+// `overrides` force parameters after resolution -- used to render a preset's
+// own twin (phaser bypassed, felt back to stock, frame back to the casting)
+// as the baseline for the character rows. `monoOut`, when given, receives
+// the mono mix so a row can measure the difference between two renders.
+// renderResolved is the core, taking the completed value set plus the preset
+// name (which keys the workshop tables); renderPreset is the everyday form.
+struct Override { const char* id; float value; };
+
+static Measured renderResolved (std::map<std::string, float> vals, const char* name,
+                                std::vector<double>* monoOut = nullptr)
 {
-    auto vals = resolve (p);
-    if (overrideId != nullptr) vals[overrideId] = overrideVal;
     const EngineParams ep = engineParamsFrom ([&vals] (const char* id)
     {
         const auto it = vals.find (id);
@@ -214,13 +238,13 @@ static Measured renderPreset (const pd::Preset& p,
     engine->prepare (kFs, kBlock);
 
     // A preset that paints a bench sounds through that bench.
-    if (const auto* t = pd::tineModsFor (p.name))
+    if (const auto* t = pd::tineModsFor (name))
         for (int i = 0; i < EpiEngine::kNumTines; ++i)
             engine->setTineMod (i, (*t)[static_cast<std::size_t> (i)][0],
                                    (*t)[static_cast<std::size_t> (i)][1]);
-    if (const auto* c = pd::cabModsFor (p.name))
+    if (const auto* c = pd::cabModsFor (name))
         engine->setCabMod ((*c)[0], (*c)[1], (*c)[2], (*c)[3], (*c)[4]);
-    if (const auto* m = pd::micModsFor (p.name))
+    if (const auto* m = pd::micModsFor (name))
         engine->setMicMod ((*m)[0], (*m)[1], (*m)[2], (*m)[3], (*m)[4]);
 
     // The phrase: a bass note, then a mf C major triad, then a treble note;
@@ -288,7 +312,20 @@ static Measured renderPreset (const pd::Preset& p,
 
     // Sustained-chord spectrum: 32768 samples (683 ms) from 350 ms in.
     spectrum (mono, static_cast<std::size_t> (0.35 * kFs), 32768,
-              m.centroid, m.highRatio, &m.topRatio);
+              m.centroid, m.highRatio, &m.topRatio, &m.lowRatio);
+
+    // The post-release tail: the pedal lifts at 3.0 s and the dampers take
+    // the strings. What survives above 1.5 kHz in the next third of a second
+    // is what the damper felt failed to grip -- the zing, when the felt is
+    // hardened -- and what survives at 100..250 Hz is the body's own low
+    // ring, which is where a scaled grand board shows itself. The window was
+    // swept before it was trusted: 100 ms after the lift, 341 ms long, is
+    // where the felt margin measured widest.
+    {
+        double c, h;
+        spectrum (mono, static_cast<std::size_t> (3.10 * kFs), 16384,
+                  c, h, nullptr, nullptr, &m.postHighDb, &m.postLowMidDb);
+    }
 
     // Spectral movement: centroid per 100 ms hop, 8192-sample windows,
     // 0.4 .. 3.3 s, on the LEFT channel -- the right phaser runs a quarter
@@ -353,7 +390,18 @@ static Measured renderPreset (const pd::Preset& p,
         m.amDepthDb = 2.0 * best;   // sinusoid amplitude -> peak-to-peak dB
     }
 
+    if (monoOut != nullptr) *monoOut = std::move (mono);
+
     return m;
+}
+
+static Measured renderPreset (const pd::Preset& p,
+                              std::initializer_list<Override> overrides = {},
+                              std::vector<double>* monoOut = nullptr)
+{
+    auto vals = resolve (p);
+    for (const auto& o : overrides) vals[o.id] = o.value;
+    return renderResolved (std::move (vals), p.name, monoOut);
 }
 
 // ===========================================================================
@@ -485,9 +533,12 @@ int main()
         // The whole-render mean tolerates the reed preamp's asymmetric
         // saturation (a real, physical offset while the signal is loud);
         // stuck DC is what the tail measures, after the phrase has decayed.
+        // The RMS window moved with the engine's -18 dBFS loudness bench
+        // (it was [-34,-14] against the old -24 dBFS bench). Peaks pinned at
+        // exactly 1.0 are the soft output rail doing its job, not clipping.
         const bool ok = m.finite
                      && m.peak <= 1.0
-                     && m.rmsDb >= -34.0 && m.rmsDb <= -14.0
+                     && m.rmsDb >= -28.0 && m.rmsDb <= -8.0
                      && m.dcAbs < 5.0e-3 && m.tailDcAbs < 1.0e-3;
         if (! ok) ++failures;
         std::printf ("  %-15s %-4d %10.3f %10.1f %10.6f %10.0f %10.3f %10s\n",
@@ -529,12 +580,17 @@ int main()
     // baseline for a movement row is the SAME preset with the phaser
     // bypassed: the render is deterministic, so the difference is the
     // effect's contribution and nothing else.
+    auto presetNamed = [] (const char* a) -> const pd::Preset&
+    {
+        for (const auto& q : pd::kPresets)
+            if (std::strcmp (q.name, a) == 0) return q;
+        std::printf ("no preset named %s\n", a);
+        std::abort();
+    };
     auto moves = [&] (const char* a, double factor)
     {
-        const pd::Preset* p = nullptr;
-        for (const auto& q : pd::kPresets)
-            if (std::strcmp (q.name, a) == 0) p = &q;
-        const Measured dry = renderPreset (*p, "phaserMix", 0.0f);
+        const pd::Preset* p = &presetNamed (a);
+        const Measured dry = renderPreset (*p, { { "phaserMix", 0.0f } });
         row (a, "spectrum moves vs its dry twin",
              fmt ("> %.0f Hz std", factor * dry.centStdHz),
              fmt ("%.0f Hz std", mm[a].centStdHz),
@@ -567,6 +623,137 @@ int main()
          fmt ("> %.3f side/mid", mm["Concert Grand"].sideRatio),
          fmt ("%.3f side/mid", mm["Wide Cinema"].sideRatio),
          mm["Wide Cinema"].sideRatio > mm["Concert Grand"].sideRatio);
+
+    // ---- the bench presets, against their own stock twins ------------------
+    // The twin is the identical preset with the bench overridden back to
+    // stock; the render is deterministic, so the difference is the bench's
+    // contribution and nothing else.
+
+    // Hardened damper felt: the high partials the felt can no longer grip
+    // survive the pedal lift. The bench measured +26 dB at the voice; what
+    // remains of that through the whole chain, the room and three seconds of
+    // natural decay was swept before it was trusted -- 7-8 dB in the chosen
+    // window -- so the fence sits at +4.
+    auto zing = [&] (const char* a)
+    {
+        const Measured fresh = renderPreset (presetNamed (a),
+                                             { { "damperFelt", 0.0f } });
+        row (a, "post-release zing vs stock felt",
+             fmt ("> %.1f dB + 4", fresh.postHighDb),
+             fmt ("%.1f dB", mm[a].postHighDb),
+             mm[a].postHighDb > fresh.postHighDb + 4.0);
+    };
+    zing ("Roadworn");
+    zing ("Tack Grand");
+    // Worn rail cloth: the release thud is louder. A full mf chord masks a
+    // key-up thump -- measured, the bed's whole contribution sits over 60 dB
+    // under the phrase -- so the thud is isolated at its own level: the
+    // action noise is the exact difference against a strikeNoise-zero twin
+    // (renders are deterministic), and the worn bed's release-window action
+    // must beat the stock bed's by the bench's own margin.
+    {
+        const pd::Preset& p = presetNamed ("Tired Stage");
+        auto actionDb = [&] (float bed) -> double
+        {
+            std::vector<double> with, without;
+            (void) renderPreset (p, { { "keyBed", bed } }, &with);
+            (void) renderPreset (p, { { "keyBed", bed }, { "strikeNoise", 0.0f } }, &without);
+            const std::size_t r0 = static_cast<std::size_t> (1.50 * kFs);
+            const std::size_t r1 = static_cast<std::size_t> (1.62 * kFs);
+            double s = 0.0;
+            for (std::size_t i = r0; i < r1; ++i)
+            {
+                const double d = with[i] - without[i];
+                s += d * d;
+            }
+            return 10.0 * std::log10 (std::max (1.0e-30, s / static_cast<double> (r1 - r0)));
+        };
+        const double worn  = actionDb (3.0f);   // the preset's own bed
+        const double stock = actionDb (0.0f);
+        row ("Tired Stage", "release thud louder vs stock rail",
+             fmt ("> %.1f dB + 3", stock),
+             fmt ("%.1f dB", worn),
+             worn > stock + 3.0);
+    }
+    // A swapped frame must be audible in the render, not a label: the RMS of
+    // the difference against the stock-frame twin, relative to the preset's
+    // own level. The voices themselves never read the body parameters on the
+    // electrics, so the difference IS the frame.
+    auto bodyAudible = [&] (const char* a)
+    {
+        std::vector<double> now, stock;
+        (void) renderPreset (presetNamed (a), {}, &now);
+        (void) renderPreset (presetNamed (a),
+                             { { "bodyMat", 0.0f }, { "bodySize", 0.5f } }, &stock);
+        double dSum = 0.0, sSum = 0.0;
+        for (std::size_t i = 0; i < now.size(); ++i)
+        {
+            const double d = now[i] - stock[i];
+            dSum += d * d;
+            sSum += now[i] * now[i];
+        }
+        const double rel = 10.0 * std::log10 (std::max (1.0e-30, dSum)
+                                            / std::max (1.0e-30, sSum));
+        row (a, "frame swap audible vs stock", "> -30 dB rel",
+             fmt ("%.1f dB rel", rel), rel > -30.0);
+    };
+    // The Tine deliberately has no row (and no preset) here: measured, its
+    // frame swap sits over 70 dB under the notes through every transducer,
+    // so no honest tine body preset exists yet.
+    bodyAudible ("Studio Frame");
+    bodyAudible ("Pocket Reed");
+    // The grand board: a small board loses its bottom by geometry. Measured
+    // as the low band's share of the sustained chord against the stock-board
+    // twin.
+    {
+        const Measured stock = renderPreset (presetNamed ("Parlor"),
+                                             { { "bodyMat", 0.0f }, { "bodySize", 0.5f } });
+        row ("Parlor", "less low band than stock board",
+             fmt ("< %.3f low-ratio", stock.lowRatio),
+             fmt ("%.3f low-ratio", mm["Parlor"].lowRatio),
+             mm["Parlor"].lowRatio < stock.lowRatio);
+    }
+    // The full-size board's honest signature is the released tail: the big
+    // board's low modes keep carrying after the pedal lifts where the stock
+    // board has let go (measured +5.7 dB in the 100..250 Hz band, dry; the
+    // sustained low RATIO actually falls, because the ladder shifts off the
+    // phrase's fundamentals -- asserting "more low ratio" here would fail
+    // against the real physics).
+    {
+        const Measured stock = renderPreset (presetNamed ("Nine Foot"),
+                                             { { "bodySize", 0.5f } });
+        row ("Nine Foot", "released tail carries more body",
+             fmt ("> %.1f dB + 3", stock.postLowMidDb),
+             fmt ("%.1f dB", mm["Nine Foot"].postLowMidDb),
+             mm["Nine Foot"].postLowMidDb > stock.postLowMidDb + 3.0);
+    }
+    // Materials, promised and measured. Brass at the reed: what survives to
+    // the OUTPUT is the bite -- the softer, springier tongue swings further
+    // for the same blow and rides the slot harder, so the sustained spectrum
+    // sits clearly above its own steel twin's. (The extra internal loss is
+    // real at the reed -- materialT60 takes it in full on a cantilever --
+    // but two decay rows were tried and failed honestly: the 200A chain's
+    // preamp knee and speaker compression flatten the hotter brass signal
+    // enough to hide the faster decay at the output.)
+    {
+        const Measured steel = renderPreset (presetNamed ("Brass Reeds"),
+                                             { { "material", 0.0f } });
+        row ("Brass Reeds", "bites harder than steel twin",
+             fmt ("> %.0f Hz", steel.centroid),
+             fmt ("%.0f Hz", mm["Brass Reeds"].centroid),
+             mm["Brass Reeds"].centroid > steel.centroid);
+    }
+    // Nylon takes its material loss only on the bending share -- nearly zero
+    // for nylon -- so the light courses ring the top clear where wire
+    // crowds it: measurably brighter than its own wire twin.
+    {
+        const Measured steel = renderPreset (presetNamed ("Harp Grand"),
+                                             { { "material", 0.0f } });
+        row ("Harp Grand", "clearer top than its wire twin",
+             fmt ("> %.0f Hz", steel.centroid),
+             fmt ("%.0f Hz", mm["Harp Grand"].centroid),
+             mm["Harp Grand"].centroid > steel.centroid);
+    }
 
     // ---- summary ----------------------------------------------------------
     std::printf ("\n%s: %d failure%s\n",

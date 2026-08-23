@@ -112,10 +112,14 @@ inline constexpr ParamValue kMellow[] = {
 };
 
 // The tape-era ballad setting: long sustain (bar fully coupled), soft touch,
-// wide slow pan, a real room.
+// wide slow pan, a real room. Freshly serviced action -- new damper felt and
+// new rail cloth -- because the quiet, even mechanism IS the ballad
+// instrument; before the action bench this could only be approximated by
+// leaving the noise knob down.
 inline constexpr ParamValue kBallad[] = {
     { "barCouple", 0.9f }, { "hammerHard", 0.32f }, { "velCurve", 0.38f },
     { "resDamp", 0.18f }, { "pickupPos", -0.5f },
+    { "damperFelt", 1.0f }, { "keyBed", 1.0f },
     { "preampDrive", 0.15f }, { "bass", 2.0f },
     { "tremDepth", 0.30f }, { "tremRate", 2.6f },
     { "spaceMix", 0.30f }, { "spaceSize", 0.60f },
@@ -213,6 +217,34 @@ inline constexpr ParamValue kBronzeBars[] = {
     { "outGain", 6.0f },
 };
 
+// Aluminium tines through the contact transducer -- the only transducer that
+// hears them at full strength. A third the density of steel: the same strike
+// swings the tine further and the internal loss is the highest of the
+// metals, so the note blooms hard and dies young. Departs from Contact Tine
+// at the material.
+inline constexpr ParamValue kAlloyTines[] = {
+    { "material", 5.0f }, { "pickupSel", 3.0f },
+    { "barCouple", 0.70f }, { "resDamp", 0.25f },
+    { "bodyMix", 0.35f }, { "cabMix", 0.25f },
+    { "spaceMix", 0.18f }, { "spaceSize", 0.50f },
+    { "outGain", 6.0f },
+};
+
+// The instrument that has done two hundred gigs and missed every service:
+// worn damper felt, the rail cloth worn through, every tine drifted a few
+// cents its own way (workshop table below). The aged sibling of Stage DI.
+// The worn cloth's release thud is real and measured -- the harness isolates
+// it against this preset's own noise-free twin, at the thud's own level,
+// because a full mf chord masks a key-up thump exactly as it does on the
+// real instrument.
+inline constexpr ParamValue kTiredStage[] = {
+    { "hammerHard", 0.55f }, { "strikeNoise", 0.32f },
+    { "damperFelt", 2.0f }, { "keyBed", 3.0f },
+    { "resDamp", 0.42f },
+    { "preampDrive", 0.34f }, { "treble", 1.0f }, { "bass", 1.0f },
+    { "cabMix", 0.55f }, { "spaceMix", 0.10f },
+};
+
 // ---- Tine workshop presets ------------------------------------------------
 // These four re-cut the harp itself through the tine workshop (tables in
 // this header, applied by name from FactoryPresets.cpp). Loading one paints
@@ -225,6 +257,7 @@ inline constexpr ParamValue kBronzeBars[] = {
 inline constexpr ParamValue kJustBallad[] = {
     { "barCouple", 0.9f }, { "hammerHard", 0.30f }, { "velCurve", 0.38f },
     { "resDamp", 0.18f }, { "pickupPos", -0.5f },
+    { "damperFelt", 1.0f }, { "keyBed", 1.0f },
     { "preampDrive", 0.15f }, { "bass", 2.0f },
     { "tremDepth", 0.25f }, { "tremRate", 2.4f },
     { "spaceMix", 0.32f }, { "spaceSize", 0.62f },
@@ -253,11 +286,32 @@ inline constexpr ParamValue kQuarterKeys[] = {
 };
 
 // Every tine a few cents its own way, deterministic per note: the barroom
-// upright's chorus, from mistuning rather than modulation.
+// upright's chorus, from mistuning rather than modulation. The action bench
+// finishes the picture the noise knob used to fake alone: worn damper felt
+// and worn-through rail cloth, the loud bright clack of a neglected room's
+// instrument.
 inline constexpr ParamValue kBarroom[] = {
     { "hammerHard", 0.62f }, { "strikeNoise", 0.35f },
+    { "damperFelt", 2.0f }, { "keyBed", 3.0f },
     { "preampDrive", 0.38f }, { "treble", 2.0f }, { "bass", 1.5f },
     { "cabMix", 0.55f }, { "spaceMix", 0.14f },
+};
+
+// The benches stacked into an instrument that never existed and should:
+// bronze bars on the slendro map (same table as Slendro Bells), read at the
+// clamp, heavier hammers, a long room. Every choice is physics the honest
+// presets already use -- non-ferrous metal through contact, the workshop's
+// geometry -- they have just never been bolted together before. The frame
+// bench is deliberately NOT set here: measured, the tine frame's swap sits
+// over 70 dB under the notes in the mix, so claiming a "temple case" from
+// it would be a label, not a sound.
+inline constexpr ParamValue kGongTemple[] = {
+    { "material", 2.0f }, { "pickupSel", 3.0f },
+    { "hammerHard", 0.66f }, { "hammerMass", 0.58f },
+    { "barCouple", 0.80f }, { "resDamp", 0.20f },
+    { "bodyMix", 0.40f }, { "cabMix", 0.25f },
+    { "spaceMix", 0.30f }, { "spaceSize", 0.65f },
+    { "outGain", 6.0f },
 };
 
 // ---------------------------------------------------------------------------
@@ -283,20 +337,26 @@ inline constexpr ParamValue kBrightPop[] = {
 };
 
 // The CP as a ballad machine: soft hammers, the top rolled off, a slow
-// shallow pan and a bigger room. Departs from CP-70 at hammer, tone, space.
+// shallow pan and a bigger room. Departs from CP-70 at hammer, tone, space --
+// and, since the action bench, at the felt: fresh dampers and fresh rail
+// cloth, the quiet even mechanism a ballad take gets serviced for.
 inline constexpr ParamValue kDarkBallad[] = {
     { "instrument", 1.0f },
     { "hammerHard", 0.30f }, { "velCurve", 0.40f },
+    { "damperFelt", 1.0f }, { "keyBed", 1.0f },
     { "bass", 2.0f }, { "treble", -2.5f },
     { "tremDepth", 0.25f }, { "tremRate", 3.0f },
     { "cabMix", 0.0f }, { "spaceMix", 0.28f }, { "spaceSize", 0.60f },
 };
 
 // Tack-piano flavour: the hardest hammer the action offers plus the
-// mechanism up in the mix. What a thumbtacked upright does, on strings.
+// mechanism up in the mix. What a thumbtacked upright does, on strings --
+// including the dampers: an instrument nobody tacks has fresh felt, so the
+// hardened felt's post-release zing belongs here too.
 inline constexpr ParamValue kTackGrand[] = {
     { "instrument", 1.0f },
     { "hammerHard", 0.92f }, { "strikeNoise", 0.40f }, { "escapement", 0.55f },
+    { "damperFelt", 3.0f },
     { "treble", 1.5f },
     { "cabMix", 0.0f }, { "spaceMix", 0.10f },
 };
@@ -331,14 +391,48 @@ inline constexpr ParamValue kChorusEra[] = {
 };
 
 // Pedal-wash ambient: soft hammers, the case resonance up, the room most of
-// the way open. Made to be played with the pedal down.
+// the way open. Made to be played with the pedal down. The body bench gives
+// the wash a real case to ring in: the frame scaled up, so the sympathetic
+// bed sits deeper and slower than the stock casting.
 inline constexpr ParamValue kPedalWash[] = {
     { "instrument", 1.0f },
     { "hammerHard", 0.35f }, { "velCurve", 0.40f },
-    { "bodyMix", 0.60f },
+    { "bodyMix", 0.60f }, { "bodySize", 0.75f },
     { "tremDepth", 0.20f }, { "tremRate", 3.0f },
     { "cabMix", 0.0f }, { "spaceMix", 0.45f }, { "spaceSize", 0.85f },
     { "outGain", -6.0f },
+};
+
+// The dry studio machine: the case swapped for a steel frame, which barely
+// moves -- the sympathetic wash drops away and what is left is the strings
+// and the bridge, nothing ringing behind them. Departs from CP-70 at the
+// frame and the shut room.
+inline constexpr ParamValue kStudioFrame[] = {
+    { "instrument", 1.0f },
+    { "bodyMat", 5.0f },
+    { "clarity", 1.5f },
+    { "cabMix", 0.0f }, { "spaceMix", 0.08f }, { "spaceSize", 0.30f },
+};
+
+// Tungsten strings on the piezo bridge -- the bridge hears force, so the
+// material arrives in full. Tungsten's E/rho is below steel's: less bending
+// stiffness per unit mass, so the low strings stretch their partials less --
+// a tighter, more harmonic bass than music wire can give at this scale.
+// Departs from CP-70 at the material only.
+inline constexpr ParamValue kTungstenWire[] = {
+    { "instrument", 1.0f }, { "material", 6.0f },
+    { "cabMix", 0.0f }, { "spaceMix", 0.16f },
+};
+
+// The E-Grand that toured for a decade: the damper felt hardened until the
+// high partials slip through at release -- the zing, measured against this
+// preset's own fresh-felt twin -- and the rail cloth worn through, kept as
+// honest configuration even though a piezo bridge barely hears the key bed.
+inline constexpr ParamValue kRoadworn[] = {
+    { "instrument", 1.0f },
+    { "damperFelt", 3.0f }, { "keyBed", 3.0f },
+    { "hammerHard", 0.60f }, { "strikeNoise", 0.32f },
+    { "cabMix", 0.0f }, { "spaceMix", 0.08f },
 };
 
 // ---------------------------------------------------------------------------
@@ -406,10 +500,13 @@ inline constexpr ParamValue kReedBark[] = {
 };
 
 // The soft EP: felt-fresh hammers, drive backed under the circuit level, a
-// gentle vibrato and a bit of room. The Sunday-morning setting.
+// gentle vibrato and a bit of room. The Sunday-morning setting -- and now
+// literally felt-fresh: new damper felt and new rail cloth, the serviced
+// action the name always implied.
 inline constexpr ParamValue kSoftReed[] = {
     { "instrument", 2.0f },
     { "hammerHard", 0.30f }, { "velCurve", 0.40f },
+    { "damperFelt", 1.0f }, { "keyBed", 1.0f },
     { "preampDrive", 0.22f }, { "coilSat", 0.4f },
     { "pickupPos", 0.5f }, { "pickupDist", 0.22f },
     { "tremDepth", 0.30f }, { "tremRate", 4.6f },
@@ -439,17 +536,55 @@ inline constexpr ParamValue kContactReed[] = {
     { "outGain", -21.0f },
 };
 
-// Dark lo-fi: the coil peak pulled down, the top shelved off, the air shelf
-// cut -- the thrift-store unit on a worn 45. Vibrato slow and unsteady-deep.
+// Dark lo-fi: the thrift-store unit, aged where a real one ages. Before the
+// action and body benches this preset was EQ and drive pretending to be
+// wear; now the wear is physical -- worn damper felt gripping lazily, the
+// rail cloth worn through to its clack, a smaller cheaper case -- and the
+// coil peak and shelves only finish what the mechanism starts.
 inline constexpr ParamValue kLoFiReed[] = {
     { "instrument", 2.0f },
+    { "damperFelt", 2.0f }, { "keyBed", 3.0f },
+    { "bodyMat", 3.0f }, { "bodySize", 0.30f },
     { "coilFreq", 0.30f }, { "coilQ", 0.40f },
     { "preampDrive", 0.20f }, { "coilSat", 0.30f },
     { "pickupPos", 0.5f }, { "pickupDist", 0.20f },
-    { "treble", -4.0f }, { "clarity", -6.0f },
+    { "treble", -4.0f }, { "clarity", -5.0f },
     { "tremDepth", 0.30f }, { "tremRate", 4.0f },
     { "cabMix", 0.8f }, { "spaceMix", 0.08f },
     { "outGain", -2.0f },
+};
+
+// The body bench on the reed piano: a small birch-ply case. Light and lossy,
+// it moves far more than the stock box -- the mechanical wash comes up and
+// the whole instrument sounds smaller and closer, a practice unit on a desk.
+// Departs from Two Hundred at the case.
+inline constexpr ParamValue kPocketReed[] = {
+    { "instrument", 2.0f },
+    { "bodyMat", 3.0f }, { "bodySize", 0.10f }, { "bodyMix", 0.45f },
+    { "preampDrive", 0.31f }, { "coilSat", 0.5f },
+    { "pickupPos", 0.5f }, { "pickupDist", 0.17f },
+    { "tremDepth", 0.35f }, { "tremRate", 5.6f },
+    { "cabMix", 0.75f }, { "spaceMix", 0.08f },
+    { "outGain", -6.0f },
+};
+
+// Brass reeds in the electrostatic slot -- legal, because brass is a
+// conductor and the plate only needs a conductor. A softer, springier tongue
+// that swings further for the same blow and rides the slot harder: the bite
+// comes out clearly above this preset's own steel twin, and that is the
+// measured row. The reed itself also loses energy five times faster (the
+// cantilever takes brass's internal loss in full), but measured at the
+// OUTPUT the 200A chain's compression hides most of that -- so the decay is
+// a voice-level fact here, not a claimed character. The slot is opened and
+// the drive eased because the bigger swing otherwise pushes a real DC
+// offset through the preamp's asymmetry.
+inline constexpr ParamValue kBrassReeds[] = {
+    { "instrument", 2.0f }, { "material", 3.0f },
+    { "preampDrive", 0.26f }, { "coilSat", 0.35f },
+    { "pickupPos", 0.5f }, { "pickupDist", 0.28f },
+    { "tremDepth", 0.30f }, { "tremRate", 5.0f },
+    { "cabMix", 0.7f }, { "spaceMix", 0.12f },
+    { "outGain", -6.0f },
 };
 
 // ---------------------------------------------------------------------------
@@ -490,10 +625,12 @@ inline constexpr ParamValue kWideCinema[] = {
 
 // The felt/soft voicing: light curve, the softest useful hammer, the
 // mechanism audible the way it is when the strike stops masking it. What
-// players reach for where a real una corda would go.
+// players reach for where a real una corda would go. Fresh damper felt,
+// because the felt-piano sound is a serviced instrument played gently.
 inline constexpr ParamValue kFeltGrand[] = {
     { "instrument", 3.0f },
     { "velCurve", 0.62f }, { "hammerHard", 0.22f }, { "hammerMass", 0.62f },
+    { "damperFelt", 1.0f },
     { "strikeNoise", 0.30f }, { "clarity", -4.0f },
     { "cabMix", 0.0f }, { "spaceMix", 0.25f }, { "spaceSize", 0.60f },
     { "outGain", -2.0f },
@@ -505,6 +642,51 @@ inline constexpr ParamValue kStageGrand[] = {
     { "instrument", 3.0f },
     { "damperGrip", 0.70f }, { "clarity", 1.5f },
     { "cabMix", 0.0f }, { "spaceMix", 0.08f }, { "spaceSize", 0.30f },
+};
+
+// The parlor instrument: a small maple board. Every board mode moves up and
+// the radiation corner with it -- the bottom octave thins the way a short
+// piano's bottom octave thins, by geometry, not EQ. The board row measures
+// the low band against this preset's own stock-board twin.
+inline constexpr ParamValue kParlor[] = {
+    { "instrument", 3.0f },
+    { "bodyMat", 2.0f }, { "bodySize", 0.05f },
+    { "cabMix", 0.0f }, { "spaceMix", 0.12f }, { "spaceSize", 0.35f },
+};
+
+// The board at full size: the whole ladder shifts down, and what that
+// audibly buys -- measured, not assumed -- is the released tail: after the
+// pedal lifts, the big board's low modes go on carrying where the stock
+// board has already let go. The harness row measures exactly that band.
+// Departs from Concert Grand at the board and a longer room.
+inline constexpr ParamValue kNineFoot[] = {
+    { "instrument", 3.0f },
+    { "bodySize", 1.0f },
+    { "cabMix", 0.0f }, { "spaceMix", 0.18f }, { "spaceSize", 0.70f },
+};
+
+// Polymer strings on the grand -- legal because the mics hear everything.
+// Nylon's bending stiffness is nothing against its tension, so the partials
+// sit almost exactly harmonic -- and, measured, the top SPEAKS: material
+// loss enters strings through the bending share only, which for nylon is
+// nearly zero, so the light courses ring clear and glassy where wire's
+// stretched partials crowd. A harp with a keyboard, not a muffled piano.
+inline constexpr ParamValue kHarpGrand[] = {
+    { "instrument", 3.0f }, { "material", 7.0f },
+    { "hammerHard", 0.35f },
+    { "cabMix", 0.0f }, { "spaceMix", 0.20f }, { "spaceSize", 0.55f },
+};
+
+// The saloon piano: unisons spread a tuner's year apart, worn damper felt,
+// hard bright hammers and the mechanism up. The wear is the action bench's,
+// not an EQ imitation; the honky-tonk chorus is the detune spread doing what
+// it does on a real neglected grand.
+inline constexpr ParamValue kSaloon[] = {
+    { "instrument", 3.0f },
+    { "tipMass", 0.85f }, { "hammerHard", 0.70f },
+    { "damperFelt", 2.0f }, { "strikeNoise", 0.32f },
+    { "clarity", 1.0f },
+    { "cabMix", 0.0f }, { "spaceMix", 0.10f }, { "spaceSize", 0.35f },
 };
 
 // ---------------------------------------------------------------------------
@@ -565,6 +747,20 @@ inline constexpr ParamValue kClavBiting[] = {
     { "spaceMix", 0.05f },
 };
 
+// The aged instrument: the yarn damper compressed to old wool, so the
+// release drop hangs out instead of thupping shut, and the clamp losses up
+// a touch. The Clav's honest aging lives in the yarn: the felt and rail
+// benches reach the hammer instruments only, so this preset does not
+// pretend to use them.
+inline constexpr ParamValue kAgedClav[] = {
+    { "instrument", 4.0f },
+    { "clavSwitch", 2.0f }, { "clavMed", 1.0f },
+    { "damperGrip", 0.15f }, { "resDamp", 0.45f },
+    { "preampDrive", 0.30f },
+    { "treble", -1.0f },
+    { "spaceMix", 0.08f },
+};
+
 inline constexpr Preset kPresets[] = {
     { "Suitcase",      0, kSuitcase,     std::size (kSuitcase) },
     { "Stage DI",      0, kStageDI,      std::size (kStageDI) },
@@ -579,10 +775,13 @@ inline constexpr Preset kPresets[] = {
     { "Electro Tine",  0, kElectroTine,  std::size (kElectroTine) },
     { "Contact Tine",  0, kContactTine,  std::size (kContactTine) },
     { "Bronze Bars",   0, kBronzeBars,   std::size (kBronzeBars) },
+    { "Alloy Tines",   0, kAlloyTines,   std::size (kAlloyTines) },
+    { "Tired Stage",   0, kTiredStage,   std::size (kTiredStage) },
     { "Just Ballad",   0, kJustBallad,   std::size (kJustBallad) },
     { "Slendro Bells", 0, kSlendroBells, std::size (kSlendroBells) },
     { "Quarter Keys",  0, kQuarterKeys,  std::size (kQuarterKeys) },
     { "Barroom",       0, kBarroom,      std::size (kBarroom) },
+    { "Gong Temple",   0, kGongTemple,   std::size (kGongTemple) },
 
     { "CP-70",         1, kCP70,         std::size (kCP70) },
     { "Bright Pop",    1, kBrightPop,    std::size (kBrightPop) },
@@ -592,6 +791,9 @@ inline constexpr Preset kPresets[] = {
     { "Electro Grand", 1, kElectroGrand, std::size (kElectroGrand) },
     { "Chorus Era",    1, kChorusEra,    std::size (kChorusEra) },
     { "Pedal Wash",    1, kPedalWash,    std::size (kPedalWash) },
+    { "Studio Frame",  1, kStudioFrame,  std::size (kStudioFrame) },
+    { "Tungsten Wire", 1, kTungstenWire, std::size (kTungstenWire) },
+    { "Roadworn",      1, kRoadworn,     std::size (kRoadworn) },
 
     { "Two Hundred",   2, kTwoHundred,   std::size (kTwoHundred) },
     { "Reed Soul",     2, kReedSoul,     std::size (kReedSoul) },
@@ -602,6 +804,8 @@ inline constexpr Preset kPresets[] = {
     { "Reed Tremolo",  2, kReedTremolo,  std::size (kReedTremolo) },
     { "Contact Reed",  2, kContactReed,  std::size (kContactReed) },
     { "Lo-Fi Reed",    2, kLoFiReed,     std::size (kLoFiReed) },
+    { "Pocket Reed",   2, kPocketReed,   std::size (kPocketReed) },
+    { "Brass Reeds",   2, kBrassReeds,   std::size (kBrassReeds) },
 
     { "Concert Grand", 3, kConcertGrand, std::size (kConcertGrand) },
     { "Close Pop",     3, kClosePop,     std::size (kClosePop) },
@@ -609,6 +813,10 @@ inline constexpr Preset kPresets[] = {
     { "Wide Cinema",   3, kWideCinema,   std::size (kWideCinema) },
     { "Felt Grand",    3, kFeltGrand,    std::size (kFeltGrand) },
     { "Stage Grand",   3, kStageGrand,   std::size (kStageGrand) },
+    { "Parlor",        3, kParlor,       std::size (kParlor) },
+    { "Nine Foot",     3, kNineFoot,     std::size (kNineFoot) },
+    { "Harp Grand",    3, kHarpGrand,    std::size (kHarpGrand) },
+    { "Saloon",        3, kSaloon,       std::size (kSaloon) },
 
     { "Clav Classic",  4, kClavClassic,  std::size (kClavClassic) },
     { "Clav Funk",     4, kClavFunk,     std::size (kClavFunk) },
@@ -616,6 +824,7 @@ inline constexpr Preset kPresets[] = {
     { "Clav Phaser",   4, kClavPhaser,   std::size (kClavPhaser) },
     { "Velvet Clav",   4, kClavVelvet,   std::size (kClavVelvet) },
     { "Biting Clav",   4, kClavBiting,   std::size (kClavBiting) },
+    { "Aged Clav",     4, kAgedClav,     std::size (kAgedClav) },
 };
 
 inline constexpr std::size_t kNumPresets = std::size (kPresets);
@@ -634,7 +843,8 @@ inline const std::array<float, 5>* cabModsFor (const char* name)
     static const std::array<float, 5> wurli { 0.62f, 0.90f, 0.60f, 0.35f, 0.35f };
     for (const char* n : { "Two Hundred", "Reed Soul", "Sagging Rail",
                            "Reed Grind", "Reed Bark", "Soft Reed",
-                           "Reed Tremolo", "Lo-Fi Reed" })
+                           "Reed Tremolo", "Lo-Fi Reed", "Pocket Reed",
+                           "Brass Reeds" })
         if (std::strcmp (name, n) == 0) return &wurli;
     return nullptr;
 }
@@ -715,11 +925,28 @@ inline const TineTable* tineModsFor (const char* name)
         }
         return t;
     }();
+    // Tired Stage drifts, it is not derelict: the same deterministic scatter
+    // idea at +/- five cents, hashed differently so the two aged instruments
+    // are not the same instrument.
+    static const TineTable tired = [] {
+        TineTable t {};
+        for (int i = 0; i < 88; ++i)
+        {
+            const unsigned h = ((static_cast<unsigned> (i) + 41u) * 2246822519u) & 1023u;
+            const double cents = (h / 1023.0 - 0.5) * 10.0;
+            t[static_cast<std::size_t> (i)] = { detail::lenForCents (cents), 1.0f };
+        }
+        return t;
+    }();
 
     if (std::strcmp (name, "Just Ballad") == 0)   return &just;
     if (std::strcmp (name, "Slendro Bells") == 0) return &slendro;
+    // Gong Temple shares the slendro map: the geometry is the point, the
+    // bronze and the case are its own departures.
+    if (std::strcmp (name, "Gong Temple") == 0)   return &slendro;
     if (std::strcmp (name, "Quarter Keys") == 0)  return &quarter;
     if (std::strcmp (name, "Barroom") == 0)       return &barroom;
+    if (std::strcmp (name, "Tired Stage") == 0)   return &tired;
     return nullptr;
 }
 

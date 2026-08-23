@@ -7,6 +7,12 @@ All notable changes to Epi are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- The grand's string workshop: per-course length and gauge, pitch
+  following 1/L and inharmonicity d^2/L^2, with the gauge also carrying
+  its tension -- a fatter wire at pitch takes proportionally more,
+  which moves the string's impedance into the bridge (measured: a 0.6x
+  wire plays 5.8 dB softer and holds its energy, a 1.6x wire 4.6 dB
+  louder with the heavier drain).
 - The body bench: every instrument's frame, bar or board can be re-made
   (stock, three soundboard woods, four metals) and re-sized (0.7x to
   1.43x), with the plate family's own physics -- mode ladder by
@@ -35,6 +41,18 @@ All notable changes to Epi are documented here. The format follows
   Pedals sections, the Mic Studio, and fresh screenshots.
 
 ### Fixed
+- The Clav's tone rockers now divide against the pickup's source
+  impedance instead of an ideal source: the Treble branch's LC computed
+  to a Q near 340 and screamed at 1.6 kHz under the funk registration
+  (26 dB less high-band hash after), and Brilliant becomes the 1.5 kHz
+  high-pass a bare inductor to ground physically is.
+- The output rail's ceiling moved to -1 dBFS: topping at exactly full
+  scale read as clipping on host meters and left nothing for
+  inter-sample peaks.
+- The loudness bench raised to -18 dBFS mezzo-forte across all five
+  instruments -- the plugin sat quiet in sessions.
+- The plugin window grew to hold the new benches; the bottom row was
+  clipping.
 - Six engine defects the new suite caught on its first run: the
   instrument-switch seam froze several chain stages mid-signal and
   snapped them on re-entry (a -12 dBFS burst on a tight switch tour);
