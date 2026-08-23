@@ -189,6 +189,9 @@ public:
         // Damper felt condition, 0 stock: fresh grips faster, worn lazily,
         // hardened lets the high partials escape -- two bands split at 1.2 kHz.
         double damperFelt     = 0.0;
+    // The hammer's covering, 0 stock: soft felt, hard felt, lacquered,
+    // leather, wood -- relative to this instrument's own stock felt.
+    double hammerMat      = 0.0;
         bool   unaCorda       = false;  // CC67: shifted action
     };
 
@@ -197,7 +200,7 @@ public:
     // pack with no interior holes, and the engine zero-initialises whole
     // structs, so the tail bytes compare equal too.
     static_assert (std::is_trivially_copyable<Config>::value, "Config must be memcmp-able");
-    static_assert (sizeof (Config) == 10 * sizeof (double), "Config has interior padding");
+    static_assert (sizeof (Config) == 11 * sizeof (double), "Config has interior padding");
 
     void prepare (double sampleRate)
     {
@@ -742,10 +745,12 @@ private:
                 return logI ? lo * std::pow (hi / lo, t) : lo + (hi - lo) * t;
             };
             hammerCfg.alpha     = lerp3 (2.3, 2.5, 3.0, false);
-            hammerCfg.stiffness = lerp3 (4.0e8, 4.5e9, 1.0e10, true)
+            const HammerCover hcov = hammerCover (std::clamp (static_cast<int> (cfg.hammerMat + 0.5), 0, 5));
+            hammerCfg.alpha     = std::clamp (hammerCfg.alpha + hcov.alphaAdd, 1.2, 3.5);
+            hammerCfg.stiffness = hcov.stiff * lerp3 (4.0e8, 4.5e9, 1.0e10, true)
                                 * std::pow (12.0, cfg.hammerHardness - 0.5)
                                 * (unaCordaActive && numStrings == 1 ? 0.7 : 1.0);
-            hammerCfg.lambda    = 1.0;   // felt hysteresis stand-in
+            hammerCfg.lambda    = 1.0 * hcov.lambda;   // felt hysteresis stand-in
             hammerCfg.mass      = 0.012 * std::pow (5.0 / 12.0, (m - 24.0) / 84.0)
                                 * (0.6 + 0.8 * cfg.hammerMassNorm);
         }

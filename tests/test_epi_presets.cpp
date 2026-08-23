@@ -130,6 +130,7 @@ static const ParamSpec kLayout[] = {
     { "bodySize",    0.5f,    0.0f,   1.0f },
     { "damperFelt",  0.0f,    0.0f,   3.0f },
     { "keyBed",      0.0f,    0.0f,   3.0f },
+    { "hammerMat",   0.0f,    0.0f,   5.0f },
 };
 
 static const ParamSpec* findSpec (const char* id)

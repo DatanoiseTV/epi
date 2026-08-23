@@ -95,6 +95,7 @@ struct EngineParams
     float bodySize    = 0.5f;
     int   damperFelt  = 0;
     int   keyBed      = 0;
+    int   hammerMat   = 0;
     bool  clavBrill   = false;
     bool  clavTreb    = false;
     bool  clavMed     = true;
@@ -519,6 +520,8 @@ private:
                        micLvlL { 1.0f }, micLvlR { 1.0f };
     std::atomic<bool> micDirty { false };
     double micGL = 1.0, micGR = 1.0, micLidAmt = 0.0;
+    double grandBassGain = 0.0, grandTrebGain = 0.0;
+    double deskLoL = 0.0, deskLoR = 0.0, deskHiL = 0.0, deskHiR = 0.0;
     double micLidL = 0.0, micLidR = 0.0;   // one-pole states for the lid shadow
     float lastCoilSat = -1.0f;
     // How many times the output chain had to be rebuilt. Reported by tests.

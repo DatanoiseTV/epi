@@ -145,6 +145,36 @@ inline BodyScalers bodyScalers (int index)
     return r;
 }
 
+// ---------------------------------------------------------------------------
+// Hammer coverings. The Hunt-Crossley contact already carries the physics
+// (F = k delta^alpha (1 + lambda delta-dot)); a covering is a point in that
+// parameter space RELATIVE to the instrument's stock covering, which stays
+// exactly {1, 0, 1}. Soft fresh felt is compliant, more compressive (the
+// exponent rises -- hardness grows with depth) and lossy; lacquered concert
+// felt is the doped bright top; leather is the early-instrument covering,
+// nearly linear and very lossy; wood is the tack-piano clack, stiff and
+// almost elastic.
+// ---------------------------------------------------------------------------
+struct HammerCover
+{
+    double stiff;      // multiplies k
+    double alphaAdd;   // adds to the exponent
+    double lambda;     // multiplies the hysteresis loss
+};
+
+inline HammerCover hammerCover (int i)
+{
+    switch (i)
+    {
+        default: return { 1.0,   0.0,  1.0 };   // 0 stock
+        case 1:  return { 0.35,  0.4,  1.6 };   // soft felt
+        case 2:  return { 2.5,   0.1,  0.8 };   // hard felt
+        case 3:  return { 6.0,  -0.1,  0.5 };   // lacquered
+        case 4:  return { 0.5,  -0.3,  2.5 };   // leather
+        case 5:  return { 20.0, -0.6,  0.3 };   // wood
+    }
+}
+
 // A measured T60 is a clamp-limited number: steel's internal loss is
 // negligible against what the mount takes (the comment above), so the
 // calibrated decay IS the clamp. A different material adds its own internal

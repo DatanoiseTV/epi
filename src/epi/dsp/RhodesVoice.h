@@ -139,6 +139,10 @@ public:
         // fine ripple, so the high partials escape it -- the zing of an old
         // damper. Two grip bands, split at 1.2 kHz.
         double damperFelt     = 0.0;
+        // The hammer's covering, 0 stock: soft felt, hard felt, lacquered,
+        // leather, wood -- a point in the contact law's parameter space
+        // relative to this instrument's own stock covering.
+        double hammerMat      = 0.0;
 
         // Resonator
         double tuningSpring   = 0.5;
@@ -166,7 +170,7 @@ public:
     // needs rebuilding, so it must have no padding for that comparison to mean
     // what it says.
     static_assert (std::is_trivially_copyable<Config>::value, "Config must be memcmp-able");
-    static_assert (sizeof (Config) == 15 * sizeof (double), "Config has padding");
+    static_assert (sizeof (Config) == 16 * sizeof (double), "Config has padding");
 
     void prepare (double sampleRate, const MagneticPickup* sharedField)
     {
@@ -1296,6 +1300,12 @@ private:
         // should have.
         hammerCfg.stiffness = 6.0e6 * std::pow (12.0, cfg.hammerHardness - 0.5);
         hammerCfg.lambda    = 2.4 - 1.6 * cfg.hammerHardness;
+        {
+            const HammerCover hc = hammerCover (std::clamp (static_cast<int> (cfg.hammerMat + 0.5), 0, 5));
+            hammerCfg.stiffness *= hc.stiff;
+            hammerCfg.alpha      = std::clamp (hammerCfg.alpha + hc.alphaAdd, 1.2, 3.5);
+            hammerCfg.lambda    *= hc.lambda;
+        }
 
         // Stability guard on the contact.
         //

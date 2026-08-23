@@ -283,6 +283,10 @@ public:
         // Damper felt condition, 0 stock: fresh grips faster, worn lazily,
         // hardened lets the high partials escape -- two bands split at 1.2 kHz.
         double damperFelt     = 0.0;
+        // The hammer's covering, 0 stock: soft felt, hard felt, lacquered,
+        // leather, wood -- a point in the contact law's parameter space
+        // relative to this instrument's own stock covering.
+        double hammerMat      = 0.0;
 
 
         // Resonator
@@ -311,7 +315,7 @@ public:
     // needs rebuilding, so it must have no padding for that comparison to
     // mean what it says.
     static_assert (std::is_trivially_copyable<Config>::value, "Config must be memcmp-able");
-    static_assert (sizeof (Config) == 12 * sizeof (double), "Config has padding");
+    static_assert (sizeof (Config) == 13 * sizeof (double), "Config has padding");
 
     void prepare (double sampleRate, const MagneticPickup* sharedField = nullptr)
     {
@@ -797,6 +801,12 @@ private:
         const double reg = registerPosition();
         hammerCfg.alpha  = 2.6;
         hammerCfg.lambda = 3.5;
+        {
+            const HammerCover hc = hammerCover (std::clamp (static_cast<int> (cfg.hammerMat + 0.5), 0, 5));
+            hammerCoverStiff = hc.stiff;
+            hammerCfg.alpha  = std::clamp (hammerCfg.alpha + hc.alphaAdd, 1.2, 3.5);
+            hammerCfg.lambda *= hc.lambda;
+        }
         // ~4 g bass to ~2 g treble -- small maple hammers, no primary figure,
         // flagged in the plan.
         hammerCfg.mass = (0.004 - 0.002 * reg) * (0.6 + 0.8 * std::clamp (cfg.hammerMassNorm, 0.0, 1.0));
@@ -823,7 +833,7 @@ private:
                 else                                                     lgHi = mid;
             }
             const double kWant = std::pow (10.0, 0.5 * (lgLo + lgHi));
-            hammerCfg.stiffness = kWant * std::pow (12.0, std::clamp (cfg.hammerHardness, 0.0, 1.0) - 0.5);
+            hammerCfg.stiffness = kWant * std::pow (12.0, std::clamp (cfg.hammerHardness, 0.0, 1.0) - 0.5) * hammerCoverStiff;
 
             // Same explicit-contact stability principle as the other
             // instruments -- past a fraction of the sample rate the explicit
@@ -960,6 +970,7 @@ private:
     double damperFactor = 1.0;
     double damperEff = 1.0, damperEffHi = 1.0;
     double feltWLo = 1.0, feltWHi = 1.0;
+    double hammerCoverStiff = 1.0;
     double pedalAmt = 0.0;
     double beatDelta = 2.4, beatDepth = 0.08, beatPhase = 0.0;
     double peakEnergy = 1.0e-30;

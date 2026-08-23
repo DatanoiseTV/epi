@@ -27,6 +27,11 @@ function ActionPanel({ inst }) {
           {inst <= 2 && <PCycle id="keyBed" options={KEYBEDS} label="KEYBED" />}
         </div>
       )}
+      {inst !== 4 && (
+        <div className="matrow bodyrow">
+          <PCycle id="hammerMat" options={HAMMERS} label="HAMMER" />
+        </div>
+      )}
       <div className="note">hammer tip · escapement · felt</div>
     </div>
   );
@@ -334,9 +339,11 @@ function AmpPanel({ inst }) {
           one tone control on this path; drive, cabinet and tremolo belong to
           the electrics and would be dead knobs here. */}
       <div className="krow">
+        <PKnob id="bass" label="BASS" />
+        <PKnob id="treble" label="TREBLE" />
         <PKnob id="clarity" label="CLARITY" />
       </div>
-      <div className="note">mics to the desk · no amp in the path</div>
+      <div className="note">the desk's shelf pair · not part of the instrument</div>
     </div>
   );
   return (

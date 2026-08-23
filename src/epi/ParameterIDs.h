@@ -68,6 +68,8 @@ namespace epi::ids
     inline constexpr const char* coilSat    = "coilSat";    // 0..1 core saturation
 
     // Clavinet pickup switching. Order must match epi::PickupSelect.
+    inline const juce::StringArray hammerMatNames {
+        "Stock", "Soft Felt", "Hard Felt", "Lacquered", "Leather", "Wood" };
     inline const juce::StringArray damperFeltNames {
         "Stock", "Fresh", "Worn", "Hardened" };
     inline const juce::StringArray keyBedNames {
@@ -111,6 +113,7 @@ namespace epi::ids
     inline constexpr const char* bodySize    = "bodySize";    // 0..1, 0.5 = stock scale
     inline constexpr const char* damperFelt  = "damperFelt";  // choice: felt condition
     inline constexpr const char* keyBed      = "keyBed";      // choice: rail cloth
+    inline constexpr const char* hammerMat   = "hammerMat";   // choice: hammer covering
     inline constexpr const char* tremStereo  = "tremStereo";  // 0..1
     inline constexpr const char* cabMix      = "cabMix";      // 0..1
     inline constexpr const char* phaserMix   = "phaserMix";   // 0..1
@@ -295,6 +298,8 @@ namespace epi::ids
                                    damperFeltNames, 0));
         add (std::make_unique<Pc> (juce::ParameterID { keyBed, 1 }, "Key Bed",
                                    keyBedNames, 0));
+        add (std::make_unique<Pc> (juce::ParameterID { hammerMat, 1 }, "Hammer Covering",
+                                   hammerMatNames, 0));
 
         return { params.begin(), params.end() };
     }

@@ -144,6 +144,10 @@ public:
         // Damper felt condition, 0 stock: fresh grips faster, worn lazily,
         // hardened lets the high partials escape -- two bands split at 1.2 kHz.
         double damperFelt     = 0.0;
+        // The hammer's covering, 0 stock: soft felt, hard felt, lacquered,
+        // leather, wood -- a point in the contact law's parameter space
+        // relative to this instrument's own stock covering.
+        double hammerMat      = 0.0;
 
         double detuneSpread   = 0.5;    // "tipMass" knob: unison beat 0..~0.4 Hz (cents scale as 1/f0)
         double dampTrim       = 0.5;    // "resDamp": global alpha trim x0.7..1.5
@@ -692,6 +696,12 @@ private:
         hammerCfg.stiffness = 1.3e8 * std::pow (1.2e9 / 1.3e8, reg)
                             * std::pow (12.0, cfg.hammerHardness - 0.5);
         hammerCfg.lambda = 0.6;
+        {
+            const HammerCover hc = hammerCover (std::clamp (static_cast<int> (cfg.hammerMat + 0.5), 0, 5));
+            hammerCfg.stiffness *= hc.stiff;
+            hammerCfg.alpha      = std::clamp (hammerCfg.alpha + hc.alphaAdd, 1.2, 3.5);
+            hammerCfg.lambda    *= hc.lambda;
+        }
         hammerCfg.mass = 0.011 * std::pow (4.0 / 11.0, reg)
                        * (0.6 + 0.8 * cfg.hammerMassNorm);
         {

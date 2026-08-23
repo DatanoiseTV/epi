@@ -223,6 +223,7 @@ RhodesVoice::Config EpiEngine::rhodesConfig (const EngineParams& p) const
     c.transducer = static_cast<double> (p.transducer);
     c.material   = static_cast<double> (p.material);
     c.damperFelt = static_cast<double> (p.damperFelt);
+    c.hammerMat  = static_cast<double> (p.hammerMat);
     return c;
 }
 
@@ -243,6 +244,7 @@ CP70Voice::Config EpiEngine::cp70Config (const EngineParams& p) const
     c.transducer    = static_cast<double> (p.transducer);
     c.material      = static_cast<double> (p.material);
     c.damperFelt    = static_cast<double> (p.damperFelt);
+    c.hammerMat     = static_cast<double> (p.hammerMat);
     // The point pickups gain the coordinate the bridge never had: position
     // along the string from the height knob, gap from the gap knob.
     c.pickupPosNorm = 0.5 + 0.5 * static_cast<double> (p.pickupPos);
@@ -271,6 +273,7 @@ WurliVoice::Config EpiEngine::wurliConfig (const EngineParams& p) const
     c.transducer = static_cast<double> (p.transducer);
     c.material   = static_cast<double> (p.material);
     c.damperFelt = static_cast<double> (p.damperFelt);
+    c.hammerMat  = static_cast<double> (p.hammerMat);
     return c;
 }
 
@@ -290,6 +293,7 @@ GrandVoice::Config EpiEngine::grandConfig (const EngineParams& p) const
                      + 100.0 * static_cast<double> (bendSemis);
     c.material       = static_cast<double> (p.material);
     c.damperFelt     = static_cast<double> (p.damperFelt);
+    c.hammerMat      = static_cast<double> (p.hammerMat);
     c.unaCorda       = unaCorda;
     return c;
 }
@@ -1011,8 +1015,15 @@ void EpiEngine::processGrand (float* outL, float* outR, int numSamples,
     {
         const float k = smoothK (numSamples);
         sm.step (sm.air, p.clarityDb, k);
+        sm.step (sm.bass, p.bassDb, k * 0.35f);
+        sm.step (sm.treb, p.trebleDb, k * 0.35f);
         airL.set (sm.air, fs);
         airR.set (sm.air, fs);
+        // The desk the mics feed: a channel-strip shelf pair, not part of
+        // the instrument -- same honest framing as the effects. Gain-blend
+        // shelves, gliding per block like the electrics' tone.
+        grandBassGain = std::pow (10.0, std::clamp (sm.bass, -12.0f, 12.0f) / 20.0) - 1.0;
+        grandTrebGain = std::pow (10.0, std::clamp (sm.treb, -12.0f, 12.0f) / 20.0) - 1.0;
     }
     phaserL.setParams (p.phaserRate, p.phaserDepth, p.phaserFb, p.phaserMix);
     phaserR.setParams (p.phaserRate, p.phaserDepth, p.phaserFb, p.phaserMix);
@@ -1091,6 +1102,16 @@ void EpiEngine::processGrand (float* outL, float* outR, int numSamples,
         double l = grandBoard.outputL() + tl;
         double r = grandBoard.outputR() + tr;
         grandMics.tick (l, r);
+        // The desk's shelf pair (see the block above).
+        if (grandBassGain != 0.0 || grandTrebGain != 0.0)
+        {
+            const double aB = 1.0 - std::exp (-2.0 * kPiD * 120.0 / fs);
+            const double aT = 1.0 - std::exp (-2.0 * kPiD * 2500.0 / fs);
+            deskLoL += (l - deskLoL) * aB; deskLoR += (r - deskLoR) * aB;
+            deskHiL += (l - deskHiL) * aT; deskHiR += (r - deskHiR) * aT;
+            l += grandBassGain * deskLoL + grandTrebGain * (l - deskHiL);
+            r += grandBassGain * deskLoR + grandTrebGain * (r - deskHiR);
+        }
         // The lid shadow: past the rim the board's high band falls off-axis.
         // A one-pole at 4 kHz crossfaded by distance -- about -6 dB at the
         // top of the range, which is the lid's own geometry, not a tone
