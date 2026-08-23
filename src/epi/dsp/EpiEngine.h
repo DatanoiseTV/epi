@@ -96,6 +96,7 @@ struct EngineParams
     int   damperFelt  = 0;
     int   keyBed      = 0;
     int   hammerMat   = 0;
+    int   roomProfile = 0;
     bool  clavBrill   = false;
     bool  clavTreb    = false;
     bool  clavMed     = true;

@@ -146,7 +146,7 @@
       const ev = mk();
       sliders[id] = { getNormalisedValue: () => v, setNormalisedValue: (n) => { v = n; ev.fire(); }, valueChangedEvent: ev };
     });
-    [['pickupSel', 1], ['instrument', 0], ['material', 0], ['clavSwitch', 0], ['bodyMat', 0], ['damperFelt', 0], ['keyBed', 0], ['hammerMat', 0]].forEach(([id, d]) => {
+    [['pickupSel', 1], ['instrument', 0], ['material', 0], ['clavSwitch', 0], ['bodyMat', 0], ['damperFelt', 0], ['keyBed', 0], ['hammerMat', 0], ['roomProfile', 0]].forEach(([id, d]) => {
       let i = d; const ev = mk();
       combos[id] = { getChoiceIndex: () => i, setChoiceIndex: (n) => { i = n; ev.fire(); }, valueChangedEvent: ev };
     });
@@ -354,6 +354,9 @@
   global.FELTS = ['STOCK', 'FRESH', 'WORN', 'HARDENED'];
   global.KEYBEDS = ['STOCK', 'FRESH FELT', 'LEATHER', 'WORN'];
   global.HAMMERS = ['STOCK', 'SOFT FELT', 'HARD FELT', 'LACQUERED', 'LEATHER', 'WOOD'];
+  // Room.h profiles: CUSTOM is the shipped size-mapped room; the rest are
+  // surveyed spaces with Eyring decays from published absorption data.
+  global.ROOMS = ['CUSTOM', 'BOOTH', 'STUDIO', 'STAGE', 'HALL', 'CHURCH'];
   global.MAT_FERRO = MAT_FERRO;
   global.MAT_COND = MAT_COND;
 })(window);

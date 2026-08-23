@@ -398,6 +398,7 @@ function FxPanel() {
         <PKnob id="phaserFb" label="PH RES" />
         <PKnob id="spaceMix" label="ROOM" />
         <PKnob id="spaceSize" label="SIZE" />
+        <PCycle id="roomProfile" options={ROOMS} label="SPACE" />
       </div>
     </div>
   );

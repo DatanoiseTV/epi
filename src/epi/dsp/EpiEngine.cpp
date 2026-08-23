@@ -668,6 +668,7 @@ void EpiEngine::processActive (float* outL, float* outR, int numSamples,
     // Recomputing eight decay coefficients and a damping cutoff is cheap, but
     // not per sample, and the size control has no reason to be smoothed: it
     // changes the room, and rooms do not change during a note.
+    room.setProfile (p.roomProfile);   // idempotent: early-outs unchanged
     if (std::abs (p.spaceSize - lastSpaceSize) > 1.0e-4f)
     {
         lastSpaceSize = p.spaceSize;
@@ -1029,6 +1030,7 @@ void EpiEngine::processGrand (float* outL, float* outR, int numSamples,
     }
     phaserL.setParams (p.phaserRate, p.phaserDepth, p.phaserFb, p.phaserMix);
     phaserR.setParams (p.phaserRate, p.phaserDepth, p.phaserFb, p.phaserMix);
+    room.setProfile (p.roomProfile);   // idempotent: early-outs unchanged
     if (std::abs (p.spaceSize - lastSpaceSize) > 1.0e-4f)
     {
         lastSpaceSize = p.spaceSize;
@@ -1235,6 +1237,7 @@ void EpiEngine::processClav (float* outL, float* outR, int numSamples,
     clavPre.setDrive (0.552 * std::pow (7.25, static_cast<double> (std::clamp (sm.drive, 0.0f, 1.0f))));
     phaserL.setParams (p.phaserRate, p.phaserDepth, p.phaserFb, p.phaserMix);
     phaserR.setParams (p.phaserRate, p.phaserDepth, p.phaserFb, p.phaserMix);
+    room.setProfile (p.roomProfile);   // idempotent: early-outs unchanged
     if (std::abs (p.spaceSize - lastSpaceSize) > 1.0e-4f)
     {
         lastSpaceSize = p.spaceSize;
@@ -1451,6 +1454,7 @@ void EpiEngine::processCP70 (float* outL, float* outR, int numSamples,
         cabinetBL.setVoicing (b, c, d, a, su);
         cabinetBR.setVoicing (b, c, d, a, su);
     }
+    room.setProfile (p.roomProfile);   // idempotent: early-outs unchanged
     if (std::abs (p.spaceSize - lastSpaceSize) > 1.0e-4f)
     {
         lastSpaceSize = p.spaceSize;
@@ -1704,6 +1708,7 @@ void EpiEngine::processWurli (float* outL, float* outR, int numSamples,
         cabinetBL.setVoicing (b, c, d, a, su);
         cabinetBR.setVoicing (b, c, d, a, su);
     }
+    room.setProfile (p.roomProfile);   // idempotent: early-outs unchanged
     if (std::abs (p.spaceSize - lastSpaceSize) > 1.0e-4f)
     {
         lastSpaceSize = p.spaceSize;

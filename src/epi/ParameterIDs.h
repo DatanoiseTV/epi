@@ -75,6 +75,12 @@ namespace epi::ids
     inline const juce::StringArray keyBedNames {
         "Stock", "Fresh Felt", "Leather", "Worn" };
 
+    // The output-stage room. Custom is the shipped size-mapped room,
+    // bit-exact; the rest are surveyed spaces with Eyring decays derived
+    // from published absorption data (Room.h, room-acoustics-measured.md).
+    inline const juce::StringArray roomProfileNames {
+        "Custom", "Booth", "Studio", "Stage", "Hall", "Church" };
+
     inline const juce::StringArray bodyMatNames {
         // Index 0 is whatever the instrument was calibrated with.
         "Stock", "Spruce", "Maple", "Birch Ply",
@@ -114,6 +120,7 @@ namespace epi::ids
     inline constexpr const char* damperFelt  = "damperFelt";  // choice: felt condition
     inline constexpr const char* keyBed      = "keyBed";      // choice: rail cloth
     inline constexpr const char* hammerMat   = "hammerMat";   // choice: hammer covering
+    inline constexpr const char* roomProfile = "roomProfile"; // choice: which room
     inline constexpr const char* tremStereo  = "tremStereo";  // 0..1
     inline constexpr const char* cabMix      = "cabMix";      // 0..1
     inline constexpr const char* phaserMix   = "phaserMix";   // 0..1
@@ -300,6 +307,10 @@ namespace epi::ids
                                    keyBedNames, 0));
         add (std::make_unique<Pc> (juce::ParameterID { hammerMat, 1 }, "Hammer Covering",
                                    hammerMatNames, 0));
+
+        // The room the output stage plays into.
+        add (std::make_unique<Pc> (juce::ParameterID { roomProfile, 1 }, "Room",
+                                   roomProfileNames, 0));
 
         return { params.begin(), params.end() };
     }
