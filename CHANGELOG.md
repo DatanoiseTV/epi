@@ -7,6 +7,11 @@ All notable changes to Epi are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Two grand presets that ship a mic-stage placement -- Jazz Club (a
+  close pair over the open lid, stage room) and Cathedral (a far high
+  pair with a center fill, church room) -- riding a new factory-table
+  mechanism for stage placements; every other preset keeps leaving the
+  player's stage alone, proved by a state-suite row.
 - The Clav's case and its mechanical truth, from a practitioner's
   report (recorded as primary evidence): six plate modes derived from
   the real cabinet reach the pickup by structure-borne sound (a pickup

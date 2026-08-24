@@ -122,6 +122,21 @@ int main()
              near (b.getMicStage(), EpiAudioProcessor::kStageDefaults));
     }
 
+    // S6 -- a factory preset that ships a stage placement applies it, and
+    // the next plain factory load still leaves it alone (the bench rule).
+    {
+        EpiAudioProcessor a;
+        a.getPresetManager().loadByName ("Jazz Club");
+        const auto st = a.getMicStage();   // copy: the kept-check below must not compare the live array with itself
+        const bool applied = st[0] >= 0.5f            // Stage mode
+                          && st[1] >= 0.5f            // mic 1 on
+                          && std::abs (st[3] - 0.6f) < 1.0e-4f;   // z = 0.6
+        a.getPresetManager().loadFactory (0);
+        const bool kept = near (a.getMicStage(), st);
+        row ("S6", "stage-carrying factory preset applies; plain load keeps it",
+             applied && kept);
+    }
+
     std::printf ("\nSUMMARY fail=%d\n", failures);
     return failures;
 }

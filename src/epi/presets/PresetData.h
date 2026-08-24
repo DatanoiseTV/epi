@@ -644,6 +644,23 @@ inline constexpr ParamValue kStageGrand[] = {
     { "cabMix", 0.0f }, { "spaceMix", 0.08f }, { "spaceSize", 0.30f },
 };
 
+// Two presets that ship a mic-stage placement (micStageFor below):
+// the club's close pair over the open lid -- the lid image arrives with
+// the direct sound and brightens the seat -- and the church's far pair
+// with a room to match. The stage tables ride the same factory-table
+// mechanism as the pair trims.
+inline constexpr ParamValue kJazzClub[] = {
+    { "instrument", 3.0f },
+    { "clarity", 1.2f },
+    { "cabMix", 0.0f }, { "spaceMix", 0.10f }, { "roomProfile", 3.0f },
+};
+inline constexpr ParamValue kCathedral[] = {
+    { "instrument", 3.0f },
+    { "damperGrip", 0.85f },
+    { "cabMix", 0.0f }, { "spaceMix", 0.30f }, { "roomProfile", 5.0f },
+    { "spaceSize", 0.55f },
+};
+
 // The parlor instrument: a small maple board. Every board mode moves up and
 // the radiation corner with it -- the bottom octave thins the way a short
 // piano's bottom octave thins, by geometry, not EQ. The board row measures
@@ -816,6 +833,8 @@ inline constexpr Preset kPresets[] = {
     { "Parlor",        3, kParlor,       std::size (kParlor) },
     { "Nine Foot",     3, kNineFoot,     std::size (kNineFoot) },
     { "Harp Grand",    3, kHarpGrand,    std::size (kHarpGrand) },
+    { "Jazz Club",     3, kJazzClub,     std::size (kJazzClub) },
+    { "Cathedral",     3, kCathedral,    std::size (kCathedral) },
     { "Saloon",        3, kSaloon,       std::size (kSaloon) },
 
     { "Clav Classic",  4, kClavClassic,  std::size (kClavClassic) },
@@ -859,6 +878,32 @@ inline const std::array<float, 5>* micModsFor (const char* name)
     if (std::strcmp (name, "Close Pop") == 0)   return &close;
     if (std::strcmp (name, "Past The Rim") == 0) return &rim;
     if (std::strcmp (name, "Wide Cinema") == 0)  return &cinema;
+    return nullptr;
+}
+
+// Factory mic-stage placements: [mode, five of (on, x, z, h, gainDb, pan)]
+// in GrandMicStage units. Only presets named here carry one; every other
+// preset leaves the player's stage alone, like the other benches.
+inline const std::array<float, 31>* micStageFor (const char* name)
+{
+    // The club: a close pair over the open lid, the classic seat.
+    static const std::array<float, 31> jazz {
+        1.0f,
+        1.0f, 0.3f, 0.6f, 0.5f, 0.0f, -0.6f,
+        1.0f, 0.9f, 0.7f, 0.5f, 0.0f,  0.6f,
+        0.0f, 0.0f, 2.5f, 1.0f, 0.0f,  0.0f,
+        0.0f, -1.2f, 0.4f, 0.3f, -6.0f, -1.0f,
+        0.0f, 1.2f, 0.4f, 0.3f, -6.0f,  1.0f };
+    // The church: a far high pair plus a closer center fill.
+    static const std::array<float, 31> church {
+        1.0f,
+        1.0f, -0.8f, 3.2f, 1.4f, 0.0f, -0.8f,
+        1.0f,  0.8f, 3.2f, 1.4f, 0.0f,  0.8f,
+        1.0f,  0.0f, 1.2f, 0.7f, -4.0f, 0.0f,
+        0.0f, -1.2f, 0.4f, 0.3f, -6.0f, -1.0f,
+        0.0f,  1.2f, 0.4f, 0.3f, -6.0f,  1.0f };
+    if (std::strcmp (name, "Jazz Club") == 0) return &jazz;
+    if (std::strcmp (name, "Cathedral") == 0) return &church;
     return nullptr;
 }
 

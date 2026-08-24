@@ -39,4 +39,5 @@ namespace epi
     // And the grand's mic bench: { spread, balance, distance, level L,
     // level R }. Same contract as the other benches: null means hands off.
     const std::array<float, 5>* factoryMicMods (const juce::String& name);
+    const std::array<float, 31>* factoryMicStage (const juce::String& name);
 }

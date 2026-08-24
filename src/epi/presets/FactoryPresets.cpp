@@ -71,4 +71,9 @@ const std::array<float, 5>* factoryMicMods (const juce::String& name)
     return presetdata::micModsFor (name.toRawUTF8());
 }
 
+const std::array<float, 31>* factoryMicStage (const juce::String& name)
+{
+    return presetdata::micStageFor (name.toRawUTF8());
+}
+
 } // namespace epi

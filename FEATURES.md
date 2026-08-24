@@ -101,8 +101,6 @@ Not covered yet (engine level):
 - No binaural rendering (the mic stage's geometry could feed one; not
   built).
 - No morphing between instruments or between presets.
-- Factory presets cannot ship a mic-stage placement (user presets can;
-  the factory table mechanism exists only for the pair trims).
 - Continuous size sweeps on a room profile duck the wet path by design
   (the retarget ramp is the rate limit); the shipped room's size is
   instant. A coarser retarget quantisation would remove the pumping.

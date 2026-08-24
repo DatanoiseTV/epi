@@ -51,6 +51,8 @@ EpiAudioProcessor::EpiAudioProcessor()
             setCabMod ({ (*cab)[0], (*cab)[1], (*cab)[2], (*cab)[3], (*cab)[4] });
         if (const auto* mic = epi::factoryMicMods (presetManager.getCurrentName()))
             setMicMod ({ (*mic)[0], (*mic)[1], (*mic)[2], (*mic)[3], (*mic)[4] });
+        if (const auto* st = epi::factoryMicStage (presetManager.getCurrentName()))
+            setMicStage (*st);
     });
     snapshotCurrentParams();
 }
