@@ -98,6 +98,8 @@ struct EngineParams
     int   keyBed      = 0;
     int   hammerMat   = 0;
     int   roomProfile = 0;
+    int   softMode    = 0;   // CC67 mechanism: 0 shift (una corda), 1 rail (half-blow)
+    float wearAmount  = 0.0f; // tangent-rubber notching (Clav), 0 = new
     bool  clavBrill   = false;
     bool  clavTreb    = false;
     bool  clavMed     = true;
@@ -399,7 +401,8 @@ private:
     Room room;
     float lastSpaceSize = -1.0f;
 
-    bool   unaCorda    = false;   // CC67, grand only
+    bool   unaCorda    = false;   // CC67 in shift mode, grand only
+    double softAmount  = 0.0;     // CC67 continuous, for the rail (half-blow) mode
     std::atomic<float> velMapY[5] { 0.0f, 0.25f, 0.5f, 0.75f, 1.0f };
     std::atomic<bool> velMapIdentity { true };
 

@@ -177,6 +177,7 @@ void EpiEngine::reset()
     pedalDown = false;
     pedalAmount = 0.0;
     unaCorda = false;
+    softAmount = 0.0;
     coil.reset();
     decimL.reset();
     decimR.reset();
@@ -295,6 +296,7 @@ GrandVoice::Config EpiEngine::grandConfig (const EngineParams& p) const
     c.damperFelt     = static_cast<double> (p.damperFelt);
     c.hammerMat      = static_cast<double> (p.hammerMat);
     c.unaCorda       = unaCorda;
+    c.halfBlow       = p.softMode == 1 ? softAmount : 0.0;
     return c;
 }
 
@@ -327,6 +329,12 @@ ClavinetVoice::Config EpiEngine::clavConfig (const EngineParams& p) const
                      + 100.0 * static_cast<double> (bendSemis);
     c.transducer     = static_cast<double> (p.transducer);
     c.material       = static_cast<double> (p.material);
+    // The case: the shared BODY knob is the case-sense level (0.25 default
+    // lands on the calibrated 1.0), and the body bench re-makes the box.
+    c.caseAmount     = std::clamp (4.0 * static_cast<double> (p.bodyMix), 0.0, 2.0);
+    c.caseBodyMat    = static_cast<double> (p.bodyMat);
+    c.caseBodySize   = static_cast<double> (p.bodySize);
+    c.wearAmount     = static_cast<double> (p.wearAmount);
     return c;
 }
 
@@ -456,7 +464,12 @@ void EpiEngine::handleEvent (const NoteEvent& e, const EngineParams& p)
         }
 
         case NoteEvent::soft:
-            unaCorda = e.velocity > 0.5f;
+            // The left pedal has two real mechanisms; the SOFT MODE choice
+            // picks which one CC67 drives. Shift moves the action sideways
+            // (near-binary, as the real shift is); the rail tilts the
+            // hammers closer -- continuous, an upright's half-blow.
+            softAmount = std::clamp (static_cast<double> (e.velocity), 0.0, 1.0);
+            unaCorda = p.softMode == 0 && e.velocity > 0.5f;
             break;
     }
 }

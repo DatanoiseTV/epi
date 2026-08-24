@@ -26,8 +26,13 @@ Covered:
 - **Continuous sustain pedal (CC64)**: half-pedal everywhere, with the
   felt-compression law (damping raised to the 2.5 power of pedal travel) so
   the audible zone spans the pedal's travel instead of crushing into the
-  top. Sostenuto (CC66) latches exactly the held keys; una corda (CC67)
-  shifts the grand's action so the hammer meets two strings off-center.
+  top. Sostenuto (CC66) latches exactly the held keys. The left pedal
+  (CC67) has both real mechanisms as a choice: Shift slides the grand's
+  action so the hammer meets two strings off-center, and Rail is the
+  upright's half-blow -- the stroke shortens by the square-root law
+  (measured -5 dB at full pedal), continuous with the pedal, and the
+  lost motion it opens makes quiet strikes land unevenly (the "klapprig"
+  action, deterministic per strike and fenced by rows).
 - **Sympathetic resonance on every instrument**, each through its real
   path: the Tine's harp, the E-Grand's bridge frame (measured coincidence
   hierarchy: octave -19 dB, twelfth -26, wash -38), the Reed's bar
@@ -43,8 +48,7 @@ Covered:
 - **Body bench** (8 materials x continuous size): plate-law scaling (mode
   ladder by sqrt(E/rho)/s, modal mass by rho s cubed, added internal loss
   per mode), bit-exact stock at the default. Applies to Tine harp, E-Grand
-  frame, Reed frame, Grand board+radiator. (Clav case: in progress, see
-  below.)
+  frame, Reed frame, Grand board+radiator, and the Clav's case.
 - **Hammer coverings** (6): stock, soft felt, hard felt, lacquered,
   leather, wood — each a point in the Hunt-Crossley contact law's
   parameter space relative to the instrument's own stock.
@@ -242,27 +246,36 @@ second-harmonic balance held to the paper's own pickup geometry
 Verified: 42 rows, zero gaps — harmonic structure, comb notches,
 release drop, decay ripple, drive calibration.
 
-Not covered yet — **in progress right now**, from a practitioner's report
-(recorded in the research notes as primary evidence):
+Covered as of the practitioner-report pass (primary evidence recorded in
+the research notes, 18 new rows):
 
-- The case as a resonator reaching the pickup by structure-borne sound:
-  the pickup rail rides the resonating cabinet and a pickup senses
-  relative motion, so the case colors the DI even though it barely
-  radiates. The published paper's "minimal energy transfer to the body"
-  measured acoustic output only; the model currently has no case at all
-  (the one instrument without a body bench).
-- Per-key mechanical scatter: the tangent seats are stamped from bent
-  sheet metal (flexible) with crimped, sometimes crooked rubbers — the
-  current model has one global contact constant.
-- Tangent rubber wear: notches that catch the string and click,
-  different per key by usage. The analogous aging axes exist elsewhere
-  (yarn, damper felt) but not here.
-- Low-velocity seating chaos: a real instrument at pianissimo is
-  uneven per string; the model's tangent currently seats too cleanly.
-- Key-press case excitation: pressing a key excites the cabinet audibly
-  (the knock-on-wood sound, practitioner report) and reaches the DI
-  through the same structure-borne path; the instrument currently has no
-  key-action noise at all on its engine path.
+- The case in the pickup: six plate modes derived from the real cabinet's
+  dimensions and ply constants (150-602 Hz), fed by the string
+  termination forces and the key-bottom thump, sensed as relative motion
+  at the pickup rail — the case colors the DI even though it barely
+  radiates, reconciling the practitioner's report with the paper's
+  "feeble acoustic output". Measured: case energy -30.6 dB under a forte
+  fundamental; the key thump's post-release ring is 96.4% concentrated
+  at the case mode ladder (the knock-on-wood signature); the body bench
+  re-makes the box.
+- Per-key mechanical scatter: deterministic +/-30% crimp on the contact
+  stiffness and seat exponent — adjacent keys measurably uneven
+  (1.6 dB pattern difference) but bounded.
+- Tangent rubber wear (WEAR knob): a usage-shaped per-key notch profile;
+  worn rubbers catch the string at release (stick then a single let-go
+  pulse) and seat roughly at pianissimo. Wear zero is bit-identical to
+  the mint instrument.
+- Low-velocity chatter, emergent: the stamped-bracket compliance is a
+  real series spring, and at pp some keys seat in two or more measured
+  contact episodes while forte always seats in one — no injected noise.
+
+Not covered yet:
+
+- The case constants are derived, not fitted: mode table awaits the
+  offered isolation recordings (case knocks, muted key presses, string
+  pull-offs) from a real instrument.
+- Wear is one global amount over a fixed usage profile; a per-key wear
+  table (like the tine and pickup tables) is not built.
 
 ---
 

@@ -35,6 +35,7 @@ function ActionPanel({ inst }) {
       {inst !== 4 && (
         <div className="matrow bodyrow">
           <PCycle id="hammerMat" options={HAMMERS} label="HAMMER" />
+          {inst === 3 && <PCycle id="softMode" options={['SHIFT', 'RAIL']} label="SOFT PED" />}
         </div>
       )}
       <div className="note">hammer tip · escapement · felt</div>
@@ -118,7 +119,15 @@ function TinePanel({ inst }) {
           yarn does the rest at release), and the tangent's rest distance
           lives on the ACTION panel as let-off, which is what it is. */}
       <MaterialRow inst={4} />
-      <div className="note">tangent-held strings · yarn release · solder-free tuning</div>
+      <BodyRow />
+      <div className="krow">
+        <PKnob id="bodyMix" label="CASE" />
+        <PKnob id="wearAmount" label="WEAR" />
+      </div>
+      {/* The case reaches the pickup by structure-borne sound -- the rail
+          rides the resonating box, and a pickup senses relative motion.
+          Wear notches the tangent rubbers: catches, clicks, per-key. */}
+      <div className="note">tangent-held strings · the case in the pickup · wear notches per key</div>
     </div>
   );
   if (gpiano) return (

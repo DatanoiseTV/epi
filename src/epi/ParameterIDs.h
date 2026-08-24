@@ -81,6 +81,11 @@ namespace epi::ids
     inline const juce::StringArray roomProfileNames {
         "Custom", "Booth", "Studio", "Stage", "Hall", "Church" };
 
+    // The left pedal's two real mechanisms (grand path): Shift slides the
+    // action sideways -- two strings, off-centre felt; Rail is the upright's
+    // half-blow -- the hammer stroke shortens and the action goes loose.
+    inline const juce::StringArray softModeNames { "Shift", "Rail" };
+
     inline const juce::StringArray bodyMatNames {
         // Index 0 is whatever the instrument was calibrated with.
         "Stock", "Spruce", "Maple", "Birch Ply",
@@ -121,6 +126,8 @@ namespace epi::ids
     inline constexpr const char* keyBed      = "keyBed";      // choice: rail cloth
     inline constexpr const char* hammerMat   = "hammerMat";   // choice: hammer covering
     inline constexpr const char* roomProfile = "roomProfile"; // choice: which room
+    inline constexpr const char* softMode    = "softMode";    // choice: CC67 mechanism
+    inline constexpr const char* wearAmount  = "wearAmount";  // 0..1 tangent-rubber wear
     inline constexpr const char* tremStereo  = "tremStereo";  // 0..1
     inline constexpr const char* cabMix      = "cabMix";      // 0..1
     inline constexpr const char* phaserMix   = "phaserMix";   // 0..1
@@ -311,6 +318,16 @@ namespace epi::ids
         // The room the output stage plays into.
         add (std::make_unique<Pc> (juce::ParameterID { roomProfile, 1 }, "Room",
                                    roomProfileNames, 0));
+
+        // Which mechanism CC67 drives on the grand.
+        add (std::make_unique<Pc> (juce::ParameterID { softMode, 1 }, "Soft Pedal",
+                                   softModeNames, 0));
+
+        // Tangent-rubber wear on the Clav: 0 is the papers' mint instrument,
+        // 1 a gigged-hard one -- notched rubbers that catch and click,
+        // unevenly per key (practitioner report, 2026).
+        add (std::make_unique<Pf> (juce::ParameterID { wearAmount, 1 }, "Wear",
+                                   juce::NormalisableRange<float> { 0.0f, 1.0f }, 0.0f));
 
         return { params.begin(), params.end() };
     }

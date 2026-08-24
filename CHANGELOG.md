@@ -7,6 +7,22 @@ All notable changes to Epi are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- The Clav's case and its mechanical truth, from a practitioner's
+  report (recorded as primary evidence): six plate modes derived from
+  the real cabinet reach the pickup by structure-borne sound (a pickup
+  senses relative motion, so the box colors the DI without radiating),
+  the key-bottom thump rings the case as the knock-on-wood sound,
+  crimped rubbers scatter the contact per key, a WEAR knob notches the
+  tangent rubbers (catches and clicks, unevenly per key, mint at zero
+  and bit-identical to before), and pianissimo seating chatter emerges
+  from the stamped-bracket compliance -- measured contact episodes, no
+  injected noise. Eighteen new rows.
+- The left pedal's second mechanism: SOFT PEDAL chooses Shift (the
+  existing una corda) or Rail (the upright's half-blow) on the grand.
+  Rail reads CC67 continuously: the stroke shortens by the square-root
+  law (-5 dB at full pedal, measured) without re-voicing the unisons,
+  and the lost motion it opens scatters quiet strikes (the klapprig
+  action) -- both fenced by rows.
 - The grand's small sounds: the damper grab (felt re-seating on a
   ringing string chatters against it -- the release shh, and the
   pedal-lift wash over a ringing bank, calibrated by twin-diff at

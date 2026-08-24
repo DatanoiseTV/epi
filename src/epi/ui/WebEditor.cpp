@@ -34,11 +34,11 @@ namespace
         "phaserMix", "phaserRate", "phaserDepth", "phaserFb",
         "spaceMix", "spaceSize", "outGain", "clarity",
         "clavBrill", "clavTreb", "clavMed", "clavSoft",
-        "bodySize",
+        "bodySize", "wearAmount",
     };
     // No bool parameters exist; an empty constexpr array is a compiler
     // extension GCC and MSVC both reject, so there is simply no list.
-    constexpr const char* kChoiceIds[] = { "pickupSel", "instrument", "material", "clavSwitch", "bodyMat", "damperFelt", "keyBed", "hammerMat", "roomProfile" };
+    constexpr const char* kChoiceIds[] = { "pickupSel", "instrument", "material", "clavSwitch", "bodyMat", "damperFelt", "keyBed", "hammerMat", "roomProfile", "softMode" };
 
     constexpr int kDesignW = 1224;
     constexpr int kDesignH = 860;

@@ -192,6 +192,10 @@ public:
     // The hammer's covering, 0 stock: soft felt, hard felt, lacquered,
     // leather, wood -- relative to this instrument's own stock felt.
     double hammerMat      = 0.0;
+        // CC67 in rail mode: the half-blow. The hammer rail tilts toward
+        // the strings, shortening the stroke -- an upright's soft pedal.
+        // Continuous 0..1; the shift/rail choice lives on the engine.
+        double halfBlow       = 0.0;
         bool   unaCorda       = false;  // CC67: shifted action
     };
 
@@ -200,7 +204,7 @@ public:
     // pack with no interior holes, and the engine zero-initialises whole
     // structs, so the tail bytes compare equal too.
     static_assert (std::is_trivially_copyable<Config>::value, "Config must be memcmp-able");
-    static_assert (sizeof (Config) == 11 * sizeof (double), "Config has interior padding");
+    static_assert (sizeof (Config) == 12 * sizeof (double), "Config has interior padding");
 
     void prepare (double sampleRate)
     {
@@ -241,7 +245,27 @@ public:
         grabEnv = 0.0;              // a fresh strike overrides a settling grab
         damperWasOff = true;        // key is down: damper off until release
 
-        const double vel = std::clamp (velocity, 0.0, 1.0);
+        double vel = std::clamp (velocity, 0.0, 1.0);
+        if (cfg.halfBlow > 0.0)
+        {
+            // The half-blow: the rail lifts the hammers toward the strings,
+            // so the key accelerates them over a shorter arc. Under the
+            // action's roughly constant torque the escapement velocity goes
+            // as the square root of the remaining stroke; 0.45 is the rail's
+            // full-pedal lift share (design constant, fenced by row 13.0).
+            // And lifting the hammers off the jacks opens lost motion --
+            // the "klapprig" feel: the jack takes up slack before it drives,
+            // so quiet strikes land unevenly. Deterministic per-strike hash;
+            // the looseness is largest where the player feels it, at pp.
+            const double hb = std::min (cfg.halfBlow, 1.0);
+            vel *= std::sqrt (1.0 - 0.45 * hb);
+            rattleSeed = rattleSeed * 1664525u + 1013904223u
+                       + static_cast<unsigned> (midiNote) * 2654435761u;
+            const double j = (static_cast<double> (rattleSeed >> 8) / 8388608.0) - 1.0;
+            vel *= 1.0 + 0.12 * hb * (1.0 - vel) * j;
+            vel = std::clamp (vel, 0.0, 1.0);
+        }
+        halfBlowNow = std::min (cfg.halfBlow, 1.0);
         // Real hammers peak at 5-6 m/s; the curve is recalibrated against the
         // Salamander's 16 velocity layers in the calibration pass.
         const double v = 0.25 + 5.5 * std::pow (vel, 1.7);
@@ -427,7 +451,12 @@ public:
                 // an order of magnitude past the sympathetic row's band.
                 // External forces both: no bearing on passivity.
                 board.addBridgeForce (phi, kKnockLoopGain * f);
-                knockFeed = kKnockGain * kOutScale * f;
+                // Half-blow rattle: with lost motion in the action, more of
+                // the blow's energy goes through the loose linkage into the
+                // frame -- the knock share rises while the string tone
+                // softens, which is exactly the "klapprig" sound.
+                const double kn = 1.0 + 0.8 * halfBlowNow;
+                knockFeed = kn * kKnockGain * kOutScale * f;
             }
         }
 
@@ -1002,6 +1031,8 @@ private:
     double grabEnv = 0.0, grabGain = 0.0, grabLp = 0.0;
     unsigned grabRng = 1u;
     bool sostenuto = false, sympathetic = false, unaCordaActive = false;
+    double halfBlowNow = 0.0;
+    unsigned rattleSeed = 0x1234567u;
 };
 
 } // namespace epi

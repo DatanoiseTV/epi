@@ -1531,6 +1531,81 @@ static void sectionGrabNoise()
 }
 
 // ===========================================================================
+static void sectionSoftPedal()
+{
+    heading ("13. the left pedal's two mechanisms: shift and rail");
+
+    const double fs = 48000.0;
+
+    auto strikePeak = [&] (EpiEngine& e, EngineParams& p, int note, float vel)
+    {
+        std::vector<float> L (256), R (256);
+        NoteEvent on { 0, NoteEvent::noteOn, note, vel };
+        e.process (L.data(), R.data(), 256, p, &on, 1);
+        double pk = 0.0;
+        for (float v : L) pk = std::max (pk, (double) std::fabs (v));
+        for (int b = 0; b < 40; ++b)
+        {
+            e.process (L.data(), R.data(), 256, p, nullptr, 0);
+            for (float v : L) pk = std::max (pk, (double) std::fabs (v));
+        }
+        NoteEvent off { 0, NoteEvent::noteOff, note, 0 };
+        e.process (L.data(), R.data(), 256, p, &off, 1);
+        for (int b = 0; b < 190; ++b) e.process (L.data(), R.data(), 256, p, nullptr, 0);
+        return pk;
+    };
+
+    // 13.0 -- the rail softens without re-voicing: full half-blow drops a
+    // fixed-velocity strike by the stroke-shortening law (measured -5.0 dB
+    // at the 45% lift), and it does so WITHOUT touching the strike
+    // geometry -- unlike shift, whose whole point is the geometry.
+    {
+        EngineParams p {}; p.instrument = 3; p.outGainLin = 0.5f; p.spaceMix = 0.0f;
+        EpiEngine dry; dry.prepare (fs, 256);
+        const double a = strikePeak (dry, p, 60, 0.6f);
+
+        EpiEngine rail; rail.prepare (fs, 256);
+        p.softMode = 1;
+        {
+            std::vector<float> L (256), R (256);
+            NoteEvent sp { 0, NoteEvent::soft, 0, 1.0f };
+            rail.process (L.data(), R.data(), 256, p, &sp, 1);
+        }
+        const double b = strikePeak (rail, p, 60, 0.6f);
+        const double drop = 20.0 * std::log10 (b / a);
+        row ("13.0", "full rail softens a fixed-velocity strike", "-8..-3 dB",
+             fmt ("%.1f dB", drop), verdict (drop < -3.0 && drop > -8.0));
+    }
+
+    // 13.1 -- the klapper: with the rail down, lost motion makes equal
+    // quiet strikes land unevenly (deterministic per-strike scatter);
+    // without it they land identically. The looseness is the sound of a
+    // half-blow action, and it must exist at pp and not run wild.
+    {
+        EngineParams p {}; p.instrument = 3; p.outGainLin = 0.5f; p.spaceMix = 0.0f;
+        p.softMode = 1;
+        EpiEngine rail; rail.prepare (fs, 256);
+        {
+            std::vector<float> L (256), R (256);
+            NoteEvent sp { 0, NoteEvent::soft, 0, 1.0f };
+            rail.process (L.data(), R.data(), 256, p, &sp, 1);
+        }
+        const double r1 = strikePeak (rail, p, 64, 0.15f);
+        const double r2 = strikePeak (rail, p, 64, 0.15f);
+        const double scatter = std::fabs (20.0 * std::log10 (r1 / r2));
+
+        p.softMode = 0;
+        EpiEngine dry; dry.prepare (fs, 256);
+        const double d1 = strikePeak (dry, p, 64, 0.15f);
+        const double d2 = strikePeak (dry, p, 64, 0.15f);
+        const double dryScatter = std::fabs (20.0 * std::log10 (d1 / d2));
+        row ("13.1", "rail pp strikes scatter, dry ones repeat", "rail 0.1..3 dB, dry < 0.05",
+             fmt2 ("rail %.2f, dry %.2f dB", scatter, dryScatter),
+             verdict (scatter > 0.1 && scatter < 3.0 && dryScatter < 0.05));
+    }
+}
+
+// ===========================================================================
 
 int main()
 {
@@ -1552,6 +1627,7 @@ int main()
     sectionCpu();
     sectionRoom();
     sectionGrabNoise();
+    sectionSoftPedal();
 
     const double wall = std::chrono::duration<double> (std::chrono::steady_clock::now() - t0).count();
     std::printf ("\nsuite wall time %.1f s\n", wall);
