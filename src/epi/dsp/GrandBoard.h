@@ -96,6 +96,7 @@ class GrandBoard
 {
 public:
     static constexpr int kModes = 72;
+    static constexpr int kThunkLen = 864;   // 18 ms at 48 kHz
     using System = SavModalSystem<kModes, 2>;
 
     // The band edge: above this the board is out of the loop entirely.
@@ -147,6 +148,13 @@ public:
         // per-note decay variance live.
         const double gV = std::clamp (cfg.couplingTrim, 0.05, 8.0);
         phiAmp = 2.0 * std::sqrt (4.0 * kModalMass * 1.3e-3 * gV / 0.058);
+
+        // The thunk's attachment shape, once: an interior frame point away
+        // from every bridge seat, so the thump excites the plate broadly
+        // without impersonating any note.
+        for (int m = 0; m < kModes; ++m)
+            thunkPhi[m] = phiAmp * std::sin (modeP[m] * kPiD * 0.31)
+                                 * std::sin (modeR[m] * kPiD * 0.21);
 
         // ---- the body: material and size, relative to the calibrated stock --
         // A uniform size scale s and a material against the stock spruce:
@@ -211,6 +219,19 @@ public:
                             * std::sin (modeR[m] * kPiD * y);
     }
 
+    // The pedal thunk. The trapwork's end-of-travel thump enters the plate
+    // through the frame beams -- a short low-frequency force at an interior
+    // point, not at any bridge seat. The exact attachment is not a
+    // measurable quantity; the point is fixed, the LEVEL is calibrated
+    // (engine row 12.2 holds it against an mf note), and the spectrum falls
+    // out of the plate's own low modes. A raised-cosine force over 18 ms:
+    // no step at either end, nothing above the pulse's own bandwidth.
+    void pedalThunk (double strength)
+    {
+        thunkAmp = strength;
+        thunkPos = 0;
+    }
+
     // ---- the two-port, board side ---------------------------------------
     // Read the bridge displacement under a note (before anyone ticks), and
     // accumulate the note's net force through the same shape. The voice owns
@@ -251,6 +272,14 @@ public:
     // its state sample-synchronously.
     void tick()
     {
+        if (thunkPos < kThunkLen)
+        {
+            const double t = thunkPos / double (kThunkLen);
+            const double f = thunkAmp * 0.5 * (1.0 - std::cos (2.0 * kPiD * t));
+            double* d = sys.driveData();
+            for (int m2 = 0; m2 < kModes; ++m2) d[m2] += thunkPhi[m2] * f;
+            ++thunkPos;
+        }
         sys.tick();
         outL = hpL.tick (sys.velocityAt (listenL));
         outR = hpR.tick (sys.velocityAt (listenR));
@@ -371,6 +400,9 @@ private:
 
     double fs = 48000.0;
     double phiAmp = 0.0;
+    double thunkPhi[kModes] {};
+    double thunkAmp = 0.0;
+    int    thunkPos = kThunkLen;
     double bodyFScale = 1.0, bodyMScale = 1.0, bodyEta = 0.0;
     double appliedRadFc = kRadFcHz;
     double modeF[kModes] {};

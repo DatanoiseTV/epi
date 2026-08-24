@@ -1412,32 +1412,119 @@ static void sectionGrabNoise()
              verdict (ratio > 6.0 && abs2 > -45.0 && abs2 < -12.0));
     }
 
-    // 12.1 -- a dead string grabs silently: cycle the pedal over a string
-    // that finished decaying seconds ago and nothing may sound. The grab
-    // scales with the caught energy, so an empty bank is exactly quiet.
+    // 12.1 -- a dead string grabs silently. Cycling the pedal now
+    // legitimately thumps the tray, so the row twins two deterministic
+    // engines -- one that played a note that finished decaying seconds
+    // ago, one that never sounded -- and drives both through the same
+    // pedal cycle. The sample difference is exactly what the dead string
+    // contributed: it must be nothing, because the grab scales with the
+    // energy it catches.
+    {
+        EpiEngine ea, eb;
+        ea.prepare (fs, 256);
+        eb.prepare (fs, 256);
+        EngineParams p {}; p.instrument = 3; p.outGainLin = 0.5f; p.spaceMix = 0.0f;
+        std::vector<float> La (256), Ra (256), Lb (256), Rb (256);
+        NoteEvent on { 0, NoteEvent::noteOn, 60, 0.05f };
+        ea.process (La.data(), Ra.data(), 256, p, &on, 1);
+        eb.process (Lb.data(), Rb.data(), 256, p, nullptr, 0);
+        for (int b = 0; b < 18; ++b)
+        {
+            ea.process (La.data(), Ra.data(), 256, p, nullptr, 0);
+            eb.process (Lb.data(), Rb.data(), 256, p, nullptr, 0);
+        }
+        NoteEvent off { 0, NoteEvent::noteOff, 60, 0 };
+        ea.process (La.data(), Ra.data(), 256, p, &off, 1);
+        eb.process (Lb.data(), Rb.data(), 256, p, nullptr, 0);
+        for (int b = 0; b < 560; ++b)
+        {
+            ea.process (La.data(), Ra.data(), 256, p, nullptr, 0);
+            eb.process (Lb.data(), Rb.data(), 256, p, nullptr, 0);
+        }
+        double diff = 0.0;
+        auto step = [&] (const NoteEvent* ev, int n)
+        {
+            ea.process (La.data(), Ra.data(), 256, p, ev, n);
+            eb.process (Lb.data(), Rb.data(), 256, p, ev, n);
+            for (int i = 0; i < 256; ++i)
+                diff = std::max (diff, (double) std::fabs (La[static_cast<size_t> (i)]
+                                                         - Lb[static_cast<size_t> (i)]));
+        };
+        NoteEvent pd { 0, NoteEvent::sustainOn, 0, 0 };
+        step (&pd, 1);
+        for (int b = 0; b < 37; ++b) step (nullptr, 0);
+        NoteEvent pu { 0, NoteEvent::sustainOff, 0, 0 };
+        step (&pu, 1);
+        for (int b = 0; b < 19; ++b) step (nullptr, 0);
+        row ("12.1", "a dead string adds nothing to the pedal cycle", "< -120 dBFS",
+             fmt ("%.1f dBFS", 20.0 * std::log10 (diff + 1e-30)),
+             verdict (diff < 1.0e-6));
+    }
+
+    // 12.2 -- the pedal thunk: pressing the pedal on a silent instrument
+    // thumps the board (the trapwork's end-of-travel), calibrated against
+    // an mf note's attack peak, and the lift lands a thump of its own.
+    // The press rings LOUDER per unit force than the lift because it
+    // excites the freshly opened strings -- the pedal boom -- which is the
+    // asymmetry a real instrument has.
     {
         EpiEngine e; e.prepare (fs, 256);
         EngineParams p {}; p.instrument = 3; p.outGainLin = 0.5f; p.spaceMix = 0.0f;
         std::vector<float> L (256), R (256);
-        NoteEvent on { 0, NoteEvent::noteOn, 60, 0.05f };
+        NoteEvent on { 0, NoteEvent::noteOn, 60, 0.6f };
         e.process (L.data(), R.data(), 256, p, &on, 1);
-        for (int b = 0; b < 18; ++b) e.process (L.data(), R.data(), 256, p, nullptr, 0);
+        double atk = 0.0;
+        for (int b = 0; b < 94; ++b)
+        {
+            e.process (L.data(), R.data(), 256, p, nullptr, 0);
+            for (float v : L) atk = std::max (atk, (double) std::fabs (v));
+        }
         NoteEvent off { 0, NoteEvent::noteOff, 60, 0 };
         e.process (L.data(), R.data(), 256, p, &off, 1);
         for (int b = 0; b < 560; ++b) e.process (L.data(), R.data(), 256, p, nullptr, 0);
         NoteEvent pd { 0, NoteEvent::sustainOn, 0, 0 };
         e.process (L.data(), R.data(), 256, p, &pd, 1);
-        for (int b = 0; b < 37; ++b) e.process (L.data(), R.data(), 256, p, nullptr, 0);
-        NoteEvent pu { 0, NoteEvent::sustainOff, 0, 0 };
-        e.process (L.data(), R.data(), 256, p, &pu, 1);
-        double peak = 0.0;
-        for (float v : L) peak = std::max (peak, (double) std::fabs (v));
-        for (int b = 0; b < 19; ++b)
+        double press = 0.0;
+        for (float v : L) press = std::max (press, (double) std::fabs (v));
+        for (int b = 0; b < 18; ++b)
         {
             e.process (L.data(), R.data(), 256, p, nullptr, 0);
+            for (float v : L) press = std::max (press, (double) std::fabs (v));
+        }
+        for (int b = 0; b < 75; ++b) e.process (L.data(), R.data(), 256, p, nullptr, 0);
+        NoteEvent pu { 0, NoteEvent::sustainOff, 0, 0 };
+        e.process (L.data(), R.data(), 256, p, &pu, 1);
+        double lift = 0.0;
+        for (float v : L) lift = std::max (lift, (double) std::fabs (v));
+        for (int b = 0; b < 18; ++b)
+        {
+            e.process (L.data(), R.data(), 256, p, nullptr, 0);
+            for (float v : L) lift = std::max (lift, (double) std::fabs (v));
+        }
+        const double pDb = 20.0 * std::log10 (press / atk + 1e-30);
+        const double lDb = 20.0 * std::log10 (lift / atk + 1e-30);
+        row ("12.2", "pedal press and lift thunks vs mf attack", "each in -50..-35 dB",
+             fmt2 ("press %.1f, lift %.1f dB", pDb, lDb),
+             verdict (pDb > -50.0 && pDb < -35.0 && lDb > -50.0 && lDb < -35.0));
+    }
+
+    // 12.3 -- half-pedal work rides between the stops silently: the
+    // hysteresis (0.65 / 0.35) means wiggling inside the travel produces
+    // no thunks at all -- a real tray thumps at its stops, not mid-travel.
+    {
+        EpiEngine e; e.prepare (fs, 256);
+        EngineParams p {}; p.instrument = 3; p.outGainLin = 0.5f; p.spaceMix = 0.0f;
+        std::vector<float> L (256), R (256);
+        for (int b = 0; b < 20; ++b) e.process (L.data(), R.data(), 256, p, nullptr, 0);
+        double peak = 0.0;
+        for (int b = 0; b < 100; ++b)
+        {
+            NoteEvent hp { 0, NoteEvent::sustain, 0,
+                           0.45f + 0.15f * static_cast<float> (std::sin (b * 0.7)) };
+            e.process (L.data(), R.data(), 256, p, &hp, 1);
             for (float v : L) peak = std::max (peak, (double) std::fabs (v));
         }
-        row ("12.1", "dead-string pedal cycle stays silent", "< -120 dBFS",
+        row ("12.3", "half-pedal flutter between the stops is silent", "< -120 dBFS",
              fmt ("%.1f dBFS", 20.0 * std::log10 (peak + 1e-30)),
              verdict (peak < 1.0e-6));
     }

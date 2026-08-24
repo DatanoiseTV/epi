@@ -431,12 +431,31 @@ private:
                          + (-2*t3 + 3*t2) * y1 + (t3 - t2) * m1, 0.0f, 1.0f);
     }
     bool   pedalDown   = false;   // engaged at all -- gates the sympathetic path
+    bool   pedalHigh   = false;   // thunk hysteresis state (0.65 / 0.35)
+    static constexpr double kThunkPress = 0.60;  // calibrated by engine row 12.2
+    static constexpr double kThunkLift  = 2.2;
     double pedalAmount = 0.0;     // continuous CC64, 0 = up, 1 = fully down
 
     void setPedalAmount (double a)
     {
+        const double prev = pedalAmount;
         pedalAmount = std::clamp (a, 0.0, 1.0);
         pedalDown = pedalAmount > 0.01;
+        // The trapwork's end-of-travel thumps, with hysteresis (0.65 up,
+        // 0.35 down) so half-pedal work rides between the stops silently --
+        // a real tray thumps at the stops, not in the middle of the travel.
+        // The lift lands slightly harder: the tray falls under its spring
+        // plus gravity, the press is the foot's controlled push.
+        if (! pedalHigh && pedalAmount > 0.65 && prev <= 0.65)
+        {
+            pedalHigh = true;
+            grandBoard.pedalThunk (kThunkPress);
+        }
+        else if (pedalHigh && pedalAmount < 0.35 && prev >= 0.35)
+        {
+            pedalHigh = false;
+            grandBoard.pedalThunk (kThunkLift);
+        }
         for (auto& v : tines) v.setPedal (pedalAmount);
         for (auto& v : cp70)  v.setPedal (pedalAmount);
         for (auto& v : wurli) v.setPedal (pedalAmount);
