@@ -212,8 +212,13 @@ public:
         (void) seed;
 
         const double vel = std::clamp (velocity, 0.0, 1.0);
-        // Same launch law as the Rhodes for now; the plan flags recalibration
-        // against the sample set's four velocity layers.
+        // The tine's launch law shape, with this instrument's own floor: the
+        // tine bank's floor moved to 0.195 m/s when it was recalibrated on
+        // the service manual's striking line, and 0.18 stays here because
+        // the CP's own velocity rows were calibrated against it. The plan
+        // still flags a recalibration against the sample set's four
+        // velocity layers, which is what would replace both numbers with
+        // measured ones.
         const double v = 0.18 + 5.6 * std::pow (vel, 1.7);
         const double reg = std::clamp ((note - 28.0) / 72.0, 0.0, 1.0);
         const double escMm = (6.4 - 5.6 * reg) * (0.4 + 1.2 * cfg.escapementNorm);

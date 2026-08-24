@@ -287,6 +287,29 @@ Not covered yet:
 
 ---
 
+## Constants that rest on inference, not measurement
+
+A model is only as honest as its least-sourced number. These are the
+quantities the instruments' physics depends on that NOBODY has published
+a measurement of, as far as the project's own source hunts reached. Each
+is bounded by physics rather than guessed freely, each is named in the
+code where it is used, and each has a cheapest-closure note in the
+research registers. They are listed here because "physically modeled"
+should not be allowed to imply "every number is measured".
+
+| Instrument | Quantity | What the model does | Closure |
+| --- | --- | --- | --- |
+| Tine | Pickup coil turns, inductance, capacitance | The coil is a resonant second-order lowpass whose frequency and Q are fitted, not derived from circuit values; DC resistance and wire gauge ARE measured | One LCR reading on a real pickup |
+| Tine | Effective pole half-width | Calibrated (1.6 mm) rather than the slug's geometric radius, following the published FEM's finding that only part of the tip carries the field | A field map or Hall probe of a real pickup |
+| E-Grand | Strike position (beta) | Assumed 1/8; the service documents genuinely do not contain it, verified by an exhaustive hunt | One photo of any harp from above with a scale in frame |
+| E-Grand | Piezo element capacitance | Inferred window (20-50 nF bus, 8-19 Hz corner), twice-derived from physics bounds | One LCR reading on any element |
+| E-Grand | Wound-bass per-key lengths and winding schedule | Log-interpolated from the anchored break point | The manufacturer's winding chart |
+| E-Grand | Frame material (cast iron vs alloy) | Not modeled as a distinct material; the frame is the shared body bench | Any parts document naming it |
+| Clav | Bass string length at F1 | 0.95 m, an invented anchor for the wound tier's log interpolation; the comb rows carry tolerance because of it | A tape measure on a real instrument |
+| Clav | Tangent rubber compliance | One calibrated corner frequency; no measurement of the rubber exists | A contact-stiffness measurement, or the offered isolation recordings |
+| Clav | Case mode ladder | Derived from cabinet dimensions and plywood constants, not fitted to a real case | The offered isolation recordings (case knocks, muted key presses) |
+| Grand | Sympathetic wake level band | The row's band is a design guess, not a measurement; the model's own prediction sits above it | A published pedal-down sympathetic measurement |
+
 ## Verification culture (what "covered" means here)
 
 - Eight suites: DSP invariants, Tine reference (vs measurements off the
