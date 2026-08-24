@@ -7,6 +7,17 @@ All notable changes to Epi are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Gigged Clav: the instrument that has been out every weekend for
+  thirty years -- notched tangent rubbers that catch on release, a
+  rattlier case.
+- Test coverage where it was thin: the click fence sweeps all
+  thirty-three continuous parameters (was thirteen), a new section
+  proves every instrument rings through a single retune -- workshop
+  edit, material swap, body resize, tuning knob -- without resetting
+  or stepping, the Clav and the two stage-carrying grand presets got
+  their first character rows, and the state suite now round-trips all
+  forty-nine parameters and checks that every bound parameter is
+  declared in the UI bundle.
 - Two grand presets that ship a mic-stage placement -- Jazz Club (a
   close pair over the open lid, stage room) and Cathedral (a far high
   pair with a center fill, church room) -- riding a new factory-table
@@ -72,6 +83,12 @@ All notable changes to Epi are documented here. The format follows
   loads, and legacy states saved before a bench existed.
 
 ### Changed
+- Three automation clicks fixed, found by sweeping the whole knob
+  surface instead of a third of it: the phaser applied its mix and
+  depth at block rate (0.20 worst-sample against a 0.0033 signal
+  floor -- an audible tick on every automation chunk) and both
+  tremolos stepped their depth the same way. All three now glide with
+  a first-call snap.
 - The pickup field map carries the magnet's far half: a slug has two
   sheets of magnetic charge, and the map integrated only the near one
   over an infinite strip. It now has both (separated by the patent's
