@@ -731,6 +731,18 @@ inline constexpr ParamValue kClavFunk[] = {
     { "spaceMix", 0.05f },
 };
 
+// The instrument that has been out every weekend for thirty years: the
+// tangent rubbers notched by use, so the strings catch on release and click
+// -- worst in the middle of the compass where the hands live. The wear bench
+// at three quarters, and the case a touch louder because a gigged instrument
+// is a rattlier one.
+inline constexpr ParamValue kGiggedClav[] = {
+    { "instrument", 4.0f },
+    { "clavSwitch", 2.0f }, { "clavMed", 1.0f },
+    { "wearAmount", 0.75f }, { "bodyMix", 0.32f },
+    { "preampDrive", 0.33f }, { "spaceMix", 0.06f },
+};
+
 // Out of phase: the switch position that keeps only what the two taps do
 // not share -- hollow, nasal, unmistakable.
 inline constexpr ParamValue kClavPhaseCut[] = {
@@ -841,6 +853,7 @@ inline constexpr Preset kPresets[] = {
     { "Clav Funk",     4, kClavFunk,     std::size (kClavFunk) },
     { "Phase Cut",     4, kClavPhaseCut, std::size (kClavPhaseCut) },
     { "Clav Phaser",   4, kClavPhaser,   std::size (kClavPhaser) },
+    { "Gigged Clav",   4, kGiggedClav,   std::size (kGiggedClav) },
     { "Velvet Clav",   4, kClavVelvet,   std::size (kClavVelvet) },
     { "Biting Clav",   4, kClavBiting,   std::size (kClavBiting) },
     { "Aged Clav",     4, kAgedClav,     std::size (kAgedClav) },

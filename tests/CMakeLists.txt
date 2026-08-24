@@ -90,7 +90,9 @@ add_executable(epi_engine_tests
 target_include_directories(epi_engine_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_features(epi_engine_tests PRIVATE cxx_std_20)
 add_test(NAME epi_engine COMMAND epi_engine_tests)
-set_tests_properties(epi_engine PROPERTIES TIMEOUT 900)
+# The sweep sections render a couple of hundred short takes, so this one is
+# minutes rather than seconds, and a loaded CI runner stretches it further.
+set_tests_properties(epi_engine PROPERTIES TIMEOUT 2400)
 
 # ---------------------------------------------------------------------------
 # Epi state round-trips. The one suite that is NOT framework-free: it

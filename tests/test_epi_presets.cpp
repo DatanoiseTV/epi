@@ -764,6 +764,89 @@ int main()
              mm["Harp Grand"].centroid > steel.centroid);
     }
 
+    // ---- the Clav, and the benches the practitioner report added -----------
+
+    // The funk patch is the bridge tap through the Treble rocker against the
+    // classic's summed taps through Medium: the percussive end of the
+    // instrument, and it has to measure that way.
+    brighter ("Clav Funk",      "Clav Classic");
+    // Out of phase keeps only what the two taps do NOT share, which takes
+    // the fundamentals out and leaves the hollow middle.
+    row ("Clav Phase Cut", "less low band than the summed taps",
+         fmt ("< %.3f low-ratio", mm["Clav Classic"].lowRatio),
+         fmt ("%.3f low-ratio", mm["Clav Phase Cut"].lowRatio),
+         mm["Clav Phase Cut"].lowRatio < mm["Clav Classic"].lowRatio);
+
+    // Notched tangent rubbers catch the string on release. The signature is
+    // in the release window, not the sustain, so it is measured there
+    // against the same preset with the rubbers new -- deterministic renders,
+    // so the difference is the wear and nothing else.
+    {
+        std::vector<double> worn, mint;
+        (void) renderPreset (presetNamed ("Gigged Clav"), {}, &worn);
+        (void) renderPreset (presetNamed ("Gigged Clav"), { { "wearAmount", 0.0f } }, &mint);
+        double dSum = 0.0, sSum = 0.0;
+        for (std::size_t i = 0; i < worn.size(); ++i)
+        {
+            const double d = worn[i] - mint[i];
+            dSum += d * d;
+            sSum += worn[i] * worn[i];
+        }
+        const double rel = 10.0 * std::log10 (std::max (1.0e-30, dSum)
+                                            / std::max (1.0e-30, sSum));
+        // Measured -33.5 dB of the render: audible as the catch it is, and
+        // nowhere near a second instrument. Fenced both ways -- silent wear
+        // would be a dead bench, loud wear would be a percussion track.
+        row ("Gigged Clav", "worn rubbers catch, audibly and no more",
+             "-45 .. -22 dB rel", fmt ("%.1f dB rel", rel),
+             rel > -45.0 && rel < -22.0);
+    }
+    // The case reaches the pickup by structure-borne sound: turning it off
+    // must change the render, and audibly. (The paper measured the Clav's
+    // ACOUSTIC output as feeble, which is a different claim -- a pickup
+    // senses relative motion, so the box is in the signal without being in
+    // the room.)
+    {
+        std::vector<double> now, quiet;
+        (void) renderPreset (presetNamed ("Gigged Clav"), {}, &now);
+        (void) renderPreset (presetNamed ("Gigged Clav"), { { "bodyMix", 0.0f } }, &quiet);
+        double dSum = 0.0, sSum = 0.0;
+        for (std::size_t i = 0; i < now.size(); ++i)
+        {
+            const double d = now[i] - quiet[i];
+            dSum += d * d;
+            sSum += now[i] * now[i];
+        }
+        const double rel = 10.0 * std::log10 (std::max (1.0e-30, dSum)
+                                            / std::max (1.0e-30, sSum));
+        // Measured -55.7 dB of the whole render. That is a subordinate but
+        // real contribution, which is what both sources say it should be:
+        // the practitioner hears the box plainly (it is the knock under
+        // every key press), the paper measured the ACOUSTIC output as
+        // feeble -- and a pickup senses relative motion, so the case is in
+        // the signal without being in the room. The absolute level waits on
+        // the isolation recordings the case constants were derived without.
+        row ("Gigged Clav", "the case is in the pickup, subordinate",
+             "-68 .. -40 dB rel", fmt ("%.1f dB rel", rel),
+             rel > -68.0 && rel < -40.0);
+    }
+
+    // ---- the two presets that ship a mic-stage placement --------------------
+
+    // The club seat sits close over the open lid, where the lid image
+    // arrives with the direct sound: brighter up top than the calibrated
+    // pair at its polite distance.
+    row ("Jazz Club", "brighter top than Concert Grand",
+         fmt ("> %.5f top-ratio", mm["Concert Grand"].topRatio),
+         fmt ("%.5f top-ratio", mm["Jazz Club"].topRatio),
+         mm["Jazz Club"].topRatio > mm["Concert Grand"].topRatio);
+    // The church carries after the notes stop, which is the whole point of
+    // the profile: measured in the released window, not the sustain.
+    row ("Cathedral", "rings on after the pedal lifts",
+         fmt ("> %.1f dB + 3", mm["Concert Grand"].postLowMidDb),
+         fmt ("%.1f dB", mm["Cathedral"].postLowMidDb),
+         mm["Cathedral"].postLowMidDb > mm["Concert Grand"].postLowMidDb + 3.0);
+
     // ---- summary ----------------------------------------------------------
     std::printf ("\n%s: %d failure%s\n",
                  failures == 0 ? "OK" : "FAILED", failures, failures == 1 ? "" : "s");

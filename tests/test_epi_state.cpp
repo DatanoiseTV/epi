@@ -170,6 +170,55 @@ int main()
              missing.joinIntoString (", ").toRawUTF8());
     }
 
+    // S8 -- every parameter, not just the benches. Each one is moved off
+    // its default to a value inside its own range (a quarter of the way up
+    // for continuous, the next index for choices, so no two are the same
+    // and none sits at a boundary), the whole state is written and read
+    // back into a second processor, and every value has to match. This is
+    // the check that catches a parameter added to the layout but forgotten
+    // in whatever the host actually persists.
+    {
+        EpiAudioProcessor a;
+        auto& sa = a.getValueTreeState();
+        std::vector<std::pair<juce::String, float>> set;
+        for (auto* p : a.getParameters())
+        {
+            auto* rp = dynamic_cast<juce::RangedAudioParameter*> (p);
+            if (rp == nullptr) continue;
+            const auto& r = rp->getNormalisableRange();
+            float v;
+            if (auto* c = dynamic_cast<juce::AudioParameterChoice*> (p))
+                v = static_cast<float> ((c->getIndex() + 1) % c->choices.size());
+            else
+                v = r.convertFrom0to1 (0.27f);
+            if (auto* fp = sa.getParameter (rp->getParameterID()))
+                fp->setValueNotifyingHost (r.convertTo0to1 (v));
+            // Record what the parameter ACTUALLY took, not what was asked
+            // for: a stepped one (the tone rockers, the dB knobs) snaps to
+            // its own grid, and a round-trip test that ignores that is
+            // testing the grid rather than the persistence.
+            set.emplace_back (rp->getParameterID(), rp->convertFrom0to1 (rp->getValue()));
+        }
+
+        juce::MemoryBlock blob;
+        a.getStateInformation (blob);
+        EpiAudioProcessor b;
+        b.setStateInformation (blob.getData(), static_cast<int> (blob.getSize()));
+
+        juce::StringArray bad;
+        for (const auto& [id, want] : set)
+        {
+            auto* rp = dynamic_cast<juce::RangedAudioParameter*> (b.getValueTreeState().getParameter (id));
+            if (rp == nullptr) { bad.add (id + " (missing)"); continue; }
+            const float got = rp->convertFrom0to1 (rp->getValue());
+            const float tol = std::max (1.0e-4f, 1.0e-3f * std::abs (want));
+            if (std::abs (got - want) > tol)
+                bad.add (id + " (" + juce::String (want, 4) + " -> " + juce::String (got, 4) + ")");
+        }
+        row ("S8", ("all " + juce::String (set.size()) + " parameters round-trip").toRawUTF8(),
+             ! set.empty() && bad.isEmpty(), bad.joinIntoString (", ").toRawUTF8());
+    }
+
     std::printf ("\nSUMMARY fail=%d\n", failures);
     return failures;
 }
