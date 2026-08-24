@@ -234,3 +234,55 @@ Kept briefly because each was believed to be a defect in the model and was not:
 - Shear & Wright, NIME 2011/2012 — tine dimensions, tip displacement, T60
 - Gabrielli et al., JASA 148(5):3052 (2020) — **full text not obtainable**; only
   the companion audio at `github.com/LOGUNIVPM/rhodes-companion-files`
+
+## The pickup field map: what the rebuild fixed, and what it priced
+
+The three remaining reference gaps (B5, B6, G2) were traced to one root
+cause: the field map's missing far structure. The map was rebuilt from
+the real pole geometry and the result splits cleanly in two.
+
+**Adopted -- the two-sheet field.** Horton & Moore's geometry, which they
+validated against Hall-probe measurements to within plot resolution: a
+magnetised slug is two sheets of magnetic charge, +sigma on the ground
+face and -sigma on the flat end one magnet length behind it (Alnico 5,
+0.5 x 0.1875 in, US 4,040,321). The map integrated only the near sheet,
+which is a monopole with no far structure. The pair collapses far more
+steeply where a hard bass tine actually swings and reverses sign at
+about 8 mm, where the flux is on its way back around the magnet. The
+footprint is now the slug's disc (a chord taper) rather than an infinite
+strip, and the third dimension is integrated in closed form, so it costs
+nothing. Suite: `fail=0`, gaps unchanged at 5 -- every calibrated row
+holds, and the far field is honest now whether or not it moves a row.
+
+**Measured and NOT adopted -- the quadratic transduction.** Reciprocity
+says the flux is a product of two fields, not one: the tine is steel the
+magnet magnetises (m ~ chi_eff B, with the demagnetising factor pinning
+chi_eff regardless of the steel's permeability), and what that moment
+puts through the winding is m . B_coil / I. Treating the transduction as
+linear in B, as the model does, silently sets B_coil constant.
+
+| law | B6 (band +2.2..+3.9) | A2 E2 (ceiling +24) | A4 E3 (ceiling 37) | fails |
+| --- | --- | --- | --- | --- |
+| linear in B (shipped) | +1.31 | +22.0 | 36.7 | 0 |
+| B x B_coil, coil r = 2.6 mm | +2.23 | +24.2 | 39.2 | 3 |
+| B x B_coil, coil r = 3.2 mm | +1.86 | +23.6 | 38.4 | 1 |
+| B x B_coil, coil r = 4.4 mm | +1.49 | +22.5 | 37.3 | 1 |
+| B squared (B_coil = B) | +2.78 | +24.8 | 40.9 | 4 |
+
+B6 -- the gap this was aimed at -- closes as soon as the transduction is
+a product, and the coil's radius interpolates smoothly between the two
+limits (a wide coil weights every position alike, a coil as narrow as
+the pole makes the weighting the field itself). But A4, the velocity
+SWING, runs past its measured ceiling across the whole physical range of
+the bobbin (it cannot be narrower than the 2.38 mm slug it wraps), and
+A4 is not independent: it is A2 minus A3, so the model sits at a corner
+where both endpoints are legal and their spread is not. The tine's own
+diameter (1.905 mm, wider than the pole's effective half-width) was
+added as a cross-section average of the flux, which is physically
+required and softens the aperture, and it does not resolve the corner.
+
+So the product law is right and the chain around it is not ready for it:
+adopting it means re-deriving the velocity mapping that A2/A3/A4 fence
+together. Until then B5, B6 and G2 stay gaps with this table as their
+price, and the shipped map keeps the honest far field without the
+transduction change.

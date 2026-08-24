@@ -94,6 +94,9 @@ public:
         float flatHalf    = 0.28e-3f;  // half-width of the flat at the wedge tip
         float wedgeDepth  = 0.95e-3f;  // how far the surface recedes at the edge
         float nominalGap  = 1.5e-3f;   // tine-to-wedge-tip distance at rest
+        // The slug's length, which is the separation of the two sheets of
+        // magnetic charge: Alnico 5, 0.5 x 0.1875 in (US 4,040,321).
+        float magnetLength = 12.7e-3f; // 0.5 in
     };
 
     static constexpr int kNv = 257;   // across the wedge
@@ -170,25 +173,58 @@ private:
         return gap + g.wedgeDepth * t;
     }
 
-    // Coulombian line integral over the pole face. The charge is spread over
-    // the face only: outside it there is no source, which is what makes the
-    // field collapse when the tine swings clear of the magnet.
+    // The axial field of one strip of magnetic charge: a line of length
+    // `len` along the tine's own axis, `z` away along the gap and `dvv`
+    // away across the wedge. The strip integral is closed form,
+    //     INTEGRAL z du / (a^2 + u^2)^(3/2) = z len / (a^2 sqrt(a^2 + len^2/4)),
+    // with a^2 = dvv^2 + z^2, so the third dimension costs nothing and never
+    // has to be sampled. It is the dimension that decides whether the far
+    // field falls off like a line or like a point, and a hard bass tine
+    // spends the loud part of every cycle out there.
+    static float strip (float dvv, float z, float len)
+    {
+        const float a2 = dvv * dvv + z * z;
+        return z * len / std::max (1.0e-15f, a2 * std::sqrt (a2 + 0.25f * len * len));
+    }
+
+    // Coulombian integral over the pole, in Horton & Moore's geometry --
+    // the one they validated against Hall-probe measurements of a real
+    // pickup to within plot resolution, on a single fitting parameter. A
+    // magnetised slug is TWO sheets of charge: +sigma on the ground face
+    // nearest the tine and -sigma on the flat far end, one magnet length
+    // behind it. The near sheet alone, which is what this integrated
+    // before, is a monopole, and a monopole has no far structure -- it
+    // simply decays.
+    //
+    // The pair behaves differently exactly where it matters. Close in the
+    // far sheet is thirteen millimetres away against one and a half and
+    // contributes about a percent, so the small-swing tone the A2/A3 rows
+    // fence is untouched. Out where a hard bass tine goes the two sheets
+    // subtract, so the field collapses more steeply than any single sheet
+    // decays, and past about eight millimetres it changes sign: out there
+    // you are beside the magnet, where the flux is on its way back.
+    //
+    // The footprint is the slug's disc rather than an infinite strip: at
+    // lateral offset v the chord across a disc of radius halfWidth is
+    // 2 sqrt(halfWidth^2 - v^2), which tapers the charge to nothing at the
+    // rim instead of cutting it off at a cliff the model then has to
+    // interpolate across.
     float integrate (float vTine, float gap) const
     {
         constexpr int kSteps = 192;
         const float lo = -g.halfWidth, hi = g.halfWidth;
         const float dv = (hi - lo) / static_cast<float> (kSteps);
+        const float r2Pole = g.halfWidth * g.halfWidth;
 
         float sum = 0.0f;
         for (int k = 0; k < kSteps; ++k)
         {
-            const float v  = lo + (static_cast<float> (k) + 0.5f) * dv;
-            const float gs = surfaceGap (v, gap) - gap;   // depth below the tip plane
-            const float dz = gap + gs;                    // distance along the axis
+            const float v = lo + (static_cast<float> (k) + 0.5f) * dv;
+            const float chord = 2.0f * std::sqrt (std::max (0.0f, r2Pole - v * v));
+            if (chord <= 0.0f) continue;
             const float dvv = vTine - v;
-            const float r2 = dvv * dvv + dz * dz;
-            const float r  = std::sqrt (r2);
-            sum += dz / std::max (1.0e-15f, r2 * r) * dv;
+            sum += (strip (dvv, surfaceGap (v, gap), chord)
+                  - strip (dvv, gap + g.magnetLength, chord)) * dv;
         }
         return sum;
     }
