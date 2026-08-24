@@ -205,9 +205,13 @@ geometry (six rows), plus the small-sounds fences in the engine suite.
 Not covered yet (each bounded, mechanism named):
 
 - A3's decay time reads 1.6 s vs the measured 2.65: its bridge point sits
-  in a mobility dip by design (that is what makes its unison rows pass);
-  the honest fix is per-note mobility spread, which re-rolls co-calibrated
-  rows — the plan's open question.
+  in a mobility dip by design (that is what makes its unison rows pass).
+  The fix is per-note mobility spread, and it was built and measured
+  twice: the volume-velocity form closes this gap and two others, and
+  breaks ten rows that were all calibrated against the smooth-mean read
+  (decay tables, knees, stereo balance, una corda, the mic seat gauge).
+  The mechanism is confirmed; adopting it is a recalibration campaign,
+  priced in the research notes rather than half-done.
 - The unison-null trio (C4 null depth, A3 no-null, una corda ripple
   ratio) sits on a measured Pareto wall: the shared horizontal-read
   constant moves A3 and C4 in opposite directions, so no shared-constant
