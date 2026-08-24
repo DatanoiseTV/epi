@@ -129,12 +129,18 @@ tip swings against measured values (3.9/5.5/0.41 mm vs measured
 
 Not covered yet:
 
-- The pickup field map smooths away the pole's far-field structure (the
-  flat's edge and wedge). This is the named single root cause behind the
-  three remaining reference gaps: bass fundamental suppression rise (B6,
-  +1.3 measured vs +2.2..+3.9 dB/s), the second decay slope's depth (B5),
-  and centroid scaling (G2). A sharper field map moves all three
-  together, fenced by the measured +24 dB second-harmonic ceiling.
+- The three remaining reference gaps (bass fundamental suppression rise
+  B6, the second decay slope B5, centroid scaling G2) now have a measured
+  cause rather than a suspected one. The field map itself was rebuilt to
+  the real two-sheet slug geometry, which changed them barely at all. What
+  does close B6 is the transduction law: reciprocity makes the flux a
+  product of the magnet's field and the coil's, not linear in the
+  magnet's alone. That law also pushes the velocity swing past its
+  measured ceiling across the whole physical range of the winding, because
+  that row is the spread between two others and the model sits at a corner
+  where both endpoints are legal and their spread is not. Adopting it
+  means re-deriving the velocity mapping the three rows fence together;
+  the numbers for that decision are tabulated in the checklist.
 - Bass attack time (C5): measured not contact-limited; the real 14-21 ms
   implies a different tine-side effective mass than the swing rows pin.
   Bounded, mechanism named, not resolved.

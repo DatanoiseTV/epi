@@ -72,6 +72,13 @@ All notable changes to Epi are documented here. The format follows
   loads, and legacy states saved before a bench existed.
 
 ### Changed
+- The pickup field map carries the magnet's far half: a slug has two
+  sheets of magnetic charge, and the map integrated only the near one
+  over an infinite strip. It now has both (separated by the patent's
+  magnet length), a disc footprint, and a closed form for the third
+  dimension -- so the field collapses the way a finite magnet's does
+  where a hard bass tine swings, and reverses sign beside the magnet
+  where the flux returns. Every calibrated row holds.
 - The measured-gap ledger shrank from 17 to 11 with zero failures, by
   a multi-agent deep-dive with adversarial verification: the reed
   chain's tuning row and both clav second-harmonic rows now pass
