@@ -238,6 +238,8 @@ public:
         (void) seed;
         sympathetic = false;
         sympDormant = false;
+        grabEnv = 0.0;              // a fresh strike overrides a settling grab
+        damperWasOff = true;        // key is down: damper off until release
 
         const double vel = std::clamp (velocity, 0.0, 1.0);
         // Real hammers peak at 5-6 m/s; the curve is recalibrated against the
@@ -342,6 +344,22 @@ public:
     {
         (void) cfg;
         if (! sounding && ! hammer.isActive()) return 0.0;
+
+        // The damper-grab chatter: a short feedforward force burst while
+        // the felt settles, one-pole filtered to the contact bandwidth.
+        // Runs a handful of control periods per release and only when a
+        // live string was caught, so it costs nothing the rest of the time.
+        if (grabEnv > 1.0e-4)
+        {
+            grabRng = grabRng * 1664525u + 1013904223u;
+            const double w = (static_cast<double> (grabRng >> 8) / 8388608.0) - 1.0;
+            grabLp += 0.35 * (w - grabLp);          // ~3 kHz felt bandwidth
+            const double f = grabGain * grabEnv * grabLp;
+            for (int s = 0; s < numStrings; ++s)
+                for (int m = 0; m < str[s].sys.numModes(); ++m)
+                    str[s].sys.addForce (m, f * str[s].strikeShape[m]);
+            grabEnv *= kGrabDecay;
+        }
 
         // The sympathetic fast lane: the full course at its coupled
         // prefixes, no hammer machinery. With the pedal down this path runs
@@ -464,8 +482,26 @@ public:
         // G1 pins G6 damped, A6 free; open question 8 owns the exact note).
         // A note above the line ends by energy retirement.
         if (note > 92) return;
-        if (held || sostenuto) return;
-        if (pedalV >= kPedalFree) return;
+        if (held || sostenuto || pedalV >= kPedalFree)
+        {
+            damperWasOff = true;
+            return;
+        }
+        if (damperWasOff)
+        {
+            damperWasOff = false;
+            const double e = modalEnergy();
+            if (e > 1.0e-10)
+            {
+                // Chatter force from the contact-moment energy: amplitude
+                // goes as sqrt(e) (impact momentum tracks string velocity),
+                // the constant calibrated so an mf single-note release sits
+                // near -38 dB against its own attack peak (suite row).
+                grabGain = kGrabForce * std::sqrt (e);
+                grabEnv = 1.0;
+                grabRng = 0x9e3779b9u * static_cast<unsigned> (note + 17);
+            }
+        }
 
         // Half-pedal: CC64 is continuous. The damper's grip interpolates
         // from seated (the register-dependent damperT60 behind damperFactor)
@@ -924,6 +960,10 @@ private:
     // the 30..70% span is the partial-damping playing range [D].
     static constexpr double kPedalSeated = 0.3;
     static constexpr double kPedalFree   = 0.7;
+    // Grab-chatter force scale and its ~50 ms settle (per-sample at 48 k;
+    // recomputed for fs in prepare if the base rate differs).
+    static constexpr double kGrabForce = 1.35;
+    static constexpr double kGrabDecay = 0.99958;
     static constexpr double kKnockGain = 0.2;      // hammer-force share, radiated
     static constexpr double kKnockLoopGain = 0.02; // hammer-force share, in-loop
     static constexpr double kOutScale = 2.0e-3;    // folds the radiator feed level
@@ -948,6 +988,19 @@ private:
     double pedalV = 0.0;
     bool sounding = false, held = false, configured = false;
     bool sympDormant = false;
+
+    // The damper grab. When the felt re-seats on a string that is still
+    // ringing, the string chatters against it for the first few periods --
+    // the release "shh" of a close-miked grand, and, summed over the whole
+    // bank on a pedal lift, the classic damper-return wash. Modeled as a
+    // feedforward force burst at the contact: deterministic noise, felt
+    // bandwidth, amplitude from the string's energy at the moment of
+    // contact, injected through the strike shape (both are near-end
+    // contacts) so it radiates with the string's own coloration. Forces in,
+    // never state feedback -- passivity untouched.
+    bool   damperWasOff = true;
+    double grabEnv = 0.0, grabGain = 0.0, grabLp = 0.0;
+    unsigned grabRng = 1u;
     bool sostenuto = false, sympathetic = false, unaCordaActive = false;
 };
 

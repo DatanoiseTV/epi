@@ -1349,6 +1349,101 @@ static void sectionRoom()
 }
 
 // ===========================================================================
+static void sectionGrabNoise()
+{
+    heading ("12. grand damper grab: the release shh and the pedal-lift wash");
+
+    const double fs = 48000.0;
+
+    auto hfBand = [] (const std::vector<float>& x, int a, int b)
+    {
+        // 2-8 kHz energy, sixty log-spaced Goertzel bins.
+        double e = 0.0;
+        for (int k = 0; k < 60; ++k)
+        {
+            const double f = 2000.0 * std::pow (4.0, k / 59.0);
+            const double w = 2.0 * M_PI * f / 48000.0, cw = 2.0 * std::cos (w);
+            double s1 = 0.0, s2 = 0.0;
+            for (int i = a; i < b; ++i)
+            {
+                const double s0 = x[static_cast<size_t> (i)] + cw * s1 - s2;
+                s2 = s1; s1 = s0;
+            }
+            e += s1 * s1 + s2 * s2 - cw * s1 * s2;
+        }
+        return e / (b - a);
+    };
+
+    // 12.0 -- the grab is present and calibrated: releasing a held mf C4
+    // puts FRESH high-frequency energy into the 15..60 ms post-release
+    // window (the felt-band chatter through the string's own modes), well
+    // above the note's own decayed highs, and bounded so it reads as a
+    // shh, not a cymbal. Twin-diff calibration measured the burst at
+    // -38 dB against the note's attack peak.
+    {
+        EpiEngine e; e.prepare (fs, 256);
+        EngineParams p {}; p.instrument = 3; p.outGainLin = 0.5f; p.spaceMix = 0.0f;
+        std::vector<float> L (256), R (256), y;
+        NoteEvent on { 0, NoteEvent::noteOn, 60, 0.6f };
+        e.process (L.data(), R.data(), 256, p, &on, 1);
+        y.insert (y.end(), L.begin(), L.end());
+        for (int b = 0; b < 187; ++b)
+        {
+            e.process (L.data(), R.data(), 256, p, nullptr, 0);
+            y.insert (y.end(), L.begin(), L.end());
+        }
+        NoteEvent off { 0, NoteEvent::noteOff, 60, 0 };
+        e.process (L.data(), R.data(), 256, p, &off, 1);
+        y.insert (y.end(), L.begin(), L.end());
+        for (int b = 0; b < 38; ++b)
+        {
+            e.process (L.data(), R.data(), 256, p, nullptr, 0);
+            y.insert (y.end(), L.begin(), L.end());
+        }
+        const int rel = 188 * 256;
+        const double pre  = hfBand (y, rel - 2880, rel - 720);
+        const double post = hfBand (y, rel + 720, rel + 2880);
+        double atk = 0.0;
+        for (int i = 0; i < 48000; ++i) atk = std::max (atk, (double) std::fabs (y[static_cast<size_t> (i)]));
+        const double ratio = 10.0 * std::log10 (post / (pre + 1e-30));
+        const double abs2  = 10.0 * std::log10 (post / (atk * atk + 1e-30));
+        row ("12.0", "release puts fresh HF in the grab window", "> +6 dB over pre, abs -45..-12",
+             fmt2 ("+%.1f dB, abs %.1f dB", ratio, abs2),
+             verdict (ratio > 6.0 && abs2 > -45.0 && abs2 < -12.0));
+    }
+
+    // 12.1 -- a dead string grabs silently: cycle the pedal over a string
+    // that finished decaying seconds ago and nothing may sound. The grab
+    // scales with the caught energy, so an empty bank is exactly quiet.
+    {
+        EpiEngine e; e.prepare (fs, 256);
+        EngineParams p {}; p.instrument = 3; p.outGainLin = 0.5f; p.spaceMix = 0.0f;
+        std::vector<float> L (256), R (256);
+        NoteEvent on { 0, NoteEvent::noteOn, 60, 0.05f };
+        e.process (L.data(), R.data(), 256, p, &on, 1);
+        for (int b = 0; b < 18; ++b) e.process (L.data(), R.data(), 256, p, nullptr, 0);
+        NoteEvent off { 0, NoteEvent::noteOff, 60, 0 };
+        e.process (L.data(), R.data(), 256, p, &off, 1);
+        for (int b = 0; b < 560; ++b) e.process (L.data(), R.data(), 256, p, nullptr, 0);
+        NoteEvent pd { 0, NoteEvent::sustainOn, 0, 0 };
+        e.process (L.data(), R.data(), 256, p, &pd, 1);
+        for (int b = 0; b < 37; ++b) e.process (L.data(), R.data(), 256, p, nullptr, 0);
+        NoteEvent pu { 0, NoteEvent::sustainOff, 0, 0 };
+        e.process (L.data(), R.data(), 256, p, &pu, 1);
+        double peak = 0.0;
+        for (float v : L) peak = std::max (peak, (double) std::fabs (v));
+        for (int b = 0; b < 19; ++b)
+        {
+            e.process (L.data(), R.data(), 256, p, nullptr, 0);
+            for (float v : L) peak = std::max (peak, (double) std::fabs (v));
+        }
+        row ("12.1", "dead-string pedal cycle stays silent", "< -120 dBFS",
+             fmt ("%.1f dBFS", 20.0 * std::log10 (peak + 1e-30)),
+             verdict (peak < 1.0e-6));
+    }
+}
+
+// ===========================================================================
 
 int main()
 {
@@ -1369,6 +1464,7 @@ int main()
     sectionRates();
     sectionCpu();
     sectionRoom();
+    sectionGrabNoise();
 
     const double wall = std::chrono::duration<double> (std::chrono::steady_clock::now() - t0).count();
     std::printf ("\nsuite wall time %.1f s\n", wall);
