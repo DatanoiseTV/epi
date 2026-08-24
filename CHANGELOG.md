@@ -42,9 +42,10 @@ All notable changes to Epi are documented here. The format follows
   loads, and legacy states saved before a bench existed.
 
 ### Changed
-- The grand's worst case runs 2.2x lighter: a ten-note chord with the
-  pedal down dropped from 75% to 34% of one core at 48 kHz (4 notes
-  without pedal: 5%). Sympathetic voices keep the FULL course -- every
+- The grand runs 2.2x lighter: a ten-note chord with the pedal down
+  dropped from 75% to 34% of one core at 48 kHz (4 notes without
+  pedal: 5%; the true worst case, an 88-note fortissimo pedal wash,
+  measures 47%). Sympathetic voices keep the FULL course -- every
   string, both coupled prefixes, so the intra-course detune beats that
   are the shimmer of a pedal wash survive (measured: 8.6 dB of
   coherent wash and the superposed beat structure against a
