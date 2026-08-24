@@ -63,15 +63,29 @@ public:
     void setParams (double rateHz, double depthNorm, double feedback, double mixNorm)
     {
         inc   = std::clamp (rateHz, 0.02, 8.0) / fs;
-        depth = std::clamp (depthNorm, 0.0, 1.0);
+        // Depth and mix are TARGETS. Both are audio-path quantities -- depth
+        // sets the allpass coefficient every sample, mix scales the wet
+        // difference -- so applying either at block rate steps the signal,
+        // and a host writing automation in chunks was measured clicking at
+        // -14 dBFS on the mix. They glide instead, at about 20 ms, which is
+        // faster than any sweep reads as lag and slower than any block
+        // boundary. The first call snaps: a fresh chain must start AT its
+        // setting, or the opening milliseconds of every note ramp in and the
+        // superposition rows read a chain that is not linear yet.
+        depthT = std::clamp (depthNorm, 0.0, 1.0);
+        mixT   = std::clamp (mixNorm, 0.0, 1.0);
+        if (! primed) { depth = depthT; mix = mixT; primed = true; }
         // Held below the point where the loop would run away on its own. A
         // phaser that self-oscillates is a different instrument.
         fb    = std::clamp (feedback, 0.0, 0.9);
-        mix   = std::clamp (mixNorm, 0.0, 1.0);
     }
 
     double process (double in)
     {
+        const double glide = 1.0 - std::exp (-1.0 / (0.020 * fs));
+        depth += glide * (depthT - depth);
+        mix   += glide * (mixT - mix);
+
         phase += inc;
         if (phase >= 1.0) phase -= 1.0;
 
@@ -111,6 +125,8 @@ private:
     double z[kStages] {};
     double last = 0.0, phase = 0.0, phaseOffset = 0.0;
     double inc = 0.0, depth = 0.7, fb = 0.4, mix = 0.0;
+    double depthT = 0.7, mixT = 0.0;
+    bool   primed = false;
 };
 
 } // namespace epi

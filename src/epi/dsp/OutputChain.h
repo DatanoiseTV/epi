@@ -242,7 +242,14 @@ public:
     void reset() { phase = 0.0; envA = 1.0; envB = 0.0; }
 
     void setRate (double hz)   { rate = std::clamp (hz, 0.1, 30.0); }
-    void setDepth (double d)   { depth = std::clamp (d, 0.0, 1.0); }
+    // A target, not the value: depth scales the photocell envelopes every
+    // sample, so a block-rate step is an amplitude step. Same 20 ms glide
+    // and same first-call snap as the phaser.
+    void setDepth (double d)
+    {
+        depthT = std::clamp (d, 0.0, 1.0);
+        if (! depthPrimed) { depth = depthT; depthPrimed = true; }
+    }
 
     // How the two photocells are wired, which is the only difference between
     // the two effects people mean by these words.
@@ -259,6 +266,8 @@ public:
 
     void process (double x, double& l, double& r)
     {
+        depth += (1.0 - std::exp (-1.0 / (0.020 * fs))) * (depthT - depth);
+
         phase += rate / fs;
         if (phase >= 1.0) phase -= 1.0;
 
@@ -288,6 +297,8 @@ public:
 
 private:
     double fs = 48000.0, rate = 5.0, depth = 0.0, stereo = 1.0;
+    double depthT = 0.0;
+    bool   depthPrimed = false;
     double phase = 0.0, envA = 1.0, envB = 0.0;
     double aAtk = 0.1, aDec = 0.01;
 };

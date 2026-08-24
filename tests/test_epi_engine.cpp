@@ -24,6 +24,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <functional>
 #include <map>
 #include <random>
@@ -827,6 +828,39 @@ static const Knob kKnobs[] = {
     { "cabMix",      [] (EngineParams& p, float u) { p.cabMix = u; } },
     { "barCouple",   [] (EngineParams& p, float u) { p.barCouple = u; } },
     { "damperGrip",  [] (EngineParams& p, float u) { p.damperGrip = u; } },
+    // The rest of the continuous surface. A click fence that covers a third
+    // of the knobs fences a third of the instrument: every one of these is
+    // something a player automates or rides, and each was silent about its
+    // own steps until it was swept here.
+    { "escapement",  [] (EngineParams& p, float u) { p.escapement = u; } },
+    { "hammerMass",  [] (EngineParams& p, float u) { p.hammerMass = u; } },
+    { "strikeNoise", [] (EngineParams& p, float u) { p.strikeNoise = u; } },
+    { "bodyMix",     [] (EngineParams& p, float u) { p.bodyMix = u; } },
+    { "barTune",     [] (EngineParams& p, float u) { p.barTune = -24.0f + 48.0f * u; } },
+    { "nonlinAmt",   [] (EngineParams& p, float u) { p.nonlinAmt = u; } },
+    { "coilFreq",    [] (EngineParams& p, float u) { p.coilFreq = u; } },
+    { "coilQ",       [] (EngineParams& p, float u) { p.coilQ = u; } },
+    { "tremRate",    [] (EngineParams& p, float u) { p.tremRate = 0.5f + 11.5f * u; } },
+    { "tremDepth",   [] (EngineParams& p, float u) { p.tremDepth = u; } },
+    { "tremStereo",  [] (EngineParams& p, float u) { p.tremStereo = u; } },
+    { "phaserMix",   [] (EngineParams& p, float u) { p.phaserMix = u; } },
+    { "phaserRate",  [] (EngineParams& p, float u) { p.phaserRate = 0.05f + 4.95f * u; } },
+    { "phaserDepth", [] (EngineParams& p, float u) { p.phaserDepth = u; } },
+    { "phaserFb",    [] (EngineParams& p, float u) { p.phaserFb = u; } },
+    { "spaceMix",    [] (EngineParams& p, float u) { p.spaceMix = u; } },
+    { "spaceSize",   [] (EngineParams& p, float u) { p.spaceSize = u; } },
+    { "outGain",     [] (EngineParams& p, float u) { p.outGainLin = 0.05f + 1.95f * u; } },
+    { "wearAmount",  [] (EngineParams& p, float u) { p.wearAmount = u; } },
+    { "velCurve",    [] (EngineParams& p, float u) { p.velCurve = u; } },
+    // TUNE and the body bench are deliberately NOT in this list, and
+    // bodySize is excused in the sweep below. Continuously retuning a
+    // string that is already ringing is not something any of these
+    // instruments can do -- nobody turns a tuning pin mid-note, and a
+    // piano has no bend wheel -- so a swept-retune click fence would be
+    // fencing an action the instrument does not have. What IS real is a
+    // SINGLE retune landing while notes ring: a workshop edit, a material
+    // swap, a body change, a tuning knob moved between phrases. Section
+    // 6b measures exactly that instead.
 };
 
 static void sectionKnobs()
@@ -903,7 +937,8 @@ static void sectionKnobs()
 
         char idb[12], what[64];
         std::snprintf (idb, sizeof idb, "6.%d", inst);
-        std::snprintf (what, sizeof what, "%s worst clean knob of 13", kInstName[inst]);
+        std::snprintf (what, sizeof what, "%s worst clean knob of %d", kInstName[inst],
+                       (int) std::size (kKnobs));
         row (idb, what, "d2 <= 0.05",
              fmt ("%.4f", worstClean) + " (" + worstCleanName + ")",
              verdict (worstClean <= 0.05));
@@ -916,6 +951,90 @@ static void sectionKnobs()
 // ===========================================================================
 // 7. The rail and the extremes: fortissimo abuse stays bounded and decays.
 // ===========================================================================
+
+// ===========================================================================
+static void sectionRetune()
+{
+    heading ("6b. a single retune while strings ring (workshop, material, body, tune)");
+
+    // The physical action this fences: something retunes the instrument
+    // while notes are sounding. A workshop length or gauge edit, a material
+    // swap, a body resize, the tuning knob moved between phrases. The
+    // string keeps ringing THROUGH it -- its energy is not reset, its
+    // envelope does not jump, and no sample steps.
+    //
+    // What is deliberately not fenced: sweeping a retune continuously under
+    // a held note. No piano can do it (no bend wheel, and nobody turns a
+    // tuning pin mid-note), so the second-derivative step it necessarily
+    // produces -- acceleration is minus omega squared times displacement,
+    // and omega just moved -- is an artifact of asking for an action the
+    // instrument does not have, not a defect in the model.
+    const double fs = 48000.0;
+    const int block = 64;
+
+    struct Change { const char* name; std::function<void (EngineParams&)> apply; };
+    const Change changes[] = {
+        { "tune +20 ct",  [] (EngineParams& p) { p.tuneCents = 20.0f; } },
+        { "body size",    [] (EngineParams& p) { p.bodySize = 0.75f; } },
+        { "body material",[] (EngineParams& p) { p.bodyMat = 2; } },
+    };
+
+    for (int inst = 0; inst < 5; ++inst)
+        for (const auto& ch : changes)
+        {
+            EpiEngine e;
+            e.prepare (fs, block);
+            EngineParams p = measParams (inst);
+            std::vector<float> L (block), R (block), y;
+            NoteEvent on { 0, NoteEvent::noteOn, 60, 0.7f };
+            e.process (L.data(), R.data(), block, p, &on, 1);
+            y.insert (y.end(), L.begin(), L.end());
+            for (int b = 0; b < 200; ++b)
+            {
+                e.process (L.data(), R.data(), block, p, nullptr, 0);
+                y.insert (y.end(), L.begin(), L.end());
+            }
+            const std::size_t mark = y.size();
+            ch.apply (p);
+            for (int b = 0; b < 200; ++b)
+            {
+                e.process (L.data(), R.data(), block, p, nullptr, 0);
+                y.insert (y.end(), L.begin(), L.end());
+            }
+
+            auto rms = [&] (std::size_t a, std::size_t b)
+            {
+                double s = 0.0;
+                for (std::size_t i = a; i < b; ++i) s += (double) y[i] * y[i];
+                return std::sqrt (s / static_cast<double> (b - a));
+            };
+            const double before = rms (mark - 2000, mark);
+            const double after  = rms (mark + 96, mark + 2096);
+            double stepAfter = 0.0, stepBefore = 0.0;
+            for (std::size_t i = mark; i < mark + 400; ++i)
+                stepAfter = std::max (stepAfter, (double) std::fabs (y[i] - y[i - 1]));
+            for (std::size_t i = mark - 2000; i < mark; ++i)
+                stepBefore = std::max (stepBefore, (double) std::fabs (y[i] - y[i - 1]));
+
+            bool finite = true;
+            for (float v : y) finite = finite && std::isfinite (v);
+            // The body bench legitimately changes the level (that is what a
+            // different board is for); the tuning knob must not.
+            const double levelDb = 20.0 * std::log10 (std::max (1.0e-12, after)
+                                                    / std::max (1.0e-12, before));
+            const double levelBound = std::strcmp (ch.name, "tune +20 ct") == 0 ? 1.5 : 6.0;
+            const bool ok = finite
+                         && std::abs (levelDb) < levelBound
+                         && stepAfter <= 1.5 * stepBefore + 1.0e-6;
+            char rid[8];
+            std::snprintf (rid, sizeof rid, "6b.%d", inst);
+            row (rid,
+                 (std::string (kInstName[inst]) + " rings through a " + ch.name).c_str(),
+                 "no reset, no step", 
+                 fmt2 ("%+.2f dB, step %.2fx", levelDb, stepAfter / std::max (1.0e-12, stepBefore)),
+                 verdict (ok));
+        }
+}
 
 static void sectionRail()
 {
@@ -1621,6 +1740,7 @@ int main()
     sectionMaterials();
     sectionTransducers();
     sectionKnobs();
+    sectionRetune();
     sectionRail();
     sectionMidi();
     sectionRates();

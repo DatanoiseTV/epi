@@ -198,11 +198,19 @@ public:
     void reset() { phase = 0.0; env = 1.0; }
 
     void setRate (double hz)  { rate = std::clamp (hz, 0.1, 30.0); }
-    void setDepth (double d)  { depth = std::clamp (d, 0.0, 1.0); }
+    // Target plus glide, for the same reason as the vibrato's: depth is an
+    // audio-path scale and a block-rate step in it is a click.
+    void setDepth (double d)
+    {
+        depthT = std::clamp (d, 0.0, 1.0);
+        if (! depthPrimed) { depth = depthT; depthPrimed = true; }
+    }
 
     // One gain per sample; the caller applies it to both channels alike.
     double gain()
     {
+        depth += (1.0 - std::exp (-1.0 / (0.020 * fs))) * (depthT - depth);
+
         phase += rate / fs;
         if (phase >= 1.0) phase -= 1.0;
 
@@ -219,7 +227,8 @@ private:
     // 7.70 dB through the lag, this value lands 7.3).
     static constexpr double kSwingDb = 9.1;
 
-    double fs = 48000.0, rate = 5.6, depth = 0.0;
+    double fs = 48000.0, rate = 5.6, depth = 0.0, depthT = 0.0;
+    bool   depthPrimed = false;
     double phase = 0.0, env = 1.0;
     double aAtk = 0.1, aDec = 0.01;
 };
