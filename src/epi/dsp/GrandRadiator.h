@@ -80,9 +80,13 @@ public:
     // Stage therefore agree about where every source sits; only the way the
     // field is SAMPLED differs (fixed gain law there, real mic geometry
     // here). For the mics the 256 per-section positions are quantised onto
-    // kStageSlots delay buses by linear split -- at mic distances >= 0.2 m
-    // the inter-slot spacing (0.2 m) is below the resolution any two-ear or
-    // two-mic rig has for an extended source, so nothing audible is lost.
+    // kStageSlots delay buses, each section to its NEAREST bus -- at mic
+    // distances >= 0.2 m the inter-slot spacing (0.2 m) is below the
+    // resolution any two-ear or two-mic rig has for an extended source, so
+    // nothing audible is lost. Nearest, not a linear split: splitting one
+    // section's amplitude across two buses recombines at every mic as a
+    // two-tap comb (the buses arrive a few samples apart), which measured
+    // as 9 dB of band tilt between 1.3-4 k and 4-10 k at the seat.
     // -----------------------------------------------------------------------
     static constexpr int kStageSlots = 8;
     static constexpr double kBridgeHalf = 0.7;   // metres, mid-bridge to end
@@ -185,7 +189,6 @@ private:
             double* pg  = ch == 0 ? gL : gR;
             double* pgB = ch == 0 ? gBL : gBR;
             int*    psi = ch == 0 ? slotIL : slotIR;
-            double* psw = ch == 0 ? slotWL : slotWR;
             for (int i = 0; i < kSections; ++i)
             {
                 const double t = (i + 0.5 + 0.5 * ch) / kSections;
@@ -226,9 +229,7 @@ private:
                 const double x = centre - 0.5 * kBridgeHalf * h;
                 const double u = (x + kBridgeHalf) / (2.0 * kBridgeHalf)
                                * (kStageSlots - 1);
-                const int i0 = std::clamp (static_cast<int> (u), 0, kStageSlots - 2);
-                psi[i] = i0;
-                psw[i] = std::clamp (u - i0, 0.0, 1.0);
+                psi[i] = std::clamp (static_cast<int> (u + 0.5), 0, kStageSlots - 1);
             }
         }
     }
@@ -358,21 +359,13 @@ private:
             if constexpr (Classic)
                 sl += gL[i] * l;
             if constexpr (Stage)
-            {
-                const double v = gBL[i] * l;
-                slots[slotIL[i]]     += (1.0 - slotWL[i]) * v;
-                slots[slotIL[i] + 1] += slotWL[i] * v;
-            }
+                slots[slotIL[i]] += gBL[i] * l;
             const double r = a1R[i] * yR1[i] + a2R[i] * yR2[i] + xr;
             yR2[i] = yR1[i]; yR1[i] = r;
             if constexpr (Classic)
                 sr += gR[i] * r;
             if constexpr (Stage)
-            {
-                const double v = gBR[i] * r;
-                slots[slotIR[i]]     += (1.0 - slotWR[i]) * v;
-                slots[slotIR[i] + 1] += slotWR[i] * v;
-            }
+                slots[slotIR[i]] += gBR[i] * r;
         }
         inL = inR = 0.0;
         if constexpr (Classic)
@@ -395,11 +388,10 @@ private:
     double a1L[kSections] {}, a2L[kSections] {};
     double a1R[kSections] {}, a2R[kSections] {};
     double gL[kSections] {}, gR[kSections] {};
-    // Stage readout tables: scatter-free base amplitude and the two-slot
-    // linear split of each section's bridge position (see the header note).
+    // Stage readout tables: scatter-free base amplitude and the nearest
+    // slot bus to each section's bridge position (see the header note).
     double gBL[kSections] {}, gBR[kSections] {};
     int    slotIL[kSections] {}, slotIR[kSections] {};
-    double slotWL[kSections] {}, slotWR[kSections] {};
     GrandRadiationHp hpInL, hpInR;
     GrandRadiationHp dirHpL, dirHpR;
     Lp2 dirLpL, dirLpR;

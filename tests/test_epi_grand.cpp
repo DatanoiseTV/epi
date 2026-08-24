@@ -1935,7 +1935,8 @@ static void sectionCalibration()
 static StereoSig renderStagePath (const std::vector<Strike>& strikes, double seconds,
                                   int mode, const std::vector<GrandMicStage::Mic>& mics,
                                   double changeAt = -1.0, int changeIdx = 0,
-                                  const GrandMicStage::Mic* changeTo = nullptr)
+                                  const GrandMicStage::Mic* changeTo = nullptr,
+                                  double switchModeAt = -1.0, int switchModeTo = 0)
 {
     const int N = static_cast<int> (kFs * seconds);
     GrandBoard board;
@@ -1962,6 +1963,7 @@ static StereoSig renderStagePath (const std::vector<Strike>& strikes, double sec
         pr.push_back (gr);
     }
     const int changeSample = changeAt >= 0.0 ? static_cast<int> (changeAt * kFs) : -1;
+    const int switchSample = switchModeAt >= 0.0 ? static_cast<int> (switchModeAt * kFs) : -1;
     StereoSig s;
     s.l.resize (static_cast<std::size_t> (N));
     s.r.resize (static_cast<std::size_t> (N));
@@ -1970,6 +1972,8 @@ static StereoSig renderStagePath (const std::vector<Strike>& strikes, double sec
     {
         if (i == changeSample && changeTo != nullptr)
             stage.setMic (changeIdx, *changeTo);
+        if (i == switchSample)
+            stage.setMode (switchModeTo);
         for (std::size_t j = 0; j < vs.size(); ++j)
         {
             const double f = vs[j]->process (cfg, board) + vs[j]->knockOut();
@@ -2220,6 +2224,76 @@ static void sectionMicStage()
         row ("MS6", "mid-note mic move, |d2| vs steady", "<= 3x steady",
              fmt2 ("%.2e vs %.2e", da, 3.0 * db),
              da <= 3.0 * db ? Verdict::pass : Verdict::fail);
+    }
+
+    // ---- MS8: entering Stage mid-note -- the wavefront must not step --------
+    {
+        // The buses start from silence when Stage rendering begins, so a mic
+        // at r hears its wavefront r/c after the switch -- 705 samples at
+        // z = 5, well past the 10 ms mode crossfade, where an unfaded
+        // arrival landed as a hard step (measured x11.8 the steady second
+        // difference before the per-tap arrival ramp; the ramp lets the
+        // field build up at the speed of sound instead).
+        GrandMicStage::Mic m;
+        m.on = true; m.x = 0.0; m.z = 5.0; m.h = 0.6; m.pan = 0.0;
+        const auto a = renderStagePath ({ { 60, 0.8 } }, 1.5, 0, { m },
+                                        -1.0, 0, nullptr, 0.7, 1);
+        // Measured AFTER the 10 ms crossfade has finished (from sw + 600
+        // samples): from there the output is pure Stage while the field is
+        // still filling in at the speed of sound, so the reference is the
+        // steady Stage render and any uncovered arrival stands out sharply
+        // (x14 the steady bound before the ramp; the crossfade window
+        // itself is MS6's business and legitimately carries the louder
+        // classic signal).
+        const auto b1 = renderStagePath ({ { 60, 0.8 } }, 1.5, 1, { m });
+        const double w0 = 0.7 + 600.0 / kFs, w1 = 0.79;
+        const double da = std::max (maxSecondDiff (a.l, w0, w1),
+                                    maxSecondDiff (a.r, w0, w1));
+        const double db = std::max (maxSecondDiff (b1.l, w0, w1),
+                                    maxSecondDiff (b1.r, w0, w1));
+        row ("MS8", "mode 0->1 mid-note, far mic |d2|", "<= 3x steady",
+             fmt2 ("%.2e vs %.2e", da, 3.0 * db),
+             da <= 3.0 * db ? Verdict::pass : Verdict::fail);
+    }
+
+    // ---- MS9/MS10: the seat gauge -------------------------------------------
+    {
+        // A Stage mic parked at the calibrated pair's seat (x=0, z=1.2,
+        // h=0.6) must reproduce what the calibrated chain delivers there,
+        // or positions stop being trustworthy. The reference is the pair's
+        // per-band POWER SUM, 0.5 (P_L + P_R): it is invariant under the
+        // pair's unit-magnitude allpasses, so it is the chain's band energy
+        // at the seat. The time-domain mono fold 0.5 (L + R) is NOT a
+        // usable reference -- the pair's interchannel phase folds to
+        // measured band losses of -1..-12 dB, note-dependent (the allpass
+        // comb), and a mono mic matching that would be matching the fold,
+        // which is exactly the pair property a single mic cannot and
+        // should not share.
+        const auto c = renderRadiatedNote (60, 0.8, 1.5);
+        GrandMicStage::Mic m;
+        m.on = true; m.x = 0.0; m.z = 1.2; m.h = 0.6; m.pan = 0.0;
+        const auto g = renderStagePath ({ { 60, 0.8 } }, 1.5, 1, { m });
+        std::vector<double> mic (g.l.size());
+        for (std::size_t i = 0; i < g.l.size(); ++i)
+            mic[i] = (g.l[i] + g.r[i]) * 0.70710678118654752;   // pan 0
+        auto delta = [&] (double lo, double hi)
+        {
+            const double refDb = 10.0 * std::log10 (0.5 *
+                  (std::pow (10.0, bandPowerDb (c.l, lo, hi) / 10.0)
+                 + std::pow (10.0, bandPowerDb (c.r, lo, hi) / 10.0)));
+            return bandPowerDb (mic, lo, hi) - refDb;
+        };
+        const double total = delta (30.0, 20000.0);
+        row ("MS9", "seat mic total vs chain energy", "within +/- 1.5 dB",
+             fmt ("%+.2f dB", total), within (total, -1.5, 1.5));
+        const double b1 = delta (60.0, 300.0);
+        const double b2 = delta (300.0, 1300.0);
+        const double b3 = delta (4000.0, 10000.0);
+        const double worst = std::max ({ std::abs (b1), std::abs (b2), std::abs (b3) });
+        char got[96];
+        std::snprintf (got, sizeof got, "%+.2f/%+.2f/%+.2f dB", b1, b2, b3);
+        row ("MS10", "seat band split (60-300/mid/4-10k)", "each within +/- 2 dB",
+             got, worst <= 2.0 ? Verdict::pass : Verdict::fail);
     }
 
     // ---- MS7: cost (informational) ------------------------------------------

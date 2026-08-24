@@ -124,6 +124,7 @@ public:
     {
         std::fill (ring.begin(), ring.end(), 0.0);
         wp = 0;
+        busAge = 0;
         pair.clear();
         for (auto& t : setA) t.airY = 0.0;
         for (auto& t : setB) t.airY = 0.0;
@@ -221,7 +222,11 @@ public:
 private:
     // ---- geometry constants ------------------------------------------------
     static constexpr double kSpeedOfSound = 343.0;  // m/s, dry air at 20 C
-    static constexpr double kRefDist  = 1.2;   // the calibrated pair's seat, m
+    // The calibrated pair's notional seat: every path's gain is referenced
+    // to unity HERE, so a Stage mic parked at the seat reproduces the
+    // calibrated chain's mono level and band balance (fenced by row MS9),
+    // and positions away from it read as honest 1/r excursions.
+    static constexpr double kSeatZ = 1.2, kSeatH = 0.6;
     static constexpr double kMinR     = 0.2;   // a mic cannot enter the board
     static constexpr double kMonoLeak = 0.15;  // case volume + rim gap: no
                                                // perfect dipole null in the
@@ -234,17 +239,31 @@ private:
     static constexpr double kAirDbPerM10k = 0.11; // ISO 9613-1, 20 C, 50% RH
     static constexpr double kMaxDelayS = 0.040;
     static constexpr double kFadeS     = 0.010;
+    // The section-band gauge, measured: at one mic the two half-step-offset
+    // banks (near-identical resonators that Classic keeps in SEPARATE
+    // channels) sum coherently, which left the seat mic's section band
+    // +2.4..+3.0 dB above the calibrated chain's band energy (notes 36/60,
+    // 1.3-4 k and 4-10 k). One constant, because both chains are LTI: the
+    // ratio is a fixed transfer-function property, not a note property
+    // (residual note-to-note spread is its ripple sampled at sparse partial
+    // frequencies). Pinned so the seat mic lands on the chain's band energy
+    // (row MS9).
+    static constexpr double kSecGauge = 0.75;   // -2.5 dB
 
     static constexpr int kBuses  = GrandRadiator::kStageSlots + 2;
     static constexpr int kBusLow = GrandRadiator::kStageSlots;
     static constexpr int kBusLid = GrandRadiator::kStageSlots + 1;
 
-    // The dipole gain at the calibrated seat (x=0, z=1.2, h=0.6): the gauge
-    // that keeps the default Stage mic at the calibrated tonal balance.
+    static double seatR()
+    {
+        return std::sqrt (kSeatZ * kSeatZ + kSeatH * kSeatH);
+    }
+
+    // The dipole gain at the calibrated seat: with the low path divided by
+    // dipRef()/seatR(), the seat mic reads the low bus at exactly unity.
     static double dipRef()
     {
-        const double r = std::sqrt (kRefDist * kRefDist + 0.6 * 0.6);
-        return (1.0 - kMonoLeak) * (0.6 / r) + kMonoLeak;
+        return (1.0 - kMonoLeak) * (kSeatH / seatR()) + kMonoLeak;
     }
 
     // ---- per-mic derived taps ---------------------------------------------
@@ -267,13 +286,13 @@ private:
         t.panL = g * std::cos (a);
         t.panR = g * std::sin (a);
 
-        // The section buses: point sources on the bridge line.
+        // The section buses: point sources on the bridge line, seat-gauged.
         for (int s = 0; s < GrandRadiator::kStageSlots; ++s)
         {
             const double dx = m.x - GrandRadiator::slotX (s);
             const double r = std::max (kMinR,
                 std::sqrt (dx * dx + m.z * m.z + m.h * m.h));
-            t.gain[s] = kRefDist / r;
+            t.gain[s] = kSecGauge * seatR() / r;
             t.del[s]  = r / kSpeedOfSound * fs;
         }
 
@@ -282,7 +301,7 @@ private:
         const double r0 = std::max (kMinR,
             std::sqrt (m.x * m.x + m.z * m.z + m.h * m.h));
         const double dip = (1.0 - kMonoLeak) * (m.h / r0) + kMonoLeak;
-        t.gain[kBusLow] = (kRefDist / r0) * dip / dipRef();
+        t.gain[kBusLow] = (seatR() / r0) * dip / dipRef();
         t.del[kBusLow]  = r0 / kSpeedOfSound * fs;
 
         // The lid image: reflected high band, gated by how much of the
@@ -296,7 +315,8 @@ private:
         double open = std::clamp (0.5 + 1.5 * m.x / rh, 0.0, 1.0);
         if (m.h < 0.0)
             open *= std::clamp (1.0 + m.h / kMinR, 0.0, 1.0);
-        t.gain[kBusLid] = kLidRefl * open * kRefDist / rl;
+        // Same gauge as the sections: the lid reflects section-band content.
+        t.gain[kBusLid] = kSecGauge * kLidRefl * open * seatR() / rl;
         t.del[kBusLid]  = rl / kSpeedOfSound * fs;
 
         for (int b = 0; b < kBuses; ++b)
@@ -376,6 +396,7 @@ private:
         if (mode == 0)
         {
             std::fill (ring.begin(), ring.end(), 0.0);
+            busAge = 0;
             for (auto& t : setA) t.airY = 0.0;
         }
         fadePos = 0;
@@ -384,6 +405,7 @@ private:
     // ---- the delay buses ---------------------------------------------------
     void writeBuses (const double* slots, double low)
     {
+        if (busAge < 1 << 30) ++busAge;
         wp = (wp + 1) & (ringN - 1);
         double hi = 0.0;
         double* r = ring.data();
@@ -415,12 +437,29 @@ private:
 
     void renderSet (std::array<Taps, kMaxMics>& set, double& outL, double& outR)
     {
+        // The arrival ramp: when the buses start from silence (entering
+        // Stage rendering cold), a mic at distance r hears nothing until
+        // r/c has elapsed, and the wavefront would otherwise land as a hard
+        // step -- for any mic beyond c * fade time the step falls AFTER the
+        // mode crossfade has finished and nothing masks it. So each tap
+        // fades itself in over kFadeS starting at its own arrival: the
+        // field builds up mic by mic at the speed of sound, and no tap ever
+        // steps. Steady state pays one compare per tap.
+        const double age = static_cast<double> (busAge);
         for (auto& t : set)
         {
             if (! t.on) continue;
             double acc = 0.0;
             for (int b = 0; b < kBuses; ++b)
-                acc += t.gain[b] * readTap (b, t.del[b]);
+            {
+                double v = t.gain[b] * readTap (b, t.del[b]);
+                if (age < t.del[b] + fadeLen)
+                {
+                    const double u = std::clamp ((age - t.del[b]) / fadeLen, 0.0, 1.0);
+                    v *= u * u * (3.0 - 2.0 * u);
+                }
+                acc += v;
+            }
             t.airY += t.airA * (acc - t.airY);
             outL += t.panL * t.airY;
             outR += t.panR * t.airY;
@@ -450,6 +489,7 @@ private:
     std::vector<double> ring;
     int ringN = 0;
     int wp = 0;
+    int busAge = 0;   // samples since the buses last started from silence
 };
 
 } // namespace epi
