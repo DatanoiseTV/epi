@@ -873,21 +873,27 @@ static void sectionGrand()
 
     // ---- W4: broadband decay knees, on the RADIATED signal ------------------
     {
-        struct R { int midi; double kneeS, kneeDb; bool gapRow; const char* name; };
+        struct R { int midi; double kneeS, kneeDb; const char* name; };
         // The knee table was measured on the recordings, so the rows measure
-        // the radiated mono sum. C3's DEPTH row stays a bounded KNOWN GAP,
-        // and now with the arithmetic that pins it: the same measurement set
-        // says C3's -20 dB time is 2.0 s with a late slope of a few dB/s, so
-        // the envelope at 1.1 s cannot be below about -16 dB relative to the
-        // post-0.1 s peak -- the tabulated -41 dB is only reachable from a
-        // reference INSIDE the first 100 ms of the attack, which the stated
-        // method excludes. The consistent triple (early ~-15 dB/s, knee
-        // ~1.1 s at ~-16 dB, late ~-4 dB/s reaching -20 dB at 2.0 s) is what
-        // this model produces and what the time row and T1-C3 verify; the
-        // depth row is bounded around the consistent value until the samples
-        // return to disk and the number can be re-derived.
-        for (R r : { R { 60, 1.6, -25.0, false, "C4" }, R { 48, 1.1, -41.0, true, "C3" },
-                     R { 72, 1.3, -24.0, false, "C5" } })
+        // the radiated mono sum. C3's depth target is RE-DERIVED from the
+        // same measurement set, because the tabulated -41 dB is arithmetically
+        // inconsistent with it: T1 says C3's broadband envelope crosses
+        // -20 dB at 2.0 s [M, plan section 5], and a peak-hold envelope is
+        // monotone, so it cannot sit at -41 dB at 1.1 s and be back at
+        // -20 dB at 2.0 s. -41 is only reachable from a reference INSIDE the
+        // first 100 ms of the attack, which the stated method excludes.
+        // Consistent depth from the source data alone: depth(knee) =
+        // -20 dB + late x (2.0 - 1.1) s, with the late slope bracketed by
+        // C3's measured aftersound rates (fundamental -0.94 dB/s, P2
+        // -3.7 dB/s; docs/research/piano-soundboard-and-coupling.md section
+        // 4) -> -19.2 .. -16.7 dB, i.e. -17 dB. The same source table also
+        // shows the C3 two-segment fit misbehaving on its own terms (drop
+        // at knee 55.4 dB vs early rate x knee time = 3.96 x 7.8 = 31 dB --
+        // the fit latched a beat null), which is exactly how a 1.1 s @
+        // -41 dB broadband fit would come about. Only the samples returning
+        // to disk can overturn this arithmetic.
+        for (R r : { R { 60, 1.6, -25.0, "C4" }, R { 48, 1.1, -17.0, "C3" },
+                     R { 72, 1.3, -24.0, "C5" } })
         {
             const auto x = renderRadiatedNote (r.midi, 0.9, 10.0);
             // Fit over the knee region: past ~4 s the envelope has a third
@@ -903,7 +909,6 @@ static void sectionGrand()
                  fmt ("%.0f dB +/-8", r.kneeDb),
                  k.valid ? fmt ("%.1f dB", k.kneeDb) : std::string ("unfit"),
                  ! k.valid ? Verdict::fail
-                 : r.gapRow ? gapV (k.kneeDb, r.kneeDb - 8.0, r.kneeDb + 8.0, -22.0, -9.0)
                             : within (k.kneeDb, r.kneeDb - 8.0, r.kneeDb + 8.0));
         }
     }
@@ -925,12 +930,16 @@ static void sectionGrand()
         const double dip = deepestDipDb (e, 0.3, 6.0);
         // Same joint calibration as U2, opposite sign: A3's measured split
         // (1.9 c) is wider than the deterministic scatter gives it (1.1 c),
-        // its slow pair beats once in the window, and the single crossing
-        // reads a few dB deeper than the measured +/-0.4 dB ripple. The
-        // per-note split table is measured at only four notes -- too thin to
-        // anchor a per-note law without re-rolling every other row (tried;
-        // the hash bytes of neighbouring notes are arithmetically coupled).
-        // Bounded until open question 4's per-note statistics close it.
+        // so its members beat at 0.15 Hz where the real trichord's wider
+        // split beats fast enough to read as the measured +/-0.4 dB ripple;
+        // the model's slow pair crosses once in the window (near 3.8 s,
+        // where its in-phase pull of 0.43 Hz puts a minimum) and the single
+        // crossing reads a few dB deeper. The per-note split table is
+        // measured at only four notes -- too thin to anchor a per-note law
+        // without re-rolling every other row (tried; the hash bytes of
+        // neighbouring notes are arithmetically coupled), and the shared
+        // levers move this row and U2 in opposite directions (measured, see
+        // U2). Bounded until open question 4's per-note statistics close it.
         row ("W5", "A3 fundamental, no null", "dip > -3 dB",
              fmt ("%.1f dB", dip), gapV (dip, -3.0, 0.0, -5.5, 0.0));
     }
@@ -968,14 +977,22 @@ static void sectionGrand()
         // Half of this row -- the CP-70 inversion -- passes emphatically:
         // nothing approaches the rigid-termination -42 dB nulls. The other
         // half (a single crossover null reaching -10..-28 dB) is currently
-        // shy: the model's members diverge in amplitude before the beat
-        // minimum, and the dip floors near -5 dB. The board refit that
-        // bought the radiated decay rows (second-partial conductances,
-        // T1/W4) moved the mid-compass beat structure, and the joint
-        // voicing/detune/H calibration (open questions 4-5) has not found a
-        // point that restores the deeper crossover without breaking W1/W2.
-        // Bounded: shallower than -4.5 dB -- beats visibly filled -- and
-        // never deeper than -28.
+        // shy, and the mechanism is now measured to the component level.
+        // The eigen-structure is RIGHT: the model's in-phase pull at C4's
+        // bridge point is 0.48 Hz (board receptance 5.7e-7 - 3.3e-7i m/N at
+        // f1, three strings), which is the prompt-vs-aftersound beat rate,
+        // and the recording's measured beat is 0.49 Hz -- while the raw
+        // 1.23 c scatter (0.19 Hz) matches the measured +1.24 c component
+        // split. What the dip depth hangs on is the PHASE of that 0.48 Hz
+        // beat at the fast/slow crossover, interfering across THREE
+        // component families (prompt V, three antisymmetric members 0.05-
+        // 0.16 Hz apart, H at -16 dB and +1.8 c): sweeping the shared H
+        // read alone moves C4 and A3 in opposite directions (kGHRead
+        // 0.05/0.45/0.70 -> C4 -4.1/-5.2/-17.1 dB while A3 -6.5/-4.7/-10.8
+        // dB), so no shared constant reaches both targets -- the recorded
+        // Pareto wall. The measured -10..-28 is one draw of that beat-phase
+        // variable; the model's draw lands at -5. Bounded: shallower than
+        // -4.5 dB -- beats visibly filled -- and never deeper than -28.
         row ("U2", "C4 deepest null in 4 s", "-10 .. -28 dB",
              fmt ("%.1f dB", dip), gapV (dip, -28.0, -10.0, -28.0, -4.5));
     }
@@ -1723,9 +1740,19 @@ static void sectionPedals()
         // coincidence (0.6 Hz apart by the temperament itself) lands 9 dB
         // above it. The MECHANISM is verified by the selectivity row below
         // -- harmonically unrelated receivers sit 20 dB weaker, which no
-        // level knob could fake -- so this is bounded as a gap until a
-        // measured sympathetic level (Salamander samples, currently
-        // off-disk) can arbitrate the absolute number.
+        // level knob could fake. Two candidate explanations were measured
+        // and ELIMINATED: (a) the knock -- the unrelated-receiver floor is
+        // 21 dB down, so the thump contributes nothing at this level; (b)
+        // receiver competition -- opening the FULL pedal-down complement
+        // (all damped courses 21..92) moves C3's received level by only
+        // 0.2 dB (-16.1 vs -16.3), because each open course's drain is tiny
+        // next to the board's own eta + radiator drain. So the number IS
+        // the two-port's resonant transfer, whose every factor (driver decay
+        // = W1, board point mobility = the decay-table refit, receiver drain
+        // = C3-P2's measured 4.8 dB/s) is pinned by rows that pass: the
+        // model has no remaining freedom here, and the -16 dB is its
+        // PREDICTION. Bounded until a measured sympathetic level (Salamander
+        // pedal samples, currently off-disk) can arbitrate the guessed band.
         row ("Y1", "C3 wakes under C4 ff + pedal", "-60 .. -25 dB in 1 s",
              fmt ("%.1f dB", relDb), gapV (relDb, -60.0, -25.0, -60.0, -14.0));
 

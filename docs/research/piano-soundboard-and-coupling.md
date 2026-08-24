@@ -257,6 +257,19 @@ Readings:
 - Residual RMS of 2.5–4.6 dB even after the two-slope fit is the beating —
   the envelope is not two clean lines and test tolerances must allow that.
 
+Consistency note (added later, from the numbers above alone; the flac set is
+no longer on disk to re-fit): the C3 row's "drop at knee" is inconsistent
+with its own fit — early rate × knee time = 3.96 × 7.8 = 31 dB, not 55.4 —
+the signature of the two-segment fit latching onto a beat null instead of the
+regime change (C3 beats at 0.22 Hz, period comparable to the fit window).
+The same failure mode explains the broadband C3 knee "1.1 s @ −41 dB" in the
+plan's W4 table, which contradicts the plan's own T1 measurement (broadband
+−20 dB at 2.0 s, same files, monotone peak-hold envelope): the depth
+consistent with T1 and the C3 late rates above (fundamental −0.94, P2
+−3.7 dB/s) is −19.2…−16.7 dB at the 1.1 s knee. Treat C3 knee *depths* from
+this set as untrustworthy until the samples return and can be re-fit with a
+beat-robust method; the knee *times* and the rates cross-check fine.
+
 ### Unison beating
 
 Dominant residual modulation, early segment: A1 4.7 Hz (weak-partner or
