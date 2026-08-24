@@ -403,14 +403,28 @@ static void sectionB()
         const double rise = f.valid ? f.slopeDbPerS : -99.0;
         row ("B6", "hard bass fundamental rises", "+2.2 .. +3.9 dB/s",
              f.valid ? fmt ("%+.2f dB/s", rise) : std::string ("n/a"),
-             // Accepted holding rather than rising; it must not fall away at
-             // the tine's own rate, which would mean no field excursion at all.
-             gap (rise, 2.2, 3.9, -1.5, 6.0));
+             // Accepted rising at a third of the measured rate. The fence is
+             // A2: this render's own H2 dominance sits within 2 dB of its
+             // measured ceiling, so the swing cannot be driven deeper to buy
+             // more rise -- with this field map the two move together, where
+             // the real pole hands the extra energy to H6-H15 instead (see
+             // G2). The rise must stay clearly positive: falling away at the
+             // tine's own rate would mean no field excursion at all.
+             gap (rise, 2.2, 3.9, 0.0, 6.0));
     }
 
     // B5: the real envelope is not one exponential. Two slopes fit it well,
-    // one does not -- which is the signature of the tine handing energy to the
-    // tonebar and getting some back.
+    // one does not. Two mechanisms were built and measured before this was
+    // accepted as a gap: a second polarisation reaching the pickup moves this
+    // number not at all while pushing B1 out of its band (a parallel channel
+    // bends the fitted H1 slope long before it registers as residual), and a
+    // mechanical exchange between the polarisations preserves B1 exactly but
+    // needs the two degenerate to under a tenth of a cent -- any honest
+    // detuning turns the exchange oscillatory and E1's AM bound fails first.
+    // The real instrument's tiny AM alongside its two slopes says its second
+    // slope is not a second oscillator: it is the transduction gain moving
+    // with amplitude, the same field hand-back as B6, which this field map
+    // underdoes (see G2).
     {
         const auto& x = render (kMid.midi, 0.7, 4.0);
         const double f0 = an::refineF0 (x, kFs, noteHz (kMid.midi));
@@ -420,7 +434,7 @@ static void sectionB()
         // erratic, which is a different and worse failure than being smooth.
         row ("B5", "fundamental is not 1 exponential", "1.4 .. 5.1 dB residual",
              f.valid ? fmt ("%.2f dB rms", f.residRmsDb) : std::string ("n/a"),
-             f.valid ? gap (f.residRmsDb, 1.4, 5.1, 0.0, 8.0) : Verdict::fail);
+             f.valid ? gap (f.residRmsDb, 1.4, 5.1, 0.2, 8.0) : Verdict::fail);
     }
 }
 
@@ -482,6 +496,12 @@ static void sectionC()
              ms > 0.0 ? fmt ("%.2f ms", ms) : std::string ("n/a"),
              // The bass attack is accepted short at 6.3 ms; it must not become
              // an instantaneous click, and must not overshoot the target.
+             // Measured: it is not contact-limited -- softening the bass tip
+             // until contact stretched from 3.3 to 12 ms left this number
+             // exactly where it was. 6.3 ms is the note's own quarter-period
+             // rise; the real 14-21 ms implies a strike that keeps building
+             // the swing across two periods, which this collision cannot do
+             // at the hammer masses the swing rows pin.
              ms > 0.0 ? gap (ms, a.lo, a.hi, 4.0, a.hi) : Verdict::fail);
     }
 }
@@ -607,7 +627,7 @@ static void sectionG()
         const double ch = an::spectralCentroid (hi, kFs, static_cast<std::size_t> (0.30 * kFs), 8192);
         const double ratio = cl > 0.0 ? ch / cl : 0.0;
         row ("G2", "centroid A1->E5 at hard vel", "1.0 .. 2.2 x (f0 x12)",
-             fmt ("%.2f x", ratio), gap (ratio, 1.0, 2.2, 0.5, 7.6));
+             fmt ("%.2f x", ratio), gap (ratio, 1.0, 2.2, 0.5, 7.0));
     }
 
     // G3/G4: and the attack is brighter than the sustain only when the note is
@@ -703,7 +723,14 @@ static void sectionStructural()
             { "tipMass",     &EngineParams::tipMass,     0.0f, 1.0f },
             { "resDamp",     &EngineParams::resDamp,     0.0f, 1.0f },
             { "barCouple",   &EngineParams::barCouple,   0.0f, 1.0f },
-            { "barTune",     &EngineParams::barTune,    -1.0f, 1.0f },
+            // Swept over the parameter's real range (+/-24 st), like every
+            // other knob here. The old +/-1 st sweep passed only through a
+            // pitch artifact: the assembled-fork trim used to ignore the bar,
+            // so moving the bar re-pitched the NOTE by a few cents and the
+            // detuned-sine drift read as the control working. With the trim
+            // solving the fork the note stays on pitch -- as it should -- and
+            // what the control honestly changes is the attack clang.
+            { "barTune",     &EngineParams::barTune,    -24.0f, 24.0f },
             { "bodyMix",     &EngineParams::bodyMix,     0.0f, 1.0f },
             { "nonlinAmt",   &EngineParams::nonlinAmt,   0.0f, 1.0f },
             { "pickupPos",   &EngineParams::pickupPos,  -0.6f, 0.1f },

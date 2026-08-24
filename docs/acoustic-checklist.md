@@ -98,20 +98,27 @@ not over seconds.
 
 ## Known gaps
 
-- **The striking line runs the wrong way, per the service manual — queued as
-  the next model change, and it is not a constant swap.** The manual gives the
-  hammer's contact point as 57.15 mm from the tone generator at the extreme
-  bass and 3.175 mm at the extreme treble — about a third of the free length
-  falling to a seventh — where this model runs 0.13 L rising to 0.26 L, the
-  opposite direction, from a straight-rail argument the manual explicitly
-  contradicts ("the precise curve given to the Tone Bar Rail"). A strike a
-  third of the way out is very likely the real source of the bass swing, the
-  slow bass attack and the growl this model lacks. Tried once: dropping the
-  manual's line in raises seven reference failures, because the hammer mass
-  graduation and the velocity law were both calibrated against the wrong
-  geometry — the bass then overshoots and the treble goes clicky, and scaling
-  the throw alone does not converge. Needs a session recalibrating the three
-  together with the suite as judge.
+- **The striking line now follows the service manual, and the collision was
+  recalibrated around it.** The manual gives the hammer's contact point as
+  57.15 mm from the tone generator at the extreme bass and 3.175 mm at the
+  extreme treble — about a third of the free length falling to about an
+  eighth — and the model now interpolates that distance in log over the FULL
+  A0–C8 compass (anchoring it on the voicing register instead parked the
+  extreme-treble eighth-inch on everything above E6 and collapsed the top
+  octave's attack, and moved D4's strike toward the clamp far enough to fail
+  its decay-ratio and brightness rows). The pieces that had been calibrated
+  against the old geometry were re-derived with the whole suite as judge:
+  the hammer-mass graduation now RISES out of the bass (2.2 g at A0 to
+  6.6 g at the upper-mid knee, then tracking 0.30x the strike-point
+  effective mass down through the treble) because the manual's line meets
+  the bass tine at a twentieth of the old effective mass; the velocity
+  floor moved 0.18 to 0.195 m/s; and the residual axial restraint behind
+  the large-amplitude sharpness recalibrated from 5% to 3.5% for the same
+  F1 glide at the corrected amplitudes. Net effect on the tracked rows:
+  C2 and F2 closed, C1's bass rows moved from the band edge to mid-band,
+  B6 tripled its rise, and the hard-velocity tip swing now runs 3.9 mm at
+  the bottom, 5.5 mm at its mid peak, 0.41 mm at C7 — against 3.1 / 3.9 /
+  0.29 measured.
 
 
 - **96 kHz does not fit.** Measured under the adversarial stress (every
@@ -127,43 +134,61 @@ Tracked here so they are not rediscovered as surprises. Run
 `ctest -R epi_reference` for the current numbers; this is the standing list of
 what is understood and unfixed.
 
-- **C2, inharmonic content at 300 ms**: the model reaches −57 to −73 dB where
-  the reference wants −78 to −92. The character is right — it starts at the
-  right level and dies — but it stops about 15 dB short. Note that the
-  reference's own two figures for this are in tension: content starting at
-  −12 to −20 dB and decaying at the quoted −27 dB/s would only reach −20 dB by
-  300 ms, so the −78 figure implies the faster end of the quoted decay range.
-- **B5, the envelope is a single exponential** (0.34 dB residual against a
-  measured 1.4–5.1). The real instrument's two-slope decay comes from the
-  tine's two polarisations decaying at different rates. The model carries both
-  but only the vertical one reaches the magnet, because when the horizontal set
-  was let through at 1.004×f0 it beat against the fundamental by several dB —
-  far outside E1 — and a listener flagged it. Doing this properly means the two
-  at the *same* frequency with different decay rates, which gives two slopes
-  and no beating.
-- **C5, the bass attack is fast**: 6.3 ms against a measured 14–21. The hammer
-  leaves the tine sooner than the real one does.
-- **F2, tuning drifts to −4.3 cents** at the bottom of the compass, against a
-  3-cent budget. The tine geometry is solved per note, so this is the solve and
-  the assembled-fork trim disagreeing slightly, not a table with a typo.
-- **B6, a hard bass strike's fundamental does not rise**: +0.15 dB/s against a
-  measured +2.2 to +3.9. Same root cause as G2 below.
+- **B5, the envelope is a single exponential** (0.53 dB residual against a
+  measured 1.4–5.1). Two mechanisms were built and measured before this was
+  accepted as a gap; both are recorded under "Ruled out" below. The
+  conclusion they force: the real instrument's second slope, coexisting as
+  it does with E1's tiny AM bound, cannot be a comparable second oscillator
+  at the pickup — it is the transduction gain moving with amplitude, the
+  same field hand-back that B6 measures, and it is short for the same
+  reason (the field map's far tail, see G2).
+- **C5, the bass attack is fast**: 6.3 ms against a measured 14–21, and it
+  is NOT contact-limited: softening the bass hammer tip until the contact
+  stretched from 3.3 to 12 ms moved this number by nothing. What the row
+  measures is the note's own quarter-period rise to the first flux peak.
+  The real 14–21 ms implies the real strike keeps building the swing across
+  two periods — a heavier hammer riding longer — and the swing rows (A2,
+  F1, F2) pin the hammer mass well below that. Reconciling both needs a
+  tine-side effective mass the current beam-plus-patch collision does not
+  produce, not a constant.
+- **B6, a hard bass strike's fundamental rises at a third of the measured
+  rate**: +1.28 dB/s against +2.2 to +3.9, from +0.58 before the striking
+  line moved. The fence is now measured precisely: B6 and A2 read the same
+  render, A2's H2 dominance sits within 2 dB of its measured +24 dB
+  ceiling, and with this field map more swing moves both together. The
+  real pole buys its extra rise by pushing energy into H6–H15 instead —
+  the same missing far structure as G2.
 - **G2, the bass is not rich enough relative to its own pitch**: the steady
-  centroid rises 6.2× from A1 to E5 where the reference rises about 1.5 while
+  centroid rises 6.1× from A1 to E5 where the reference rises about 1.5 while
   the fundamental rises twelvefold. A hard bass note's spectrum has died by its
-  eighth harmonic; the real one carries energy past its thirtieth. Note the one
-  caveat on this row: the reference recordings carry a fixed recording EQ, and
-  a treble-tilted one inflates the bass centroid more than the treble's, so the
-  target may be somewhat high. The direction is not in doubt.
-- **Tine swing across the compass** is not monotonic: measured, it *peaks* in
-  the middle of the keyboard at 3.9 mm and falls to 3.1 mm at the bottom and
-  0.29 mm at the top. The cause is visible in the collision diagnostics -- the
-  hammer mass sits pinned at its 6 g ceiling from note 28 to note 71, more than
-  half the compass, while the tine's effective mass at the strike point falls
-  52× across the same span. This is upstream of B6 and G2: a bass tine that
-  does not out-swing a middle one cannot growl more than one.
+  eighth harmonic; the real one carries energy past its thirtieth. The fix is
+  a field map with honest far structure — the flat's edge and the wedge that
+  the current map smooths over off-axis — and it is the shared root cause
+  behind B5 and B6 above. Note the one caveat on this row: the reference
+  recordings carry a fixed recording EQ, and a treble-tilted one inflates the
+  bass centroid more than the treble's, so the target may be somewhat high.
+  The direction is not in doubt.
+- **C1 at E5 is 2 dB too clean** (−43.9 against a band floor of −42): the
+  wrong kind of perfect — the strike transient the patch-and-dwell weighting
+  leaves at E5 is slightly quieter than the reference's quietest sample.
+  Tracked with a bound at −52 so it cannot silently get cleaner still.
 
 ### Ruled out, with the measurement
+
+- **B5 via a second polarisation at the pickup.** Letting the horizontal set
+  modulate the gap — at any coupling, any amplitude, any decay split — moved
+  the B5 residual from 0.53 to at most 0.54 dB while B1 went from 2.22 to
+  2.75: a parallel channel at the pickup bends the fitted H1 slope out of
+  B1's band long before it registers as envelope residual.
+- **B5 via mechanical exchange between the polarisations.** A passive
+  quadratised spring coupling the two fundamentals (the Weinreich two-slope
+  mechanism: degenerate frequencies, damping-split eigenmodes) preserves B1
+  exactly as the theory says it must — 2.21 across the whole sweep, because
+  every harmonic squares the same composite envelope — but the overdamped
+  regime needs the polarisations degenerate to under a tenth of a cent.
+  At the realistic detuning the exchange turns oscillatory: E1's AM rose
+  from 1.34 to 1.73 dB pk-pk (bound 1.5) with B5 still only at 0.75, and
+  B4 at D4 sagged to the bottom of its band. Both experiments reverted.
 
 - **The stiffness cap on the hammer contact is not binding anywhere.** The code
   notes that the principled fix is to carry the contact's elastic part through

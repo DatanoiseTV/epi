@@ -20,6 +20,8 @@
  #include <cstdio>
 #endif
 
+#include <algorithm>
+#include <complex>
 #include <type_traits>
 
 namespace epi
@@ -325,7 +327,7 @@ public:
         // player does below mezzo-forte into the part of the magnet's field
         // that is nearly flat, and the instrument came out as a sine bank with
         // a bark that only appeared at the very top of the velocity range.
-        const double v = 0.18 + 5.6 * std::pow (std::clamp (velocity, 0.0, 1.0), 1.7);
+        const double v = 0.195 + 5.6 * std::pow (std::clamp (velocity, 0.0, 1.0), 1.7);
 
         // Escapement: the gap left between tip and tine with the key fully
         // down. The service manual specifies a quarter to three eighths of an
@@ -585,6 +587,10 @@ public:
                     dormantV = lastTipV;
                     sys.disableTerm (kTermStretch);
                     sys.disableTerm (kTermJoint);
+                    // The one live mode carries the assembled pitch itself
+                    // while the joint is down; a dormant tine still rings at
+                    // its note, not at the unbolted tine's.
+                    if (jointTuned) { sys.setFrequency (kV0, assembledF0); jointTuned = false; }
                 }
             }
             else if (reduced)
@@ -1012,20 +1018,34 @@ private:
         // easy to get badly wrong. A clamped-free mode shape is almost flat
         // near the clamp, so the effective mass the hammer meets there is the
         // modal mass divided by the square of a very small number -- kilograms,
-        // against a hammer of a few grams. Move the strike point out to a
-        // quarter of the length and that effective mass falls by two orders of
-        // magnitude, the hammer throws the tine into a fifteen-millimetre
-        // swing, and every downstream number is wrong: the pickup field
-        // saturates and the stretching nonlinearity pulls the bass a fourth
-        // sharp. A real Rhodes tine moves one to three millimetres at forte,
-        // and the hammer strikes it close in to the block, which is what makes
-        // that so.
-        // The hammer rail is straight while the tines shorten toward the
-        // treble, so a short tine is struck at a LARGER fraction of its own
-        // length than a long one. That matters: it is what keeps the effective
-        // mass the hammer meets in the same range from one end of the compass
-        // to the other.
-        const double strikeAt = 0.13 + 0.13 * reg;
+        // against a hammer of a few grams. Move the strike point out by a
+        // factor of two and that effective mass falls by more than an order
+        // of magnitude, so the strike line and the hammer masses only mean
+        // anything as a pair: dropping the manual's line onto the old
+        // hammer graduation threw the bass into a fifteen-millimetre swing
+        // -- the pickup field saturated and the stretching nonlinearity held
+        // a fortissimo low E half a semitone sharp for seconds -- and the
+        // two were recalibrated together against the reference suite. A real
+        // Rhodes tine moves one to three millimetres at forte.
+        // The service manual gives the hammer's contact point as a DISTANCE
+        // from the tone generator: two and a quarter inches at the extreme
+        // bass falling to an eighth of an inch at the extreme treble, set by
+        // "the precise curve given to the Tone Bar Rail". As a fraction of
+        // each tine's own free length that runs from about a third down to
+        // about an eighth -- the OPPOSITE direction from the straight-rail
+        // argument this model used to make. The distance is interpolated in
+        // log, which is how the tine lengths themselves progress, and divided
+        // by this tine's solved length, so the workshop trims move the strike
+        // point exactly as regauging a real tine under a fixed rail would.
+        // The manual's two endpoints are the ENDS OF THE RAIL -- A0 and C8 --
+        // not the ends of the voicing register, so the interpolation runs over
+        // the full compass. Anchoring it on the register position instead put
+        // the extreme-treble eighth-inch on every note from E6 up, which
+        // parked the top octave's strike so close to the clamp that the
+        // attack collapsed below the reference's fastest measured onset.
+        const double regRail = std::clamp ((static_cast<double> (note) - 21.0) / 87.0, 0.0, 1.0);
+        const double strikeMm = 57.15 * std::pow (3.175 / 57.15, regRail);
+        const double strikeAt = std::clamp (strikeMm * 1.0e-3 / tineLength, 0.05, 0.45);
         for (int m = 0; m < kTineModes; ++m)
         {
             shapeMode[m][kStrike] = CantileverModes::shape (m, strikeAt);
@@ -1118,11 +1138,23 @@ private:
             const double rk = std::sqrt (ks);
             for (int pass = 0; pass < 8; ++pass)
             {
-                const double got = assembledFundamental (tineFreq, modalMass, rk, trim);
+                const double got = assembledFundamental (tineFreq, tineT60, modalMass,
+                                                         barF0, barM0, damp, rk, trim);
                 if (! (got > 0.0)) break;
                 trim *= f0 / got;
             }
         }
+
+        // The two values the fundamental alternates between. With the joint
+        // carried as a live term the mode itself is set BARE and the joint
+        // supplies the shift; every economy tier that takes the joint down
+        // must hand the shift back to the mode, or the note falls flat by
+        // the whole joint contribution -- up to fifty cents at the bottom of
+        // the compass -- the moment it decays past the reduction threshold.
+        // The fork never unbolts; a decaying note holds its pitch.
+        bareF0      = tineFreq[0] * trim;
+        assembledF0 = f0;
+        jointTuned  = true;
 
         for (int m = 0; m < kTineModes; ++m)
         {
@@ -1272,21 +1304,22 @@ private:
         // to the other.
         const double phiStrike = shapeMode[0][kStrike];
         const double effTineMass = modalMass / std::max (1.0e-6, phiStrike * phiStrike);
-        // The ceiling is graduated, because the instrument's hammers are:
-        // heavier arms in the bass, lighter toward the treble. A flat 6 gram
-        // ceiling starved the bottom octaves -- a bass strike point sits so
-        // close to the clamp that its effective mass runs to a kilogram, the
-        // hammer only delivers its bounce impulse, and that impulse scales
-        // with the hammer's own mass. Measured: the flat cap held the whole
-        // compass inside a 4x swing span where Shear & Wright's tracking
-        // spans more than an order of magnitude.
-        // Graded over the bass third only: nine grams at the bottom falling
-        // to the calibrated six by a third of the way up. The rows fence it
-        // from both sides -- the settled-tuning row caps the very bottom
-        // near nine (a heavier arm swings the tine far enough that the
-        // stretch sharpness has not settled by 350 ms), and E3's measured
-        // velocity-swing ceiling pins the midrange to its original mass.
-        const double capKg = 0.006 + 0.003 * std::max (0.0, 1.0 - reg / 0.30);
+        // The ceiling is graduated, and the service manual's striking line is
+        // why it now RISES out of the bass. Under the old straight-rail
+        // geometry the bass strike point sat so close to the clamp that its
+        // effective mass ran to a kilogram, and the bottom octaves needed
+        // nine-gram arms just to be heard. With the manual's line the bass is
+        // struck a third of the way out, where the same tine meets the hammer
+        // at a twentieth of that mass -- the leverage that used to starve the
+        // bottom now overdrives it, and a nine-gram arm throws the tine
+        // fifteen millimetres where the instrument moves three. What the cap
+        // carries is the effective mass of the collision, not the weight of
+        // the moulded arm, and the reference rows pin it from every side: the
+        // octave-dominance ceiling (A2) and the settled tuning (F1/F2) cap
+        // the bottom near a third of the mid value, the mid plateau is fenced
+        // by E3's velocity swing above and D4's attack time below, and the
+        // knee lands where the two constraints hand over.
+        const double capKg = 0.0066 * (0.34 + 0.66 * std::min (1.0, reg / 0.60));
         hammerCfg.mass = std::clamp (0.30 * effTineMass, 0.00060, capKg)
                        * (0.6 + 0.8 * cfg.hammerMassNorm);
         hammerCfg.alpha     = 1.85 + 0.5 * cfg.hammerHardness;
@@ -1430,7 +1463,7 @@ private:
         // first mode it SOFTENS rather than stiffens. It is not modelled here;
         // this term is deliberately small enough that the distinction stays
         // below the level anybody could hear.)
-        constexpr double kAxialRestraint = 0.05;
+        constexpr double kAxialRestraint = 0.035;
         stretchEA   = kAxialRestraint * mat.youngs * area
                     / std::max (1.0e-4, tineLength);
         // The knob spans zero to twice the nominal restraint, with the
@@ -1484,46 +1517,151 @@ private:
     // singularity at rest: the 1/sqrt(2V) that quadratisation would normally
     // introduce cancels identically, because this potential is a perfect
     // square.
-    // Lowest root of  1 + SUM (c_i^2/m_i)/(w_i^2 - lambda) = 0  for the tine
-    // modes joined through the block. The root lies strictly between w_0^2 and
-    // w_1^2 (eigenvalue interlacing), so a bisection on that bracket always
-    // converges and can never wander off to another mode.
-    double assembledFundamental (const double* freq, double modalMass,
-                                 double rootKs, double trim) const
+    // The frequency the assembled fork actually sounds, for the SCHEME AS IT
+    // RUNS -- not for the continuous system it approximates. Three things have
+    // to be in the equation or the trim lands the note off pitch, each one
+    // found by measuring the discrete system against the solve:
+    //
+    //   The BAR MODES. The joint's force is the stiffness times the
+    //   difference across it, so the bar's compliance at its end of the
+    //   spring sets how much of that stiffness the tine feels. Solved over
+    //   the tine alone the shift comes out wrong by whatever the bar absorbs
+    //   -- measured, minus four to plus five cents across the compass. The
+    //   real instrument tunes the assembled fork for the same reason.
+    //
+    //   The MODES THE INTEGRATOR DROPS. setMode kills anything at or above
+    //   fs/pi, so the block compliance those modes would have provided does
+    //   not exist at run time and must not be counted here -- a treble note
+    //   loses five of its eight beam modes to the budget, worth about a cent.
+    //
+    //   The DISCRETE RESPONSES. The joint is carried by the quadratised
+    //   trapezoidal path, so what the fundamental meets is not c^2/(w^2 - l)
+    //   but each mode's actual z-domain response, damping included -- and the
+    //   damping is not decoration: at A5 a bar overtone with a tenth-second
+    //   T60 sits sixty-five cents under the note, and treating that broad
+    //   resonance as a sharp pole leaves the note three and a half cents
+    //   flat. The characteristic equation of the stepped system, with theta
+    //   the frequency in radians per sample, is
+    //
+    //     1 + cos^2(theta/2) k^2 SUM (c_i^2/m_i) r_i / D_i(theta) = 0,
+    //     D_i = e^{i theta} - (cA_i - cK_i) + cB_i e^{-i theta},
+    //
+    //   with cA/cB/cK the leapfrog's own coefficients and cos^2(theta/2) the
+    //   trapezoid's averaging of the joint force across the step. Its root is
+    //   complex because the coupled mode decays; the sounding frequency is
+    //   the real part, found by a bisection on the real axis (where the
+    //   fundamental's pole still forces a sign change) polished by a few
+    //   complex Newton steps. Verified against the running integrator: the
+    //   root matches the rendered pitch to a thousandth of a cent at the
+    //   note this was worst at.
+    double assembledFundamental (const double* freq, const double* t60,
+                                 double modalMass, double barF0, double barMass,
+                                 double damp, double rootKs, double trim) const
     {
-        double c[kTineModes], w2[kTineModes];
-        for (int m = 0; m < kTineModes; ++m)
-        {
-            c[m]  = rootKs * shapeMode[m][kBlock];
-            const double w = 2.0 * kPiD * freq[m] * trim;
-            w2[m] = w * w;
-        }
+        constexpr int kAll = kTineModes + kBarModes;
+        const double k = 1.0 / fs;
 
-        auto secular = [&] (double lambda)
+        // Per-mode step coefficients, exactly as cacheStep builds them.
+        double thPole[kAll], cAK[kAll], cB[kAll], gain[kAll];
+        int n = 0;
+        auto addRow = [&] (double f, double t60s, double mass, double c)
         {
-            double v = 1.0;
-            for (int m = 0; m < kTineModes; ++m)
-                v += (c[m] * c[m] / modalMass) / (w2[m] - lambda);
+            if (! (f > 0.0) || f >= fs * System::kModeBudget) return;   // the budget kills it
+            const double w  = 2.0 * kPiD * f;
+            const double sT = (t60s > 1.0e-5 ? 6.9078 / t60s : 1.0e6) * k;
+            const double a  = std::tanh (sT);
+            const double r  = 1.0 / (1.0 + a);
+            const double cK = (2.0 - 2.0 * std::cos (w * k) / std::cosh (sT)) * r;
+            thPole[n] = w * k;
+            cAK[n]    = 2.0 * r - cK;
+            cB[n]     = (1.0 - a) * r;
+            gain[n]   = k * k * (c * c / mass) * r;
+            ++n;
+        };
+        for (int m = 0; m < kTineModes; ++m)
+            addRow (freq[m] * trim, t60[m], modalMass, rootKs * shapeMode[m][kBlock]);
+        // The bar's own modes, at the same frequencies, dampings and coupling
+        // weights configure() gives them. The trim does not apply: the bar is
+        // not being retuned when the tine is cut.
+        for (int m = 0; m < kBarModes; ++m)
+            addRow (barF0 * CantileverModes::ratio (m, 0.0, 1.0, 0.004),
+                    (0.10 + 0.14 * (1.0 - damp)) / (1.0 + 1.8 * m),
+                    barMass, rootKs * CantileverModes::shape (m, 0.10));
+        if (n < 2) return freq[0] * trim;
+
+        auto secular = [&] (std::complex<double> th)
+        {
+            const std::complex<double> ei = std::exp (std::complex<double> (0.0, 1.0) * th);
+            const std::complex<double> cs = std::cos (0.5 * th);
+            std::complex<double> v = 1.0;
+            for (int m = 0; m < n; ++m)
+                v += cs * cs * gain[m] / (ei - cAK[m] + cB[m] / ei);
             return v;
         };
 
-        // Bracket: just above w_0^2, just below w_1^2. The function goes to
-        // -infinity at the lower end and +infinity at the upper, so there is
-        // exactly one sign change.
-        const double span = w2[1] - w2[0];
-        double lo = w2[0] + 1.0e-9 * span;
-        double hi = w2[1] - 1.0e-9 * span;
-        if (! (hi > lo)) return freq[0] * trim;
+        // Bracket on the real axis: just above the tine fundamental's pole,
+        // just below the nearest pole above it -- usually the tine's second
+        // mode, but a bar overtone can sit closer. The fundamental's own pole
+        // is essentially undamped, so the real part still runs to -infinity
+        // at the lower end; if damping has smoothed away the sign change at
+        // the upper end the bracket is abandoned rather than trusted.
+        const double thBase = thPole[0];
+        const double lo0 = thBase * (1.0 + 1.0e-12);
+        // The far wall of the bracket is usually the nearest pole above the
+        // fundamental -- but a heavily damped bar overtone can sit just
+        // above it (note 32: 0.7% up) and smooth the sign change away on
+        // its near side. The assembled root still exists past that pole, so
+        // the wall walks outward, pole by pole, to the first one whose near
+        // side shows the sign change; only running out of poles abandons to
+        // the bare frequency. Returning bare from the near-wall failure was
+        // a shipped +44 cent mistune: the trim loop then tuned the BARE
+        // mode to f0 and the live joint added its full shift on top.
+        double cand[kAll + 1];
+        int nc = 0;
+        for (int m = 1; m < n; ++m)
+            if (thPole[m] > thBase) cand[nc++] = thPole[m];
+        cand[nc++] = kPiD;
+        std::sort (cand, cand + nc);
+        double lo = lo0, hi = -1.0, wall = kPiD;
+        for (int i = 0; i < nc; ++i)
+        {
+            const double h = cand[i] - 1.0e-9 * (cand[i] - thBase);
+            if (h > lo0 && secular ({ h, 0.0 }).real() > 0.0)
+            {
+                hi = h;
+                wall = cand[i];
+                break;
+            }
+        }
+        if (hi < 0.0) return freq[0] * trim;
 
         for (int i = 0; i < 60; ++i)
         {
-            // The secular function runs from -infinity at the bottom of the
-            // bracket to +infinity at the top, so the half containing the sign
-            // change is the one whose midpoint is still negative.
+            // The half containing the sign change is the one whose midpoint
+            // is still negative.
             const double mid = 0.5 * (lo + hi);
-            if (secular (mid) < 0.0) lo = mid; else hi = mid;
+            if (secular ({ mid, 0.0 }).real() < 0.0) lo = mid; else hi = mid;
         }
-        return std::sqrt (0.5 * (lo + hi)) / (2.0 * kPiD);
+
+        // Polish to the complex root; the imaginary part is the coupled
+        // mode's decay and the real part is what sounds.
+        std::complex<double> th (0.5 * (lo + hi), 0.0);
+        for (int i = 0; i < 12; ++i)
+        {
+            const std::complex<double> f  = secular (th);
+            const double h = 1.0e-9;
+            const std::complex<double> df = (secular (th + std::complex<double> (h, 0.0))
+                                           - secular (th - std::complex<double> (h, 0.0))) / (2.0 * h);
+            if (! (std::abs (df) > 0.0)) break;
+            const std::complex<double> step = f / df;
+            th -= step;
+            if (std::abs (step) < 1.0e-14) break;
+        }
+        // A Newton step that has wandered out of the bracket has found some
+        // other root; the bisection value is the safe answer there.
+        if (! std::isfinite (th.real()) || th.real() <= thBase || th.real() >= wall)
+            th = { 0.5 * (lo + hi), 0.0 };
+        return th.real() * fs / (2.0 * kPiD);
     }
 
     void updateStretchTerm()
@@ -1535,6 +1673,9 @@ private:
         {
             sys.disableTerm (kTermStretch);
             sys.disableTerm (kTermJoint);
+            // With the joint down the mode must carry the assembled pitch
+            // itself, or the note goes flat by the joint's whole shift.
+            if (jointTuned) { sys.setFrequency (kV0, assembledF0); jointTuned = false; }
             return;
         }
 
@@ -1579,6 +1720,9 @@ private:
 
         if (jointActive)
         {
+            // The term is about to carry the joint again: give the shift back
+            // to it, or it would be applied twice.
+            if (! jointTuned) { sys.setFrequency (kV0, bareF0); jointTuned = true; }
             double eta = 0.0;
             for (int i = 0; i < kNumModes; ++i) eta += jointGrad[i] * sys.displacement (i);
 #ifdef EPI_NAN_TRACE
@@ -1607,6 +1751,7 @@ private:
         {
             sys.disableTerm (kTermJoint);
         }
+
     }
 
     // Put a diverged tine back, and record that it happened.
@@ -1615,6 +1760,7 @@ private:
         sys.clear();
         sys.disableTerm (kTermStretch);
         sys.disableTerm (kTermJoint);
+        if (jointTuned) { sys.setFrequency (kV0, assembledF0); jointTuned = false; }
         hammer.reset();
         sounding = false;
         lockedOut = true;   // stays out until the next strike
@@ -1667,6 +1813,10 @@ private:
 
     double stretchEA = 0.0, stretchGain = 0.5;
     bool   jointActive = false;
+    // The fundamental's two tunings: bare while the joint term carries its
+    // shift, assembled when an economy tier has taken the joint down.
+    double bareF0 = 440.0, assembledF0 = 440.0;
+    bool   jointTuned = true;
     double damperFactor = 1.0;
     double damperEff = 1.0, damperEffHi = 1.0;
     double feltWLo = 1.0, feltWHi = 1.0;
