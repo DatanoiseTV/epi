@@ -14,6 +14,9 @@
 // ---------------------------------------------------------------------------
 
 #include "epi/PluginProcessor.h"
+#include "epi/ui/WebEditor.h"
+
+#include <EpiUIData.h>
 
 #include <cmath>
 #include <cstdio>
@@ -135,6 +138,36 @@ int main()
         const bool kept = near (a.getMicStage(), st);
         row ("S6", "stage-carrying factory preset applies; plain load keeps it",
              applied && kept);
+    }
+
+    // S7 -- every parameter the editor binds must be declared in the UI
+    // bundle, and the two kinds are declared differently. A continuous
+    // parameter needs an entry in the PARAMS table, because the knob reads
+    // its formatter: without one the panel throws "undefined is not an
+    // object (evaluating 'spec.format')" the moment it renders -- a runtime
+    // error in the plugin window, invisible to every suite that never loads
+    // the page, and exactly what shipped when the wear knob reached the
+    // panel but not the table. A choice parameter takes its value from the
+    // combo relay instead, so what it needs is an entry in the browser
+    // mock's list, or the page is dead outside the plugin (which is where
+    // the UI is verified headlessly). The bundle is compiled in, so this
+    // reads the resource the plugin actually serves.
+    {
+        EpiAudioProcessor a;
+        const juce::String js (juce::CharPointer_UTF8 (EpiUIData::jucebridge_jsx),
+                               (size_t) EpiUIData::jucebridge_jsxSize);
+        juce::StringArray missing;
+        for (const auto& id : epi::WebEditor::boundParameterIds())
+        {
+            const auto* p = a.getValueTreeState().getParameter (id);
+            const bool isChoice = dynamic_cast<const juce::AudioParameterChoice*> (p) != nullptr;
+            const bool declared = isChoice ? js.contains ("'" + id + "', ")
+                                           : js.contains ("    " + id + ":");
+            if (! declared) missing.add (id + (isChoice ? " (mock list)" : " (PARAMS)"));
+        }
+        row ("S7", "every bound parameter id is declared in the UI bundle",
+             EpiUIData::jucebridge_jsxSize > 0 && missing.isEmpty(),
+             missing.joinIntoString (", ").toRawUTF8());
     }
 
     std::printf ("\nSUMMARY fail=%d\n", failures);

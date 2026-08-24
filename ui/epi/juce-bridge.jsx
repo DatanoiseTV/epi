@@ -118,6 +118,14 @@
     clavMed:     { label: 'Medium',    map: M.unit, def: 1, format: (x) => x >= 0.5 ? 'ON' : 'OFF' },
     clavSoft:    { label: 'Soft',      map: M.unit, def: 0, format: (x) => x >= 0.5 ? 'ON' : 'OFF' },
     bodySize:    { label: 'Body Size', map: M.unit, def: 0.5, format: (x) => Math.pow(1.43, 2 * x - 1).toFixed(2) + 'x' },
+    // Tangent-rubber wear: mint at zero, gigged-hard at one. Shown as the
+    // condition rather than a percentage, because that is how the knob
+    // reads on a real instrument.
+    wearAmount:  { label: 'Wear',      map: M.unit, def: 0.0,
+                   format: (x) => x < 0.02 ? 'MINT'
+                                : x < 0.35 ? 'PLAYED ' + Math.round(x * 100) + '%'
+                                : x < 0.75 ? 'WORN ' + Math.round(x * 100) + '%'
+                                : 'NOTCHED ' + Math.round(x * 100) + '%' },
     spaceMix:    { label: 'Space',     map: M.unit,      def: 0.15, format: pct },
     spaceSize:   { label: 'Size',      map: M.unit,      def: 0.40, format: pct },
     outGain:     { label: 'Output',    map: M.outGain,   def: M.outGain.from(0),  format: dbOf(M.outGain), bipolar: true },
@@ -146,7 +154,7 @@
       const ev = mk();
       sliders[id] = { getNormalisedValue: () => v, setNormalisedValue: (n) => { v = n; ev.fire(); }, valueChangedEvent: ev };
     });
-    [['pickupSel', 1], ['instrument', 0], ['material', 0], ['clavSwitch', 0], ['bodyMat', 0], ['damperFelt', 0], ['keyBed', 0], ['hammerMat', 0], ['roomProfile', 0]].forEach(([id, d]) => {
+    [['pickupSel', 1], ['instrument', 0], ['material', 0], ['clavSwitch', 0], ['bodyMat', 0], ['damperFelt', 0], ['keyBed', 0], ['hammerMat', 0], ['roomProfile', 0], ['softMode', 0]].forEach(([id, d]) => {
       let i = d; const ev = mk();
       combos[id] = { getChoiceIndex: () => i, setChoiceIndex: (n) => { i = n; ev.fire(); }, valueChangedEvent: ev };
     });
