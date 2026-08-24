@@ -326,8 +326,7 @@ namespace epi::ids
         // Tangent-rubber wear on the Clav: 0 is the papers' mint instrument,
         // 1 a gigged-hard one -- notched rubbers that catch and click,
         // unevenly per key (practitioner report, 2026).
-        add (std::make_unique<Pf> (juce::ParameterID { wearAmount, 1 }, "Wear",
-                                   juce::NormalisableRange<float> { 0.0f, 1.0f }, 0.0f));
+        unit (wearAmount, "Wear", 0.0f);
 
         return { params.begin(), params.end() };
     }
