@@ -293,18 +293,21 @@ public:
         if (fadeGain < 1.0f || fadeTarget < 1.0f)
         {
             if (fadeGain > fadeTarget)
-            {
                 fadeGain = std::max (fadeTarget, fadeGain - fadeStep);
-                if (fadeGain <= 0.0f && pendingDirty)
-                {
-                    applyConfigNow (pendingProfile, pendingSize);
-                    pendingDirty = false;
-                    fadeTarget = 1.0f;
-                }
-            }
             else if (fadeGain < fadeTarget)
-            {
                 fadeGain = std::min (fadeTarget, fadeGain + fadeStep);
+            // The apply-at-null check sits OUTSIDE the down-ramp branch: a
+            // request that lands while the gain already sits at the null
+            // (any retarget arriving exactly at the fade grid -- a host
+            // automating size at a block length dividing the fade does this
+            // on the first fade) would otherwise leave pendingDirty set with
+            // neither ramp branch true, and the wet path stayed silenced
+            // until reset. Found by a fade-torture probe, not by ear.
+            if (fadeGain <= 0.0f && pendingDirty)
+            {
+                applyConfigNow (pendingProfile, pendingSize);
+                pendingDirty = false;
+                fadeTarget = 1.0f;
             }
             wetL *= fadeGain;
             wetR *= fadeGain;

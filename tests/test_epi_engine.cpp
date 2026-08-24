@@ -1303,6 +1303,49 @@ static void sectionRoom()
              fmt2 ("%.2e vs bound %.2e", d2s, bound),
              verdict (finite && d2s <= bound));
     }
+
+    // 11.12 -- fade-torture survival. A retarget that lands while the fade
+    // gain sits exactly at the null used to leave the pending config
+    // unapplied and the wet path silenced until reset: with a block length
+    // dividing the 15 ms fade, a host automating size hits the grid on the
+    // first fade. Torture the church with a per-block size sweep, then
+    // listen for the tail seconds later -- it must still be a room, not
+    // digital silence. (Found by the adversarial audit's probe.)
+    {
+        Room r;
+        r.prepare (fs);
+        r.setProfile (5);
+        std::mt19937 rng (12);
+        std::uniform_real_distribution<double> dist (-1.0, 1.0);
+        // 2 s of driven torture: size retargeted every 240 samples.
+        for (int b = 0; b < 400; ++b)
+        {
+            r.setSize (0.5f + 0.3f * static_cast<float> (std::sin (b * 0.05)));
+            for (int i = 0; i < 240; ++i)
+            {
+                double l = 0, rr = 0;
+                r.process (dist (rng), dist (rng), l, rr);
+            }
+        }
+        // Source off; the tail 2 s later must carry energy.
+        for (int i = 0; i < 2 * 48000; ++i)
+        {
+            double l = 0, rr = 0;
+            r.process (0.0, 0.0, l, rr);
+        }
+        double e = 0.0;
+        bool finite = true;
+        for (int i = 0; i < 24000; ++i)
+        {
+            double l = 0, rr = 0;
+            r.process (0.0, 0.0, l, rr);
+            e += l * l + rr * rr;
+            finite = finite && std::isfinite (l) && std::isfinite (rr);
+        }
+        const double db = 10.0 * std::log10 (e / 48000.0 + 1e-30);
+        row ("11.12", "church tail survives a size-automation torture", "> -120 dB, finite",
+             fmt ("%.1f dB", db), verdict (finite && db > -120.0));
+    }
 }
 
 // ===========================================================================
