@@ -7,6 +7,15 @@ All notable changes to Epi are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- The grand's small sounds: the damper grab (felt re-seating on a
+  ringing string chatters against it -- the release shh, and the
+  pedal-lift wash over a ringing bank, calibrated by twin-diff at
+  -38 dB against the note's own attack) and the pedal thunk (the
+  trapwork thumps the board at its stops through the plate's own
+  modes; the press rings louder because it excites the freshly opened
+  strings -- the pedal boom emerges rather than being programmed).
+  Dead strings grab exactly silently and half-pedal work between the
+  stops is silent by hysteresis; four engine rows fence it all.
 - Room profiles: the output-stage room grows five surveyed spaces next
   to the shipped size-mapped one -- booth, studio, stage, hall, church
   -- each with an Eyring decay computed from published absorption data
@@ -42,6 +51,19 @@ All notable changes to Epi are documented here. The format follows
   loads, and legacy states saved before a bench existed.
 
 ### Changed
+- The measured-gap ledger shrank from 17 to 11 with zero failures, by
+  a multi-agent deep-dive with adversarial verification: the reed
+  chain's tuning row and both clav second-harmonic rows now pass
+  against targets derived from their own sources' measured geometry;
+  the tine bank was recalibrated on the service manual's real
+  striking line (compass tuning and the 300 ms inharmonic residue
+  close; three remaining tine gaps traced to one named root cause in
+  the pickup field map); the grand's C3 knee target was re-derived
+  after being proven arithmetically inconsistent with its own
+  measurement set; and the verification pass itself caught and fixed
+  a +44 cent mistune at G#1 introduced by the recalibration before it
+  ever shipped, plus a room-profile fade deadlock that could silence
+  the wet path until reset.
 - The grand runs 2.2x lighter: a ten-note chord with the pedal down
   dropped from 75% to 34% of one core at 48 kHz (4 notes without
   pedal: 5%; the true worst case, an 88-note fortissimo pedal wash,
