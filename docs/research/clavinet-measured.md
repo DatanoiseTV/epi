@@ -4,7 +4,9 @@ Companion to `transducers-and-chassis.md` §1.3/§5.3, which already carries the
 pickup-family analysis. This file is every number the sources give, with units
 and provenance, for the fourth instrument. Tags: **[M]** measured by the cited
 authors, **[C]** computed here from other numbers, **[R]** read in a primary
-document, **[V]** vendor data, **not found** — looked for, is not there.
+document, **[V]** vendor data, **[P]** practitioner report (a working
+owner/tech's account — experiential, not instrumented; see §12), **not
+found** — looked for, is not there.
 
 **Primary sources on disk** (agent scratchpad, session 0408a268):
 
@@ -266,3 +268,53 @@ listening tests (discrimination 53 % average, 58 % expert, vs 50 % = chance):
 6. **Tuning of the analyzed D6**: two printed tone pitches sit a semitone
    high of their note names (§7) — do not calibrate absolute pitch mapping
    against the paper's note names without checking the stated Hz.
+
+## 12. Practitioner report, 2026 [P]
+
+A German-speaking owner/technician of a real instrument, relayed 2026;
+translated here as faithfully as the language allows. This is experiential
+evidence from someone who services the instrument, not an instrumented
+measurement — hence its own tag. Cited in code as [P, research 12.x].
+
+1. **The case.** "The click is the least problem. The hard thing to simulate
+   is the whole CASE, which is present in the sound — a big resonator that
+   involuntarily lands in the pickup via structure-borne sound."
+2. **Contact scatter.** "The contact surfaces where the rubber meets the
+   string are stamped from a long sheet-metal strip and bent up — somewhat
+   flexible; the rubbers are only crimped into the holders and some sit
+   crooked, not flat."
+3. **Wear notches.** "Over time the rubbers get notches and the string
+   catches in them and clicks — different for every key depending on use."
+4. **Marginal seating.** "Especially playing quietly it gets absolutely
+   adventurous on a real instrument — every string does its own thing."
+5. **Key knock** (addendum): "The case gets extremely excited just by
+   pressing the keys. It sounds like someone knocking on wood."
+
+The practitioner has offered isolation recordings of the real instrument
+(key presses, slow string pull-offs). The case constants in
+`ClavinetVoice.h` (`ClavinetCase::kHz/kT60`, `kCaseSense`, `kThumpForceN`)
+are kept as a single commented fit surface for that day.
+
+### Reconciliation with EURASIP's "minimal body transfer" [C]
+
+Point 1 appears to contradict §6's measurement ("minimal energy transfer to
+the body — the keybed is a support, not a radiator — the acoustic output is
+feeble"). It does not: the two claims describe two different paths.
+
+- EURASIP measured the **airborne** path: how much the case *radiates*. A
+  heavy shallow plywood box fed milliwatts by sixty slack strings radiates
+  almost nothing. That stands.
+- The practitioner hears the **structure-borne** path into the DI: the
+  pickup bars are bolted to the case, and a magnetic pickup senses the
+  *relative* motion of string and bar. Any case vibration — driven by sixty
+  strings' termination forces through the rails, and by every key bottoming
+  on the keybed — moves the reference frame of the transducer and appears in
+  the electrical output *without radiating anything*.
+
+Both are true simultaneously; a model with no case at all satisfies the
+first and silently loses the second. The voice therefore carries a modal
+case (plate-derived ladder, ~150–600 Hz for the ~100 × 40 × 12 cm box) that
+is driven feedforward and *subtracted* from the string displacement at the
+pickup, calibrated so the case's low-mid contribution sits −25..−45 dB under
+a mid-compass forte fundamental (suite row C2) — clearly measurable,
+subordinate, and invisible to a microphone.

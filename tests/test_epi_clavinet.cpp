@@ -967,6 +967,310 @@ static void sectionKnockAndBeat()
 }
 
 // ===========================================================================
+// C/X/W/M. The practitioner layer (research 12): the case in the DI, the
+// per-key contact scatter, the tangent-rubber wear, the marginal pp seating.
+// Every row measures the voice as shipped (the practitioner mechanisms are
+// on by default at their calibrated levels; wear defaults to 0 = mint).
+// ===========================================================================
+
+// The case path isolated by twin-diff: the same note rendered with
+// caseAmount 1 and 0, subtracted. Everything the case contributes — string
+// termination drive, key thump, and their coloring through the flux law —
+// survives the subtraction; the string-only signal cancels exactly.
+static void renderCaseDiff (int note, double vel, double offAt, double secs,
+                            std::vector<double>& on, std::vector<double>& diff)
+{
+    RenderOpts o; o.vel = vel; o.seconds = secs; o.noteOffAt = offAt;
+    on = renderClav (note, o);
+    RenderOpts o0 = o; o0.cfg.caseAmount = 0.0;
+    const auto off = renderClav (note, o0);
+    diff.resize (on.size());
+    for (std::size_t i = 0; i < on.size(); ++i) diff[i] = on[i] - off[i];
+}
+
+// RMS of the FFT bins inside [flo, fhi] over a Hann window starting at t0.
+static double bandLevel (const std::vector<double>& x, double t0, double t1,
+                         double flo, double fhi)
+{
+    const std::size_t n = 1u << 15;
+    const std::size_t a = static_cast<std::size_t> (t0 * kFs);
+    const std::size_t cnt = std::min (static_cast<std::size_t> ((t1 - t0) * kFs),
+                                      x.size() > a ? x.size() - a : 0);
+    std::vector<an::cplx> f (n);
+    for (std::size_t i = 0; i < n; ++i)
+        f[i] = i < cnt ? x[a + i] * (0.5 - 0.5 * std::cos (2.0 * an::kPi * static_cast<double> (i) / (cnt - 1.0)))
+                       : an::cplx (0.0, 0.0);
+    an::fft (f);
+    double acc = 0.0;
+    const double binHz = kFs / static_cast<double> (n);
+    for (std::size_t b = 1; b < n / 2; ++b)
+    {
+        const double fr = static_cast<double> (b) * binHz;
+        if (fr >= flo && fr <= fhi) acc += std::norm (f[b]);
+    }
+    return std::sqrt (acc);
+}
+
+static double peakIn (const std::vector<double>& x, double t0, double t1)
+{
+    double p = 0.0;
+    for (std::size_t i = static_cast<std::size_t> (t0 * kFs);
+         i < static_cast<std::size_t> (t1 * kFs) && i < x.size(); ++i)
+        p = std::max (p, std::abs (x[i]));
+    return p;
+}
+
+static void sectionPractitioner()
+{
+    heading ("C. The case in the DI [P, research 12.1/12.5]");
+
+    ClavinetVoice::Config cfg;
+
+    // C1: the mode ladder is the derived plate physics, and the shared
+    // kBodyMaterials scalers move it exactly as they move every other body
+    // in the plugin: frequency by sqrt(E/rho)/s (state kept), stock
+    // bit-exact at index 0 / size 0.5.
+    {
+        ClavinetVoice v;
+        v.prepare (kFs);
+        v.setNote (48, cfg);
+        bool ladder = true;
+        for (int m = 0; m < ClavinetCase::kModes; ++m)
+            if (std::abs (v.caseModeHz (m) / ClavinetCase::kHz[m] - 1.0) > 1.0e-6)
+                ladder = false;
+        row ("C1", "case ladder = plate derivation", "150.5 .. 601.8 Hz exact",
+             ladder ? "exact" : "MOVED", ladder ? Verdict::pass : Verdict::fail);
+
+        ClavinetVoice::Config big = cfg;
+        big.caseBodySize = 1.0;   // s = 1.43
+        ClavinetVoice vb;
+        vb.prepare (kFs);
+        vb.setNote (48, big);
+        const double want = ClavinetCase::kHz[0] / 1.43;
+        row ("C1", "size 1.0 scales mode 1 by 1/1.43", fmt ("%.1f Hz", want),
+             fmt ("%.1f Hz", vb.caseModeHz (0)),
+             within (vb.caseModeHz (0), want * 0.999, want * 1.001));
+
+        ClavinetVoice::Config steel = cfg;
+        steel.caseBodyMat = 5.0;
+        ClavinetVoice vs;
+        vs.prepare (kFs);
+        vs.setNote (48, steel);
+        const double fScale = std::sqrt ((200.0e9 / 7850.0) / (11.0e9 / 450.0));
+        row ("C1", "steel case scales by sqrt(E/rho)", fmt ("x%.4f", fScale),
+             fmt ("x%.4f", vs.caseModeHz (0) / ClavinetCase::kHz[0]),
+             within (vs.caseModeHz (0) / ClavinetCase::kHz[0], fScale * 0.999, fScale * 1.001));
+    }
+
+    // C2: the calibration row. "The whole case is present in the sound...
+    // lands in the pickup via structure-borne sound" [P] — but the papers'
+    // main output is the string, so the case must be clearly measurable AND
+    // subordinate: its low-mid band level within -25..-45 dB of the
+    // fundamental on a mid-compass forte note. This row owns kCaseSense.
+    std::vector<double> xOn, dCase;
+    renderCaseDiff (48, 0.9, 0.9, 1.6, xOn, dCase);
+    ClavinetVoice probe;
+    probe.prepare (kFs);
+    probe.setNote (48, cfg);
+    {
+        const double f1 = probe.modeFrequency (0);
+        const double caseB = bandLevel (dCase, 0.02, 0.5, 100.0, 700.0);
+        const double fund  = bandLevel (xOn, 0.02, 0.5, f1 - 15.0, f1 + 15.0);
+        const double db = 20.0 * std::log10 (caseB / std::max (1.0e-15, fund));
+        row ("C2", "case low-mid vs fundamental, C3 f", "-25..-45 dB",
+             fmt ("%.1f dB", db), within (db, -45.0, -25.0));
+    }
+
+    // C3: "the case gets extremely excited just by pressing the keys. It
+    // sounds like someone knocking on wood" [P, addendum]. The key-return
+    // thump rings the case after the yarn has taken the string, so the
+    // post-release case path is the knock alone — and its spectrum must BE
+    // the case ladder.
+    {
+        double tot = 1.0e-30, close = 0.0;
+        const std::size_t n = 1u << 14;
+        const std::size_t a = static_cast<std::size_t> (0.98 * kFs);
+        std::vector<an::cplx> f (n);
+        for (std::size_t i = 0; i < n; ++i)
+            f[i] = (a + i < dCase.size() ? dCase[a + i] : 0.0)
+                 * (0.5 - 0.5 * std::cos (2.0 * an::kPi * static_cast<double> (i) / (n - 1.0)));
+        an::fft (f);
+        const double binHz = kFs / static_cast<double> (n);
+        for (std::size_t b = 1; b < n / 2; ++b)
+        {
+            const double fr = static_cast<double> (b) * binHz;
+            const double p = std::norm (f[b]);
+            tot += p;
+            for (int m = 0; m < ClavinetCase::kModes; ++m)
+                if (std::abs (fr - probe.caseModeHz (m)) < 16.0) { close += p; break; }
+        }
+        const double frac = 100.0 * close / tot;
+        row ("C3", "knock-on-wood: ring at case modes", "at least 60 %",
+             fmt ("%.1f %%", frac), frac >= 60.0 ? Verdict::pass : Verdict::fail);
+    }
+
+    // C4: the key-press knock at the attack is present but subordinate to
+    // the note. Owns kThumpForceN.
+    {
+        const double db = 20.0 * std::log10 (peakIn (dCase, 0.0, 0.05)
+                                             / std::max (1.0e-15, peakIn (xOn, 0.0, 0.05)));
+        row ("C4", "attack knock vs note attack", "-25..-8 dB",
+             fmt ("%.1f dB", db), within (db, -25.0, -8.0));
+    }
+
+    heading ("X. Per-key contact scatter [P, research 12.2]");
+
+    // X1: the crimp factor read back from telemetry: stiffness against the
+    // deterministic register curve and the alpha renormalization, +/-30%
+    // where the stability cap allows it (the cap bites keys whose crook
+    // stiffens past what the explicit contact can integrate — the floor of
+    // the observed range), exponent within the crook band, and two
+    // neighbours never alike.
+    {
+        double mn = 9.0, mx = 0.0, aMn = 9.0, aMx = 0.0;
+        for (int key = 40; key <= 70; ++key)
+        {
+            ClavinetVoice v;
+            v.prepare (kFs);
+            v.setNote (key, cfg);
+            const double reg = std::clamp ((key - 29.0) / 59.0, 0.0, 1.0);
+            const double base = 2.0e8 * std::pow (30.0, reg)
+                              * std::pow (3.0e-4, 2.3 - v.contactAlpha());
+            const double r = v.contactStiffness() / base;
+            mn = std::min (mn, r); mx = std::max (mx, r);
+            aMn = std::min (aMn, v.contactAlpha()); aMx = std::max (aMx, v.contactAlpha());
+        }
+        row ("X1", "crimp factor range, keys 40-70", "within 0.30..1.35",
+             fmt2 ("%.2f..%.2f", mn, mx),
+             (mn >= 0.30 && mx <= 1.35) ? Verdict::pass : Verdict::fail);
+        row ("X1", "alpha crook band", "2.0..2.6, spread >= 0.2",
+             fmt2 ("%.2f..%.2f", aMn, aMx),
+             (aMn >= 2.0 && aMx <= 2.6 && aMx - aMn >= 0.2) ? Verdict::pass : Verdict::fail);
+        ClavinetVoice a, b;
+        a.prepare (kFs); b.prepare (kFs);
+        a.setNote (57, cfg); b.setNote (58, cfg);
+        const double ratio = a.contactStiffness() / b.contactStiffness();
+        row ("X1", "adjacent keys never alike (57/58)", "stiffness differs >= 3%",
+             fmt ("ratio %.3f", ratio),
+             std::abs (std::log (ratio)) >= 0.03 ? Verdict::pass : Verdict::fail);
+    }
+
+    // X2: rendered: two adjacent mid-compass keys at equal velocity differ
+    // measurably in attack harmonic pattern — uneven, not broken. The mean
+    // |difference| of (Hk - H1), k = 2..5, carries both the crimp scatter
+    // and the honest per-key geometry; single harmonics can swing more
+    // (H4 measured 3.1 dB) which is why the mean is the bounded quantity.
+    {
+        double pat[2][4];
+        const int keys[2] = { 57, 58 };
+        for (int i = 0; i < 2; ++i)
+        {
+            RenderOpts o; o.vel = 0.7; o.seconds = 1.0;
+            const auto x = renderClav (keys[i], o);
+            ClavinetVoice p2;
+            p2.prepare (kFs);
+            p2.setNote (keys[i], cfg);
+            const double h1 = toneAmp (x, p2.modeFrequency (0), 0.05, 0.45);
+            for (int k = 2; k <= 5; ++k)
+                pat[i][k - 2] = 20.0 * std::log10 (std::max (1.0e-15, toneAmp (x, p2.modeFrequency (k - 1), 0.05, 0.45))
+                                                   / std::max (1.0e-15, h1));
+        }
+        double acc = 0.0;
+        for (int k = 0; k < 4; ++k) acc += std::abs (pat[0][k] - pat[1][k]);
+        row ("X2", "adjacent-key attack pattern (57/58)", "mean |dH| 0.5..3 dB",
+             fmt ("%.2f dB", acc / 4.0), within (acc / 4.0, 0.5, 3.0));
+    }
+
+    heading ("W. Tangent-rubber wear [P, research 12.3]");
+
+    // W1: wear 0 is the papers' mint instrument, bit-for-bit: the shipped
+    // default. The wear machinery must be arithmetically absent.
+    {
+        RenderOpts o; o.vel = 0.7; o.seconds = 1.0; o.noteOffAt = 0.8;
+        const auto x0 = renderClav (57, o);
+        RenderOpts ow = o; ow.cfg.wearAmount = 0.0;
+        const auto x1 = renderClav (57, ow);
+        double mx = 0.0;
+        for (std::size_t i = 0; i < x0.size(); ++i) mx = std::max (mx, std::abs (x1[i] - x0[i]));
+        row ("W1", "wear 0 bit-compatible with default", "identical render",
+             fmt ("%.2g max diff", mx), mx == 0.0 ? Verdict::pass : Verdict::fail);
+    }
+
+    // W2/W3/W4: full wear across seven mid keys. The release-peak lift over
+    // the mint render is the click; it must be measurable on some keys,
+    // never louder than the key's own attack, different between neighbours
+    // (the notch profile), and it must NOT reach the flux clamp — the model
+    // term for the string slapping the polepiece, which is a different
+    // (broken-instrument) regime the calibration stays out of.
+    {
+        double liftMx = 0.0, liftMn = 99.0, vsAtkMx = -99.0;
+        double gapMin = 1.0e9;
+        for (int key = 56; key <= 62; ++key)
+        {
+            RenderOpts o; o.vel = 0.7; o.seconds = 1.0; o.noteOffAt = 0.8;
+            const auto x0 = renderClav (key, o);
+            RenderOpts ow = o; ow.cfg.wearAmount = 1.0;
+            const auto x1 = renderClav (key, ow);
+            const double lift = 20.0 * std::log10 (peakIn (x1, 0.8, 0.82)
+                                                   / std::max (1.0e-15, peakIn (x0, 0.8, 0.82)));
+            const double vsAtk = 20.0 * std::log10 (peakIn (x1, 0.8, 0.82)
+                                                    / std::max (1.0e-15, peakIn (x1, 0.0, 0.05)));
+            liftMx = std::max (liftMx, lift);
+            liftMn = std::min (liftMn, lift);
+            vsAtkMx = std::max (vsAtkMx, vsAtk);
+
+            // The resonator's own excursion against the pickup clamp floor
+            // (gap0 3.75 mm at the default gapNorm, polynomial floor 0.3 mm).
+            const auto xd = renderCenterDisp (key, ow);
+            for (std::size_t i = static_cast<std::size_t> (0.8 * kFs);
+                 i < std::min (xd.size(), static_cast<std::size_t> (0.95 * kFs)); ++i)
+                gapMin = std::min (gapMin, 3.75e-3 - xd[i]);
+        }
+        row ("W2", "full-wear release click, keys 56-62", "max lift 1.5..12 dB",
+             fmt ("%.1f dB", liftMx), within (liftMx, 1.5, 12.0));
+        row ("W2", "click stays under the note attack", "at most -3 dB",
+             fmt ("%.1f dB", vsAtkMx), vsAtkMx <= -3.0 ? Verdict::pass : Verdict::fail);
+        row ("W3", "neighbours wear differently", "lift spread >= 1 dB",
+             fmt ("%.1f dB", liftMx - liftMn),
+             liftMx - liftMn >= 1.0 ? Verdict::pass : Verdict::fail);
+        row ("W4", "release stays off the flux clamp", "min gap > 0.30 mm",
+             fmt ("%.3f mm", gapMin * 1.0e3),
+             gapMin > 0.30e-3 ? Verdict::pass : Verdict::fail);
+    }
+
+    heading ("M. Marginal seating at pp [P, research 12.4]");
+
+    // M1: the chatter is the bracket DYNAMICS, not noise: at pp some keys
+    // seat in multiple measured contact episodes (every string does its own
+    // thing), at ff every key seats in one clean shove. Nothing stochastic
+    // is involved — the episode counts are properties of the two-mass
+    // contact with the scattered per-key constants.
+    {
+        int ppChatter = 0;
+        bool ffClean = true;
+        for (int key = 45; key <= 64; ++key)
+        {
+            for (double vel : { 0.08, 1.0 })
+            {
+                ClavinetVoice v;
+                v.prepare (kFs);
+                v.setNote (key, cfg);
+                v.noteOn (key, vel, cfg, 1);
+                double os[ClavinetVoice::kOver];
+                for (int i = 0; i < static_cast<int> (0.05 * kFs); ++i) v.process (cfg, os);
+                if (vel < 0.5) { if (v.contactEpisodes() >= 2) ++ppChatter; }
+                else           { if (v.contactEpisodes() != 1) ffClean = false; }
+            }
+        }
+        row ("M1", "pp chatter, keys 45-64", "3..15 of 20 keys, >= 2 episodes",
+             fmt ("%.0f keys", static_cast<double> (ppChatter)),
+             (ppChatter >= 3 && ppChatter <= 15) ? Verdict::pass : Verdict::fail);
+        row ("M1", "ff seats in one episode, all keys", "exactly 1",
+             ffClean ? "all 1" : "NOT 1", ffClean ? Verdict::pass : Verdict::fail);
+    }
+}
+
+// ===========================================================================
 // N. Robustness
 // ===========================================================================
 
@@ -1137,6 +1441,7 @@ int main()
     sectionPickups();
     sectionRockers();
     sectionKnockAndBeat();
+    sectionPractitioner();
     sectionRobustness();
 
     std::printf ("\n");

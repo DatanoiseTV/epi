@@ -57,6 +57,34 @@ namespace epi
 // are measured [M]); the two SAV slots are reserved, none active. The only
 // nonlinearities are the Hunt-Crossley tangent contact (strike only) and the
 // pickup flux polynomial at readout.
+//
+// On top of the papers' instrument sits the practitioner report (research 12,
+// [P]): the working owner/tech's account of what the papers' mint-condition
+// analysis does not carry. Five mechanisms, all built at voice level:
+//
+//   - the CASE ("the hard thing to simulate... a big resonator that
+//     involuntarily lands in the pickup via structure-borne sound"): a modal
+//     plywood box (ClavinetCase below), driven feedforward by the string
+//     termination forces and by the key-bottoming thump, and SUBTRACTED from
+//     the string displacement at the pickup — the bars are bolted to the
+//     case, and a magnetic pickup senses string-minus-bar RELATIVE motion, so
+//     case vibration reaches the DI without radiating a thing. That is how
+//     this claim and EURASIP's measured "minimal energy transfer to the
+//     body / feeble acoustic output" are BOTH true: the paper measured the
+//     airborne path, the practitioner hears the structure-borne one;
+//   - per-key CONTACT SCATTER ("stamped from a long sheet-metal strip...
+//     the rubbers are only crimped into the holders and some sit crooked"):
+//     deterministic per-note scatter of the contact stiffness, exponent and
+//     compliance corner (configure);
+//   - WEAR NOTCHES ("the rubbers get notches and the string catches in them
+//     and clicks — different for every key"): Config::wearAmount, a per-key
+//     usage profile, a stick-slip release catch and a low-velocity seat
+//     roughness (doRelease / process), all exactly zero at wearAmount 0;
+//   - MARGINAL SEATING ("playing quietly it gets absolutely adventurous...
+//     every string does its own thing"): the stamped bracket's compliance is
+//     a real series spring under the tangent (TangentContact below), and at
+//     low tangent velocity the tip chatters on it — multiple measured
+//     contact episodes from the contact DYNAMICS, no injected noise.
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
@@ -179,6 +207,251 @@ struct ClavinetScale
     static double noteHz (double m) { return 440.0 * std::pow (2.0, (m - 69.0) / 12.0); }
 };
 
+// ---------------------------------------------------------------------------
+// The case: the plywood box the whole instrument is built into, sensed by the
+// pickups as structure-borne sound [P, research 12]. Sixty strings terminate
+// on rails screwed to it, every key bottoms out on it, and the pickup bars
+// are bolted to it — so its motion appears in the DI as the moving REFERENCE
+// FRAME of a relative-motion transducer, while radiating almost nothing
+// (EURASIP's "feeble acoustic output" stands untouched).
+//
+// The mode ladder is derived, not fitted: the case is roughly 100 x 40 x
+// 12 cm [P-class dimension, a D6 measured across the keyboard]; its main
+// panel is treated as a simply-supported rectangular plate 1.00 x 0.40 m of
+// 12 mm plywood — the shallow box's walls stiffen the edges toward
+// simply-supported, the classic thin-box treatment. Constants assumed and
+// cited: E_eff 9 GPa (cross-laminated birch veneer: 13 GPa along grain
+// [kBodyMaterials birch ply] averaged against the ~5 GPa across-grain
+// plies), rho 680 kg/m^3, nu 0.3, so
+//
+//   D = E h^3 / (12 (1 - nu^2)) = 1424 N m,  rho h = 8.16 kg/m^2,
+//   f_mn = (pi/2) sqrt(D/(rho h)) ((m/Lx)^2 + (n/Ly)^2) = 20.75 (m^2 + 6.25 n^2)
+//
+// which puts the first six modes at 150-600 Hz — the low-mid band the
+// practitioner describes. Modal mass rho h Lx Ly / 4 = 0.816 kg per mode
+// (simply-supported plate, every mode), i.e. KILOGRAMS against a string's
+// fraction of a gram: the case's back-reaction on a string is smaller than
+// the drive by that mass ratio, which is why the drive below is honest
+// FEEDFORWARD (the project law for high-Q banks) and not a two-way spring.
+// Losses: eta 0.03 (birch-ply internal 0.015 [kBodyMaterials] plus joint and
+// mounting losses of the same order), T60 = 6.9078/(pi f eta).
+//
+// Drive and readout are DIFFERENT physical ports of the same plate — the
+// tailpiece rail takes the force, the pickup mount is read — so no
+// reciprocity pairing binds them (the reciprocity rule guards a single
+// coupling port sensed and forced through one transformation; a feedforward
+// path with separate in/out ports has no loop to destabilize and no damping
+// identity to break). The key-bottoming thump enters at a third, per-key
+// point along the keyboard.
+//
+// ---- THE FIT SURFACE ------------------------------------------------------
+// The practitioner has offered isolation recordings (key presses, string
+// pull-offs) of the real instrument. When they arrive, refit HERE and only
+// here: kHz (mode frequencies), kT60 (decay), and the voice-side levels
+// kCaseSense / kThumpForceN (ClavinetVoice). Everything else consumes these.
+// ---------------------------------------------------------------------------
+class ClavinetCase
+{
+public:
+    static constexpr int kModes = 6;
+
+    // (m,n) = {1,1} {2,1} {3,1} {4,1} {1,2} {2,2} of the plate above.
+    static constexpr double kHz[kModes]  = { 150.5, 212.7, 316.5, 461.7, 539.6, 601.8 };
+    static constexpr double kT60[kModes] = { 0.49, 0.34, 0.23, 0.16, 0.14, 0.12 };
+    static constexpr double kModalMass   = 0.816;   // kg, rho h Lx Ly / 4
+
+    // Port positions in plate fractions (xi along the 1.0 m keyboard axis,
+    // eta across the 0.4 m depth). Tailpiece rail and pickup mount both sit
+    // toward the treble end; the exact points are geometry estimates and the
+    // read/drive weights follow from the mode shapes, not from tuning.
+    static constexpr double kDriveXi = 0.85, kDriveEta = 0.42;
+    static constexpr double kReadXi  = 0.72, kReadEta  = 0.38;
+
+    // sin(m pi xi) sin(n pi eta) for the six (m,n) pairs.
+    static void pointShape (double xi, double eta, double* w)
+    {
+        static constexpr int kM[kModes] = { 1, 2, 3, 4, 1, 2 };
+        static constexpr int kN[kModes] = { 1, 1, 1, 1, 2, 2 };
+        for (int m = 0; m < kModes; ++m)
+            w[m] = std::sin (kM[m] * kPiD * xi) * std::sin (kN[m] * kPiD * eta);
+    }
+
+    void prepare (double sampleRate)
+    {
+        sys.prepare (sampleRate);
+        sys.setNumModes (kModes);
+        pointShape (kReadXi, kReadEta, shapeRead);
+        applyBody();
+        reset();
+    }
+
+    // Material and size, the shared kBodyMaterials physics (the Harp's
+    // pattern): frequencies scale with sqrt(E/rho)/s, drive with
+    // 1/(rho s^3), internal loss adds on rates; index 0 at size 0.5 is
+    // bit-exact stock. State is kept across retunes so a live sweep
+    // re-pitches the ring instead of cutting it.
+    void setBody (int materialIndex, double sizeNorm)
+    {
+        const double s = std::pow (1.43, 2.0 * std::clamp (sizeNorm, 0.0, 1.0) - 1.0);
+        if (materialIndex == bodyMat && std::abs (s - bodySize) < 1.0e-9) return;
+        bodyMat = materialIndex;
+        bodySize = s;
+        applyBody();
+    }
+
+    void reset() { sys.clear(); sys.setNumModes (kModes); }
+
+    void addForceAt (const double* w, double f)
+    {
+        f *= forceScale;
+        for (int m = 0; m < kModes; ++m) sys.addForce (m, f * w[m]);
+    }
+
+    void tick() { sys.tick(); }
+    double displacement() const { return sys.displacementAt (shapeRead); }
+    double modeHz (int m) const { return (m >= 0 && m < kModes) ? sys.frequency (m) : 0.0; }
+    double energy() const { return sys.energy(); }
+
+private:
+    void applyBody()
+    {
+        const BodyScalers sc = bodyScalers (bodyMat);
+        const double fScale = sc.freq / bodySize;
+        forceScale = 1.0 / (sc.mass * bodySize * bodySize * bodySize);
+        for (int m = 0; m < kModes; ++m)
+        {
+            const double f = kHz[m] * fScale;
+            const double sigma = 6.9078 / kT60[m] + kPiD * f * sc.etaAdd;
+            if (sys.frequency (m) > 0.0)
+                sys.retuneKeepingState (m, f, 6.9078 / sigma);
+            else
+                sys.setMode (m, f, 6.9078 / sigma, kModalMass);
+        }
+    }
+
+    double forceScale = 1.0;
+    int    bodyMat = 0;
+    double bodySize = 1.0;
+    SavModalSystem<kModes, 1> sys;
+    double shapeRead[kModes] {};
+};
+
+// ---------------------------------------------------------------------------
+// The tangent with its stamped bracket. The rubber tip does not ride the key
+// rigidly: it is crimped into a holder stamped from sheet metal and bent up,
+// "somewhat flexible" [P, research 12]. That flex is a series compliance
+// between the moving key mass and the contact, and it is what makes quiet
+// playing "adventurous": at low tangent velocity the tip's bracket resonance
+// gets several periods inside the d/v crossing time and the tip CHATTERS —
+// separate measured contact episodes — where a forte stroke punches through
+// in one. No noise is injected anywhere in this class; the chatter is the
+// two-mass contact dynamics.
+//
+// Bracket stiffness estimate, stated so it can be re-fitted: a bent-up tab
+// of 0.7 mm sheet steel, ~12 mm free length, ~10 mm wide, as a cantilever
+// k = 3EI/L^3 with I = w t^3 / 12 = 2.86e-13 m^4 gives k ~ 1.0e5 N/m. With
+// the tip's share of the moving mass (~1 g at mid compass) that puts the
+// bracket resonance near 1.5 kHz: period ~0.65 ms against a pp crossing time
+// of 2.6 ms (chatter room) and an ff crossing of 0.66 ms (one clean shove) —
+// exactly the registration the practitioner describes.
+//
+// Both coordinates are integrated semi-implicitly (velocity first), the same
+// symplectic scheme as the free hammer; the contact force law and its
+// clamping are HuntCrossleyHammer's, applied between the TIP and the string.
+// The read (string displacement/velocity at the strike shape) and the write
+// (force through the same shape) stay symmetric — the reciprocity rule.
+// ---------------------------------------------------------------------------
+class TangentContact
+{
+public:
+    struct Config
+    {
+        double mass       = 0.004;   // kg, total moving mass at the tip
+        double stiffness  = 2.0e8;   // N/m^alpha, Hunt-Crossley
+        double alpha      = 2.3;
+        double lambda     = 1.0;     // s/m, hysteretic loss
+        double bracketK   = 1.0e5;   // N/m, stamped-holder cantilever
+        double bracketZeta= 0.10;    // its loss ratio (crimped joint)
+        double tipFrac    = 0.35;    // share of the mass riding the bracket
+    };
+
+    void prepare (double sampleRate) { fs = sampleRate; reset(); }
+
+    void reset()
+    {
+        keyPos = keyVel = tipRel = tipRelV = 0.0;
+        inFlight = contacted = inContact = false;
+        contactSamples = touchedSamples = nEpisodes = 0;
+    }
+
+    void strike (double speed, double gap)
+    {
+        keyPos = -std::max (0.0, gap);
+        keyVel = std::max (0.01, speed);
+        tipRel = tipRelV = 0.0;
+        inFlight = true;
+        contacted = inContact = false;
+        contactSamples = touchedSamples = nEpisodes = 0;
+    }
+
+    bool isActive() const { return inFlight; }
+    bool hasTouched() const { return contacted; }
+    int  contactDurationSamples() const { return contactSamples; }
+    // Samples since first touch: the seat clock. The anvil arrives d/v after
+    // the launch whether or not the tip is chattering, so the seat is keyed
+    // on elapsed time, not on in-contact time.
+    int  sinceTouchSamples() const { return touchedSamples; }
+    int  episodes() const { return nEpisodes; }
+    void retire() { inFlight = false; }
+
+    double tick (double surfaceDisplacement, double surfaceVelocity, const Config& cfg)
+    {
+        if (! inFlight) return 0.0;
+
+        const double dt   = 1.0 / fs;
+        const double mTip = std::max (1.0e-6, cfg.tipFrac * cfg.mass);
+        const double mKey = std::max (1.0e-6, (1.0 - cfg.tipFrac) * cfg.mass);
+        const double cBr  = 2.0 * cfg.bracketZeta * std::sqrt (cfg.bracketK * mTip);
+
+        const double compression = (keyPos + tipRel) - surfaceDisplacement;
+        double force = 0.0;
+        if (compression > 0.0)
+        {
+            if (! inContact) { inContact = true; ++nEpisodes; }
+            contacted = true;
+            ++contactSamples;
+            const double rate = (keyVel + tipRelV) - surfaceVelocity;
+            force = cfg.stiffness * std::pow (compression, cfg.alpha)
+                  * (1.0 + cfg.lambda * rate);
+            force = std::max (0.0, force);   // contact cannot pull
+        }
+        else
+        {
+            inContact = false;
+        }
+        if (contacted) ++touchedSamples;
+
+        // Bracket force on the key, positive toward the string when the tip
+        // leads (tipRel > 0); minus that on the tip, minus the contact force.
+        const double fBr = cfg.bracketK * tipRel + cBr * tipRelV;
+        tipRelV += (-fBr * (1.0 / mTip + 1.0 / mKey) - force / mTip) * dt;
+        keyVel  += (fBr / mKey) * dt;
+        tipRel  += tipRelV * dt;
+        keyPos  += keyVel * dt;
+
+        // Turned around without ever touching: cannot reach the string.
+        if (! contacted && keyVel <= 0.0) inFlight = false;
+        return force;
+    }
+
+private:
+    double fs = 48000.0;
+    double keyPos = 0.0, keyVel = 0.0;     // key ram, absolute
+    double tipRel = 0.0, tipRelV = 0.0;    // tip relative to the key
+    bool   inFlight = false, contacted = false, inContact = false;
+    int    contactSamples = 0, touchedSamples = 0, nEpisodes = 0;
+};
+
 class ClavinetVoice
 {
 public:
@@ -224,13 +497,25 @@ public:
         // 0 Magnetic, 1 Native (= the twin bar pickups), 2 Electro, 3 Contact.
         double transducer     = 1.0;
         double material       = 0.0;   // index into kMaterials; 0 = stock
+
+        // The practitioner layer (research 12), appended so older layouts
+        // keep their field offsets.
+        double wearAmount     = 0.0;   // tangent-rubber notching: 0 = new
+                                       // rubbers (the papers' instrument, and
+                                       // bit-compatible by construction),
+                                       // 1 = gigged-hard
+        double caseAmount     = 1.0;   // case-into-pickup sense level; 1 is
+                                       // the calibrated point (row C2), 0
+                                       // removes the structure-borne path
+        double caseBodyMat    = 0.0;   // kBodyMaterials index for the case
+        double caseBodySize   = 0.5;   // case size norm; 0.5 = stock
     };
 
     // Compared byte-for-byte by the engine to decide whether the instrument
     // needs rebuilding, so it must have no padding for that comparison to
     // mean what it says.
     static_assert (std::is_trivially_copyable<Config>::value, "Config must be memcmp-able");
-    static_assert (sizeof (Config) == 10 * sizeof (double), "Config has padding");
+    static_assert (sizeof (Config) == 14 * sizeof (double), "Config has padding");
 
     void prepare (double sampleRate, const MagneticPickup* sharedField = nullptr)
     {
@@ -238,6 +523,7 @@ public:
         field = sharedField;
         sys.prepare (sampleRate);
         hammer.prepare (sampleRate);
+        kase.prepare (sampleRate);
         reset();
     }
 
@@ -246,6 +532,7 @@ public:
         sys.clear();
         sys.setNumModes (0);
         hammer.reset();
+        kase.reset();
         sounding = held = released = false;
         pedalAmt = 0.0;
         yarnRamp = 0.0;
@@ -257,6 +544,14 @@ public:
         for (int i = 0; i < 3; ++i) { cHist[i] = bHist[i] = 0.0; }
         fluxPrev[0] = fluxPrev[1] = 0.0;
         fluxPrimed = false;
+        thumpRemaining = thumpTotal = 0;
+        thumpAmp = 0.0;
+        caseRingRemaining = 0;
+        stickRemaining = -1;
+        slipRemaining = 0;
+        slipAmp = 0.0;
+        roughAmt = 0.0;
+        roughLp = 0.0;
     }
 
     // The beating below E4 [M, EURASIP 2.3.4]: 0.5-2 Hz, up to 15 dB p-p,
@@ -270,7 +565,7 @@ public:
     void setBeat (double depth) { beatDepth = std::clamp (depth, 0.0, 0.7); }
 
     bool isSounding() const { return sounding; }
-    bool isRinging() const { return sounding || hammer.isActive(); }
+    bool isRinging() const { return sounding || hammer.isActive() || caseRingRemaining > 0; }
     bool isHeld() const { return held; }
     int  noteNumber() const { return note; }
     int  contactSamples() const { return std::max (lastContactSamples, hammer.contactDurationSamples()); }
@@ -291,6 +586,14 @@ public:
     }
     double modeFrequency (int k) const { return (k >= 0 && k < numPartials) ? speakFreq[k] : 0.0; }
     double modeT60 (int k) const { return (k >= 0 && k < numPartials) ? 60.0 / alphaOfMode[k] : 0.0; }
+
+    // Practitioner-layer telemetry, so the suite can assert on the scatter,
+    // the case ladder and the seating without rendering.
+    double caseModeHz (int m) const { return kase.modeHz (m); }
+    double contactStiffness() const { return hammerCfg.stiffness; }
+    double contactAlpha() const { return hammerCfg.alpha; }
+    int    contactEpisodes() const { return hammer.episodes(); }
+    double wearOfKey() const { return wearEff; }
 
     // The resonator's own motion at the center tap, for rows that measure
     // decay without the derivative's tilt.
@@ -338,9 +641,32 @@ public:
         // overtones" [R, E7 manual] comes from.
         seatSamples = std::max (8, static_cast<int> (fs * gapMm * 1.0e-3 / lastTipV));
         lastContactSamples = 0;
+
+        // Wear, per strike: the worn seat lands in the notch unevenly at low
+        // velocity — roughness on the contact force, full at the 1 m/s bottom
+        // of the tangent range, gone by 2 m/s [P, research 12.3]. The noise
+        // is deterministic per key and only shapes a force that is already a
+        // bounded-time drive; depth <= 0.85 keeps the force nonnegative.
+        stickRemaining = -1;
+        slipRemaining = 0;
+        roughAmt = std::min (0.85, 1.7 * wearEff * std::clamp (2.0 - lastTipV, 0.0, 1.0));
+        roughRng = Rng (noteHash ^ 0x7f4a7c15u);
+        roughLp = 0.0;
+
+        // The key bottoms on the keybed: a raised-cosine force impulse into
+        // the case, velocity-scaled — "the case gets extremely excited just
+        // by pressing the keys... like someone knocking on wood" [P,
+        // research 12.5]. It reaches the DI only through the case-to-pickup
+        // path below, which is exactly how the real one gets out.
+        startThump (kThumpForceN * (0.25 + 0.75 * vel));
     }
 
-    void noteOff() { held = false; }
+    void noteOff()
+    {
+        // The key returns against its rest rail: a weaker second knock.
+        if (held) startThump (kThumpForceN * kThumpReturn * (0.25 + 0.75 * std::clamp ((lastTipV - 1.0) / 3.0, 0.0, 1.0)));
+        held = false;
+    }
 
     // The real instrument has no pedal; ours holds the tangent state [D,
     // plan 5] — keys stay clamped, the retune and the yarn happen when the
@@ -361,7 +687,17 @@ public:
     void applyDamperIfDue()
     {
         if (held || pedalAmt >= 1.0) return;
-        if (! released) doRelease();
+        if (! released)
+        {
+            // A worn notch catches the string before the yarn takes it [P,
+            // research 12.3]: the tangent-end termination holds a few ms
+            // longer. The counter is armed and run in process() (this method
+            // is also called by the engine, and a second decrement per
+            // sample would halve the hold); at wear 0 it arms to zero and
+            // the mint release is bit-identical.
+            if (stickRemaining != 0) return;
+            doRelease();
+        }
         if (yarnEff >= 1.0) return;
         for (int m = 0; m < sys.numModes(); ++m)
             if (sys.displacement (m) != 0.0)
@@ -373,7 +709,7 @@ public:
     // caller owns the tone stack, preamp and decimation (ClavinetChain.h).
     void process (const Config& cfg, double* out)
     {
-        if (! sounding && ! hammer.isActive())
+        if (! sounding && ! hammer.isActive() && caseRingRemaining <= 0)
         {
             for (int k = 0; k < kOver; ++k) out[k] = 0.0;
             return;
@@ -383,14 +719,26 @@ public:
         {
             const double u = sys.displacementAt (shapeStrike);
             const double v = sys.velocityAt (shapeStrike);
-            const double f = hammer.tick (u, v, hammerCfg);
+            double f = hammer.tick (u, v, hammerCfg);
             if (f != 0.0)
             {
                 sounding = true;
+                // The worn seat's roughness [P, research 12.3]: the notched
+                // rubber modulates the transmitted force at low velocity.
+                // Deterministic per key, depth-bounded so the force stays
+                // positive; it shapes a bounded-time drive, nothing more.
+                if (roughAmt > 0.0)
+                {
+                    roughLp += 0.35 * (static_cast<double> (roughRng.next()) - roughLp);
+                    f *= 1.0 + roughAmt * roughLp;
+                }
                 // The rubber-cushioned seat taper (see below): a raised
                 // cosine over the second half of the dwell. Monotone, once,
                 // then the contact ends for good — it can only remove drive.
-                const int cs = hammer.contactDurationSamples();
+                // The dwell clock is samples since first touch: with the
+                // bracket in the chain the tip may chatter at pp, but the
+                // anvil still arrives d/v after the launch.
+                const int cs = hammer.sinceTouchSamples();
                 double w = 1.0;
                 if (2 * cs > seatSamples)
                     w = 0.5 * (1.0 + std::cos (kPiD * (2.0 * cs - seatSamples)
@@ -406,12 +754,58 @@ public:
             // the force tapers over the second half of the dwell instead of
             // cutting; a hard cut is a force step, and its broadband splat
             // measured 20 dB of extra high-partial launch.
-            if (hammer.contactDurationSamples() >= seatSamples)
-                hammer.reset();
+            if (hammer.sinceTouchSamples() >= seatSamples)
+                hammer.retire();
+        }
+
+        // The worn-notch release catch: arm and run the hold here, once per
+        // sample (applyDamperIfDue is also called by the engine).
+        if (! held && pedalAmt < 1.0 && ! released)
+        {
+            if (stickRemaining < 0)
+                stickRemaining = static_cast<int> (fs * kStickMaxS * wearEff);
+            else if (stickRemaining > 0)
+                --stickRemaining;
+        }
+
+        // The let-go slip: the notch was holding a share of the termination
+        // force; when the string pops out, that force releases as ONE
+        // short pulse through the tangent end — the same shape vector that
+        // senses and forces there, tip-compliance band and all. A half-sine
+        // of single polarity (a white-noise force was tried first and
+        // random-walked to nothing audible), roughened by the notch surface.
+        if (slipRemaining > 0)
+        {
+            const double ph = static_cast<double> (slipTotal - slipRemaining--) / slipTotal;
+            const double f = slipAmp * std::sin (kPiD * ph)
+                           * (0.7 + 0.3 * static_cast<double> (slipRng.next()));
+            for (int m = 0; m < numModes; ++m)
+                sys.addForce (m, f * shapeStrike[m]);
         }
 
         sys.tick();
         applyDamperIfDue();
+
+        // The case, strictly feedforward [P, research 12.1]: the string's
+        // termination force T dy/dx at the tailpiece drives the rail, the
+        // key thump drives the keybed point, and what the pickup senses is
+        // the case's motion under its own mount. Back-reaction on the string
+        // is omitted on the mass ratio (kilograms of plate against a
+        // fraction of a gram of string — see ClavinetCase).
+        double cs = 0.0;
+        if (caseOn)
+        {
+            kase.addForceAt (shapeCaseDrive, sys.displacementAt (shapeTerm));
+            if (thumpRemaining > 0)
+            {
+                const int i = thumpTotal - thumpRemaining--;
+                const double w = 0.5 * (1.0 - std::cos (2.0 * kPiD * i / thumpTotal));
+                kase.addForceAt (shapeCaseThump, thumpAmp * w);
+            }
+            kase.tick();
+            cs = caseGain * kase.displacement();
+        }
+        if (caseRingRemaining > 0) --caseRingRemaining;
 
         if (++controlCounter >= kControlDecim)
         {
@@ -426,12 +820,18 @@ public:
         }
 
         // The two taps: displacement of the string at each pickup point, as
-        // weighted modal sums. Both paths between this sample and the last
-        // are band-limited (fs/pi mode ceiling), so reconstructing them at
-        // kOver points is legitimate — the Rhodes staircase lesson — and the
-        // curved flux law is evaluated at each.
-        const double yc = sys.displacementAt (shapeC);
-        const double yb = sys.displacementAt (shapeB);
+        // weighted modal sums, MINUS the case's motion under the pickup
+        // mount — the bars are bolted to the case, so every mounted
+        // transducer reads the RELATIVE coordinate string-minus-bar. That
+        // subtraction is sensing only (it pushes on nothing), so it needs no
+        // reciprocity partner; the contact swap lane keeps reading the
+        // termination force and is untouched. Both paths between this sample
+        // and the last are band-limited (fs/pi mode ceiling, 600 Hz case
+        // ceiling), so reconstructing them at kOver points is legitimate —
+        // the Rhodes staircase lesson — and the curved flux law is evaluated
+        // at each.
+        const double yc = sys.displacementAt (shapeC) - cs;
+        const double yb = sys.displacementAt (shapeB) - cs;
         if (! std::isfinite (yc) || ! std::isfinite (yb)) { recover (out); return; }
 
         const double fsOs = fs * kOver;
@@ -575,6 +975,23 @@ private:
         yarnEff = 1.0;
         for (int m = 0; m < numModes; ++m)
             sys.setFrequency (m, speakFreq[m] * kDropRatio);
+
+        // The worn notch lets go: a short rough transient through the
+        // tangent end, scaled by wear times the string's own motion. The
+        // force scale is physical: a string popping out of a groove exerts
+        // Z0 * v on the termination (Z0 = sqrt(T mu), the wave impedance;
+        // the grand damper-grab recipe with the impedance made explicit),
+        // with v the string's velocity amplitude sqrt(2 E / m_modal) at the
+        // moment of release. kSlipFrac is the dimensionless catch depth at
+        // full wear. Zero at wear 0.
+        if (wearEff > 0.0)
+        {
+            slipTotal = std::max (1, static_cast<int> (fs * kSlipS));
+            slipRemaining = slipTotal;
+            const double vAmp = std::sqrt (std::max (0.0, 2.0 * sys.energy() / modalMassM));
+            slipAmp = kSlipFrac * wearEff * z0String * vAmp;
+            slipRng = Rng (noteHash ^ 0x9e3779b9u);
+        }
     }
 
     // A note on the seated equilibrium, for whoever calibrates the attack
@@ -600,10 +1017,25 @@ private:
     void recover (double* out)
     {
         sys.clear();
+        kase.reset();
         sounding = false;
+        thumpRemaining = 0;
+        caseRingRemaining = 0;
+        slipRemaining = 0;
         for (int i = 0; i < 3; ++i) { cHist[i] = bHist[i] = cfHist[i] = 0.0; }
         fluxPrimed = false;
         for (int k = 0; k < kOver; ++k) out[k] = 0.0;
+    }
+
+    void startThump (double forceN)
+    {
+        if (! caseOn) return;
+        thumpTotal = std::max (1, static_cast<int> (fs * kThumpS));
+        thumpRemaining = thumpTotal;
+        thumpAmp = forceN;
+        // Keep the voice processing long enough for the knock-on-wood ring
+        // to play out after the string is gone.
+        caseRingRemaining = std::max (caseRingRemaining, static_cast<int> (fs * kCaseRingS));
     }
 
     void controlTick()
@@ -656,6 +1088,8 @@ private:
         const double mu = ClavinetScale::massPerLength (note, mat);
         const double T = 4.0 * f0 * f0 * strLen * strLen * mu;
         const double modalMass = 0.5 * mu * strLen;   // pinned-pinned, every mode
+        modalMassM = modalMass;
+        z0String = std::sqrt (T * mu);   // the string's wave impedance, N s/m
 
         // In the extrapolated top range (beyond the real E6) the reconstructed
         // string gets shorter than the clamped pickup distances; a pickup
@@ -677,8 +1111,39 @@ private:
         // per NOTE from the measured range, seeded from the note number so
         // renders are reproducible [D, plan 2].
         const std::uint32_t h = static_cast<std::uint32_t> (note) * 2654435761u;
+        noteHash = h;
         const double rippleRate = 2.0 + ((h >> 9) & 1023u) / 1023.0;   // 2..3 x f0
         constexpr double kRippleDepth = 0.22;
+
+        // ---- per-key contact scatter [P, research 12.2] ---------------------
+        // "Stamped from a long sheet-metal strip and bent up — somewhat
+        // flexible; the rubbers are only crimped into the holders and some
+        // sit crooked, not flat." Sixty hand-assembled contacts cannot share
+        // one stiffness or one geometry: the stiffness scatters +/-30% (a
+        // crooked crimp changes the loaded rubber volume by that order), the
+        // Hunt-Crossley exponent scatters +/-0.3 around 2.3 (a tilted pad
+        // moves the contact between flat-punch-like and edge-like geometry),
+        // and the tip's compliance corner follows the stiffness as sqrt(k).
+        // The bracket stiffness scatters with the same crimp logic. All
+        // deterministic per note — key forty is always key forty.
+        const double uS1 = ((h >> 3)  & 1023u) / 1023.0;
+        const double uS2 = ((h >> 13) & 1023u) / 1023.0;
+        const double uS3 = ((h >> 23) & 511u)  / 511.0;
+        const double uW  = ((h >> 5)  & 1023u) / 1023.0;
+        const double kScat = 1.0 + 0.30 * (2.0 * uS1 - 1.0);
+        const double contactHzKey = kContactHz * std::sqrt (kScat);
+
+        // ---- per-key wear [P, research 12.3] --------------------------------
+        // "The rubbers get notches... different for every key depending on
+        // use." Usage peaks around the middle of the keyboard: a smooth bump
+        // centred near middle C (note 58, sigma 14 keys), times a per-key
+        // depth jitter — two neighbours never wear alike. Exactly zero at
+        // wearAmount 0, which is the papers' mint instrument.
+        {
+            const double z = (note - 58.0) / 14.0;
+            wearEff = std::clamp (cfg.wearAmount, 0.0, 1.0)
+                    * std::exp (-0.5 * z * z) * (0.7 + 0.3 * uW);
+        }
 
         int kV = 0;
         for (int k = 1; k <= kMaxModes; ++k)
@@ -728,12 +1193,17 @@ private:
             // model). Sensing and forcing share the shape — the reciprocity
             // rule this project already paid for — and the tip's compliance
             // rolloff caps what rubber can push.
-            const double comp = 1.0 / (1.0 + (fk / kContactHz) * (fk / kContactHz));
+            const double comp = 1.0 / (1.0 + (fk / contactHzKey) * (fk / contactHzKey));
             const double sgn = (k & 1) ? 1.0 : -1.0;
             shapeStrike[k - 1] = sgn * 2.0 / (k * kPiD) * comp;
 
             // The contact swap lane reads T * dy/dx at the tailpiece.
             shapeContact[k - 1] = T * k * kPiD / strLen * comp;
+
+            // The case drive reads the same termination force UNFILTERED:
+            // the rail feels the string exactly, only the rubber tip has a
+            // compliance corner.
+            shapeTerm[k - 1] = T * k * kPiD / strLen;
         }
 
         // ---- the beat partner (see setBeat) ---------------------------------
@@ -749,12 +1219,13 @@ private:
             shapeC[p] = shapeC[0];
             shapeB[p] = shapeB[0];
             shapeContact[p] = shapeContact[0];
+            shapeTerm[p] = shapeTerm[0];
             shapeStrike[p] = beatDepth * shapeStrike[0];
             numModes = kV + 1;
         }
         for (int i = numModes; i < kMaxModes; ++i)
         {
-            shapeC[i] = shapeB[i] = shapeStrike[i] = shapeContact[i] = 0.0;
+            shapeC[i] = shapeB[i] = shapeStrike[i] = shapeContact[i] = shapeTerm[i] = 0.0;
             speakFreq[i] = 0.0;
             alphaOfMode[i] = 1.0e9;
         }
@@ -766,7 +1237,7 @@ private:
         // velocity-brightness rows. alpha 2.3 sits in rubber's Hertzian
         // range; lambda 1.0 for a lossy elastomer.
         const double reg = std::clamp ((note - 29.0) / 59.0, 0.0, 1.0);
-        hammerCfg.alpha = 2.3;
+        hammerCfg.alpha = 2.3 + 0.3 * (2.0 * uS2 - 1.0);   // per-key crook (above)
         hammerCfg.lambda = 1.0;
         hammerCfg.mass = (0.004 - 0.002 * reg)
                        * (0.6 + 0.8 * std::clamp (cfg.hammerMassNorm, 0.0, 1.0));
@@ -775,14 +1246,41 @@ private:
         // implies (fs d/v at the measured 1-4 m/s over a ~2.6 mm gap). The
         // first, softer guess (4e6) produced a 6 ms contact whose force-pulse
         // nulls buried the pickup comb — measured by the comb row, which owns
-        // this constant together with the second-partial row.
+        // this constant together with the second-partial row. kScat is the
+        // per-key crimp scatter.
         hammerCfg.stiffness = 2.0e8 * std::pow (30.0, reg)
-                            * std::pow (12.0, std::clamp (cfg.hammerHardness, 0.0, 1.0) - 0.5);
+                            * std::pow (12.0, std::clamp (cfg.hammerHardness, 0.0, 1.0) - 0.5)
+                            * kScat
+                            // A scattered exponent must be compared at a
+                            // reference compression or it silently rescales
+                            // the whole force curve: k delta^alpha is held
+                            // invariant at delta = 3e-4 m — this model's own
+                            // mf peak compression, (8 N / 1e9)^(1/2.3) — so
+                            // the CURVE tilts under the crook while the
+                            // mid-velocity contact stays comparable, and the
+                            // stability cap below stops swinging x6 per 0.2
+                            // of alpha (measured: without this, the cap
+                            // clamped low-alpha keys to 0.24x and the
+                            // +/-30%% crimp scatter was destroyed).
+                            * std::pow (3.0e-4, 2.3 - hammerCfg.alpha);
+        // The stamped bracket under the tip (see TangentContact): the 1.0e5
+        // N/m cantilever estimate, scattered per key by the same crimp
+        // logic. Its resonance with the tip mass sits near 1.5 kHz mid
+        // compass — several periods inside a pp crossing, none inside ff.
+        hammerCfg.bracketK = 1.0e5 * (1.0 + 0.30 * (2.0 * uS3 - 1.0));
+        hammerCfg.bracketZeta = 0.10;
+        hammerCfg.tipFrac = 0.35;
         {
             // The general explicit-contact stability cap, written for this
             // contact's exponent (the Wurlitzer derivation): past a fraction
             // of the sample rate the explicit contact stops being a contact
-            // and becomes a generator.
+            // and becomes a generator. The colliding mass stays the FULL
+            // moving mass: at the ~1 ms contact timescale the bracket
+            // (resonant right there, 1.5 kHz) still couples the key's share,
+            // and a tip-mass cap measured 0.24x clamps on mid keys — it
+            // would flatten the crimp scatter the cap is not supposed to
+            // own. N1's energy-monotone row across the compass at both
+            // velocity extremes is the measured stability check.
             const double phi = std::abs (shapeStrike[0]) > 1.0e-9 ? std::abs (shapeStrike[0]) : 0.1;
             const double effM = modalMass / (phi * phi);
             const double mRed = 1.0 / (1.0 / hammerCfg.mass + 1.0 / effM);
@@ -815,16 +1313,56 @@ private:
                     ? field->flux (static_cast<float> (kMagOff), static_cast<float> (gap0)) : 0.0;
         fluxPrimed = false;
 
+        // ---- the case [P, research 12.1/12.5] --------------------------------
+        // Body material/size re-derive the ladder (state kept — a live sweep
+        // re-pitches the ring); the drive port is the tailpiece rail, the
+        // thump port the key's own spot along the keyboard, so each key
+        // knocks the wood with its own coloration.
+        kase.setBody (std::clamp (static_cast<int> (cfg.caseBodyMat), 0, kNumBodyMaterials - 1),
+                      std::clamp (cfg.caseBodySize, 0.0, 1.0));
+        caseGain = std::clamp (cfg.caseAmount, 0.0, 1.0) * kCaseSense;
+        caseOn = caseGain > 0.0;
+        ClavinetCase::pointShape (ClavinetCase::kDriveXi, ClavinetCase::kDriveEta, shapeCaseDrive);
+        ClavinetCase::pointShape (0.10 + 0.72 * reg, kThumpEta, shapeCaseThump);
+
         configured = true;
     }
 
     static constexpr double kYarnRampS = 0.030;
 
+    // ---- the practitioner layer's constants [P, research 12] ---------------
+    // Levels are calibration constants owned by suite rows; times and shares
+    // are physical estimates stated where they are derived.
+    static constexpr double kCaseSense   = 4.0;     // case-to-pickup sense gain: 1.0
+                                                    // would be the bare plate under
+                                                    // the mount; the x4 is the mount
+                                                    // bracket's lever above the
+                                                    // plate's mean motion. The ONE
+                                                    // calibrated case constant,
+                                                    // owned by row C2 (the -25..-45
+                                                    // dB window); the string-driven
+                                                    // path rides the same constant
+    static constexpr double kThumpForceN = 5.0;     // key-bottom impulse peak, N: a
+                                                    // ~50 g key landing at ~0.4 m/s
+                                                    // stopped in the 3 ms cushion is
+                                                    // m v / t ~ 7 N; 5 N with the
+                                                    // felt taking a share
+    static constexpr double kThumpReturn = 0.35;    // the key-return knock's share
+    static constexpr double kThumpS      = 0.003;   // raised-cosine impulse length
+    static constexpr double kCaseRingS   = 0.7;     // keep-alive for the case ring
+    static constexpr double kStickMaxS   = 0.004;   // notch catch at full wear, s
+    static constexpr double kSlipS       = 0.0008;  // let-go pulse length, s
+    static constexpr double kSlipFrac    = 1.2;     // notch catch depth at full
+                                                    // wear, dimensionless against
+                                                    // Z0 * v; owned by row W1
+    static constexpr double kThumpEta    = 0.62;    // keybed line across the case
+
     double fs = 48000.0;
     int note = 60;
     System sys;
-    HuntCrossleyHammer hammer;
-    HuntCrossleyHammer::Config hammerCfg;
+    TangentContact hammer;
+    TangentContact::Config hammerCfg;
+    ClavinetCase kase;
     const MagneticPickup* field = nullptr;
 
     int numPartials = 0, numModes = 0;
@@ -836,6 +1374,27 @@ private:
     double shapeB[kMaxModes] {};
     double shapeStrike[kMaxModes] {};
     double shapeContact[kMaxModes] {};
+    double shapeTerm[kMaxModes] {};
+
+    // Case state (see the constants block above for the levels).
+    double shapeCaseDrive[ClavinetCase::kModes] {};
+    double shapeCaseThump[ClavinetCase::kModes] {};
+    bool   caseOn = true;
+    double caseGain = 0.0;
+    int    thumpRemaining = 0, thumpTotal = 0;
+    double thumpAmp = 0.0;
+    int    caseRingRemaining = 0;
+
+    // Wear and scatter state.
+    std::uint32_t noteHash = 0;
+    double wearEff = 0.0;
+    double modalMassM = 1.0e-4;
+    double z0String = 0.1;
+    int    stickRemaining = -1;
+    int    slipRemaining = 0, slipTotal = 1;
+    double slipAmp = 0.0;
+    double roughAmt = 0.0, roughLp = 0.0;
+    Rng    roughRng { 1u }, slipRng { 1u };
 
     double cHist[3] {}, bHist[3] {}, cfHist[3] {};
     double fluxPrev[2] {};
