@@ -509,13 +509,18 @@ public:
                                        // removes the structure-borne path
         double caseBodyMat    = 0.0;   // kBodyMaterials index for the case
         double caseBodySize   = 0.5;   // case size norm; 0.5 = stock
+        // The panel's KEY NOISE control. The key-bottom thump into the case
+        // IS this instrument's action noise -- it is what the practitioner
+        // report describes as knocking on wood -- so the control scales it
+        // rather than a separate layer. 1.0 is the calibrated instrument.
+        double keyNoise       = 1.0;
     };
 
     // Compared byte-for-byte by the engine to decide whether the instrument
     // needs rebuilding, so it must have no padding for that comparison to
     // mean what it says.
     static_assert (std::is_trivially_copyable<Config>::value, "Config must be memcmp-able");
-    static_assert (sizeof (Config) == 14 * sizeof (double), "Config has padding");
+    static_assert (sizeof (Config) == 15 * sizeof (double), "Config has padding");
 
     void prepare (double sampleRate, const MagneticPickup* sharedField = nullptr)
     {
@@ -658,13 +663,13 @@ public:
         // by pressing the keys... like someone knocking on wood" [P,
         // research 12.5]. It reaches the DI only through the case-to-pickup
         // path below, which is exactly how the real one gets out.
-        startThump (kThumpForceN * (0.25 + 0.75 * vel));
+        startThump (keyNoiseAmt * kThumpForceN * (0.25 + 0.75 * vel));
     }
 
     void noteOff()
     {
         // The key returns against its rest rail: a weaker second knock.
-        if (held) startThump (kThumpForceN * kThumpReturn * (0.25 + 0.75 * std::clamp ((lastTipV - 1.0) / 3.0, 0.0, 1.0)));
+        if (held) startThump (keyNoiseAmt * kThumpForceN * kThumpReturn * (0.25 + 0.75 * std::clamp ((lastTipV - 1.0) / 3.0, 0.0, 1.0)));
         held = false;
     }
 
@@ -1321,6 +1326,7 @@ private:
         kase.setBody (std::clamp (static_cast<int> (cfg.caseBodyMat), 0, kNumBodyMaterials - 1),
                       std::clamp (cfg.caseBodySize, 0.0, 1.0));
         caseGain = std::clamp (cfg.caseAmount, 0.0, 1.0) * kCaseSense;
+        keyNoiseAmt = std::clamp (cfg.keyNoise, 0.0, 2.0);
         caseOn = caseGain > 0.0;
         ClavinetCase::pointShape (ClavinetCase::kDriveXi, ClavinetCase::kDriveEta, shapeCaseDrive);
         ClavinetCase::pointShape (0.10 + 0.72 * reg, kThumpEta, shapeCaseThump);
@@ -1383,6 +1389,7 @@ private:
     double caseGain = 0.0;
     int    thumpRemaining = 0, thumpTotal = 0;
     double thumpAmp = 0.0;
+    double keyNoiseAmt = 1.0;
     int    caseRingRemaining = 0;
 
     // Wear and scatter state.

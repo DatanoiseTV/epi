@@ -40,6 +40,10 @@ static constexpr float kTrimRhodes = 1.32f;
 static constexpr float kTrimCP70   = 7.88f;
 static constexpr float kTrimWurli  = 12.76f;
 static constexpr float kTrimGrand  = 150.0f;   // mic-pair units are small. Deliberately ~6 dB under the electrics' bench: a close-miked grand carries a 22 dB attack crest, and matching RMS exactly would put every mf attack into the output rail
+// The action layer's force into the grand's frame. Calibrated by the
+// engine row 12.4: a mezzo-forte key press sits far under the note it
+// belongs to, and is plainly there when the note is not.
+static constexpr double kGrandActionGain = 0.6;
 static constexpr float kTrimClav   = 0.292f;  // matched to the -24 dBFS mf bench like the other four
 
 void EpiEngine::prepare (double sampleRate, int)
@@ -335,6 +339,9 @@ ClavinetVoice::Config EpiEngine::clavConfig (const EngineParams& p) const
     c.caseBodyMat    = static_cast<double> (p.bodyMat);
     c.caseBodySize   = static_cast<double> (p.bodySize);
     c.wearAmount     = static_cast<double> (p.wearAmount);
+    // The panel's KEY NOISE reaches this instrument as the key-bottom
+    // thump into the case; the shared default 0.3 is the calibrated 1.0.
+    c.keyNoise       = std::clamp (static_cast<double> (p.strikeNoise) / 0.3, 0.0, 2.0);
     return c;
 }
 
@@ -1076,6 +1083,13 @@ void EpiEngine::processGrand (float* outL, float* outR, int numSamples,
         micLidAmt = std::clamp (static_cast<double> (micDist.load (std::memory_order_relaxed)), 0.0, 1.0);
     }
 
+    // The action layer: a grand's key noise is not a detail, it is half of
+    // what makes a piano sound like a machine in a room. It enters through
+    // the frame (GrandBoard::frameForce), so it inherits the board's own
+    // colour and the body bench with it, and the keybed bench sets what the
+    // keys land on.
+    action.setBed (p.keyBed);
+
     // Sympathetic life, the grand way: with the pedal lifted the undamped
     // strings listen to the shared board through their coupled prefix --
     // openSympathetic IS that physics (the in-loop board stops at 1.3 kHz,
@@ -1096,6 +1110,21 @@ void EpiEngine::processGrand (float* outL, float* outR, int numSamples,
     {
         while (nextEvent < numEvents && events[nextEvent].offset <= n)
             handleEvent (events[nextEvent++], p);
+
+        // Each key's mechanical noise, summed into the frame. The shared
+        // layer already carries the strike/release events for every
+        // instrument (handleEvent feeds it), so the grand only had to
+        // consume it -- until now the panel's KEY NOISE control moved
+        // nothing here at all.
+        {
+            double noiseForce[kNumTines] = {};
+            if (action.tick (p.strikeNoise, noiseRng, noiseForce, kNumTines) > 0)
+            {
+                double sum = 0.0;
+                for (int i = 0; i < kNumTines; ++i) sum += noiseForce[i];
+                grandBoard.frameForce (kGrandActionGain * sum);
+            }
+        }
 
         int active = 0;
         for (int i = 0; i < kNumTines; ++i)
@@ -1548,14 +1577,19 @@ void EpiEngine::processCP70 (float* outL, float* outR, int numSamples,
         cp70Frame.tick();
         if (! std::isfinite (cp70Frame.displacement())) cp70Frame.reset();
 
-        // The mechanism's thump goes to the output dry -- key knock travels
-        // through the case on this instrument, not through string coupling,
-        // and there is no frame path to carry it.
+        // The mechanism's thump reaches the output directly: on this
+        // instrument the piezo sits under the bridge and reads the frame it
+        // is bolted to, so key knock arrives without needing the strings to
+        // carry it. The gain was measured, not chosen: at the old 2e-5 the
+        // whole layer sat 81 dB under the note -- inaudible, which made the
+        // panel's KEY NOISE control dead here. It now lands at -52 dB, the
+        // same subordinate band the tine (-44) and the grand (-50) measure
+        // in, and row 12.4 holds it there.
         if (anyNoise)
         {
             double nsum = 0.0;
             for (int i = 0; i < kNumTines; ++i) nsum += noiseForce[i];
-            bus += nsum * 2.0e-5;
+            bus += nsum * 6.0e-4;
         }
 
         double y = cp70Preamp.process (bus);
@@ -1815,7 +1849,7 @@ void EpiEngine::processWurli (float* outL, float* outR, int numSamples,
         {
             double nsum = 0.0;
             for (int i = 0; i < kNumTines; ++i) nsum += noiseForce[i];
-            y += nsum * 2.0e-5;
+            y += nsum * 6.0e-4;
         }
 
         // True amplitude tremolo: one gain, both channels alike. This is the

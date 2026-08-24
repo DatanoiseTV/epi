@@ -232,6 +232,18 @@ public:
         thunkPos = 0;
     }
 
+    // The action's own noise, arriving the same way the trapwork's thump
+    // does: through the frame, at a point that is not any note's bridge
+    // seat. Key-bottom, hammer return and damper lift are all mechanism
+    // against wood, and on a grand they are loud -- a real instrument is
+    // audibly a machine. Instantaneous rather than shaped: the shaping is
+    // the ActionNoise layer's own, this is only where it enters the plate.
+    void frameForce (double f)
+    {
+        double* d = sys.driveData();
+        for (int m = 0; m < kModes; ++m) d[m] += thunkPhi[m] * f;
+    }
+
     // ---- the two-port, board side ---------------------------------------
     // Read the bridge displacement under a note (before anyone ticks), and
     // accumulate the note's net force through the same shape. The voice owns

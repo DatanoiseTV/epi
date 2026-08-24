@@ -1650,6 +1650,75 @@ static void sectionGrabNoise()
 }
 
 // ===========================================================================
+static void sectionKeyNoise()
+{
+    heading ("12b. key noise: every instrument is audibly a machine");
+
+    // The panel offers KEY NOISE on all five instruments. It has to DO
+    // something on all five, and it has to stay under the note it belongs
+    // to -- a mechanism you can hear is right, a mechanism that competes
+    // with the string is not. Measured as the difference between the same
+    // render with the control at zero and at full, which isolates the layer
+    // exactly (the renders are deterministic).
+    //
+    // This row exists because three of the five failed it when it was
+    // written: the grand and the Clav never consumed the layer at all, and
+    // the two electrics carried it 80 dB under the note, which is the same
+    // thing as not having it.
+    const double fs = 48000.0;
+
+    for (int inst = 0; inst < 5; ++inst)
+    {
+        std::vector<float> off, on;
+        for (int pass = 0; pass < 2; ++pass)
+        {
+            EpiEngine e;
+            e.prepare (fs, 64);
+            EngineParams p = measParams (inst);
+            p.strikeNoise = pass == 0 ? 0.0f : 1.0f;
+            p.spaceMix = 0.0f;
+            std::vector<float> L (64), R (64);
+            auto& dst = pass == 0 ? off : on;
+            NoteEvent nOn { 0, NoteEvent::noteOn, 60, 0.55f };
+            e.process (L.data(), R.data(), 64, p, &nOn, 1);
+            dst.insert (dst.end(), L.begin(), L.end());
+            for (int b = 0; b < 400; ++b)
+            {
+                e.process (L.data(), R.data(), 64, p, nullptr, 0);
+                dst.insert (dst.end(), L.begin(), L.end());
+            }
+            NoteEvent nOff { 0, NoteEvent::noteOff, 60, 0 };
+            e.process (L.data(), R.data(), 64, p, &nOff, 1);
+            dst.insert (dst.end(), L.begin(), L.end());
+            for (int b = 0; b < 200; ++b)
+            {
+                e.process (L.data(), R.data(), 64, p, nullptr, 0);
+                dst.insert (dst.end(), L.begin(), L.end());
+            }
+        }
+
+        double note = 0.0, diff = 0.0;
+        bool finite = true;
+        for (std::size_t i = 0; i < on.size(); ++i)
+        {
+            note = std::max (note, (double) std::fabs (on[i]));
+            diff = std::max (diff, (double) std::fabs (on[i] - off[i]));
+            finite = finite && std::isfinite (on[i]);
+        }
+        const double db = 20.0 * std::log10 (diff / std::max (1.0e-12, note) + 1e-30);
+        // Audible but subordinate. The Clav's own key thump is the loudest
+        // of the family by design -- it is the knock-on-wood the practitioner
+        // report describes, and on that instrument the case IS the noise.
+        const double hi = inst == 4 ? -10.0 : -35.0;
+        char rid[8];
+        std::snprintf (rid, sizeof rid, "12b.%d", inst);
+        row (rid, (std::string (kInstName[inst]) + " key noise is there and under the note").c_str(),
+             inst == 4 ? "-60 .. -10 dB" : "-65 .. -35 dB",
+             fmt ("%.1f dB", db), verdict (finite && db > -65.0 && db < hi));
+    }
+}
+
+// ===========================================================================
 static void sectionSoftPedal()
 {
     heading ("13. the left pedal's two mechanisms: shift and rail");
@@ -1747,6 +1816,7 @@ int main()
     sectionCpu();
     sectionRoom();
     sectionGrabNoise();
+    sectionKeyNoise();
     sectionSoftPedal();
 
     const double wall = std::chrono::duration<double> (std::chrono::steady_clock::now() - t0).count();

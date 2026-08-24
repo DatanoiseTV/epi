@@ -29,7 +29,7 @@ function ActionPanel({ inst }) {
       {inst !== 4 && (
         <div className="matrow bodyrow">
           <PCycle id="damperFelt" options={FELTS} label="FELT" />
-          {inst <= 2 && <PCycle id="keyBed" options={KEYBEDS} label="KEYBED" />}
+          {inst <= 3 && <PCycle id="keyBed" options={KEYBEDS} label="KEYBED" />}
         </div>
       )}
       {inst !== 4 && (

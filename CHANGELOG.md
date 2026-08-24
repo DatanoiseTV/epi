@@ -83,6 +83,19 @@ All notable changes to Epi are documented here. The format follows
   loads, and legacy states saved before a bench existed.
 
 ### Changed
+- KEY NOISE works on every instrument it is offered on. The panel shows
+  the control for all five; it was consumed by three. The grand never
+  had an action layer at all -- its key noise now enters through the
+  frame, the same path the pedal thunk uses, so it inherits the board's
+  colour and the body bench with it, and the keybed selector is no
+  longer hidden there. The Clav's key-bottom thump into the case (the
+  knock-on-wood the practitioner describes) now answers the control
+  instead of being fixed. And the two electrics carried the layer 80 dB
+  under the note -- inaudible, which is the same as not having it -- on
+  a gain that had never been measured; it now lands at -52 and -48 dB,
+  the same subordinate band the tine and grand sit in. Five rows fence
+  it, and a stale comment claiming the CP had no frame path for the
+  knock is gone.
 - Three automation clicks fixed, found by sweeping the whole knob
   surface instead of a third of it: the phaser applied its mix and
   depth at block rate (0.20 worst-sample against a 0.0033 signal

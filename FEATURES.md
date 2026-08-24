@@ -105,6 +105,9 @@ Not covered yet (engine level):
   (the retarget ramp is the rate limit); the shipped room's size is
   instant. A coarser retarget quantisation would remove the pumping.
 - No per-voice output for external mixing (single stereo bus).
+- The action-noise layer models key and mechanism noise as one shaped
+  event per key; it does not separate key-bottom from hammer return from
+  damper lift, which on a real instrument arrive at different moments.
 
 ---
 
