@@ -32,7 +32,6 @@ import urllib.request
 from pathlib import Path
 
 CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-PORT = 8949
 DEBUG_PORT = 9233
 INSTRUMENTS = ["TINES", "STRINGS", "REEDS", "GRAND", "CLAV"]
 
@@ -78,13 +77,19 @@ def serve(root: Path) -> socketserver.TCPServer:
         def log_message(self, *_):
             pass
 
+    # Port 0: the kernel picks a free one. A fixed port makes a second run
+    # fail on a socket the first one has not finished releasing, which is a
+    # tool that works once.
+    class Server(socketserver.TCPServer):
+        allow_reuse_address = True
+
     handler = lambda *a, **kw: Quiet(*a, directory=str(root), **kw)  # noqa: E731
-    httpd = socketserver.TCPServer(("127.0.0.1", PORT), handler)
+    httpd = Server(("127.0.0.1", 0), handler)
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     return httpd
 
 
-async def drive(ws_url: str, shot: str | None):
+async def drive(ws_url: str, port: int, shot: str | None):
     import websockets  # imported late so --help works without it
 
     errors, mid = [], [0]
@@ -104,7 +109,7 @@ async def drive(ws_url: str, shot: str | None):
 
         await cmd("Page.enable")
         await cmd("Runtime.enable")
-        await cmd("Page.navigate", {"url": f"http://127.0.0.1:{PORT}/index.html"})
+        await cmd("Page.navigate", {"url": f"http://127.0.0.1:{port}/index.html"})
         time.sleep(5)
         script = DRIVE.replace("%INSTRUMENTS%", json.dumps(INSTRUMENTS))
         res = await cmd("Runtime.evaluate",
@@ -146,7 +151,8 @@ def main() -> int:
                 f"http://127.0.0.1:{DEBUG_PORT}/json"))
             ws_url = [t for t in tabs if t["type"] == "page"][0]["webSocketDebuggerUrl"]
             import asyncio
-            results, errors = asyncio.run(drive(ws_url, args.shot))
+            results, errors = asyncio.run(
+                drive(ws_url, httpd.server_address[1], args.shot))
         finally:
             chrome.terminate()
             httpd.shutdown()
