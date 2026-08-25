@@ -195,8 +195,11 @@ function WsModal({ title, onReset, onClose, children }) {
    ============================================================ */
 function TineWorkshop({ onClose, strings, grand }) {
   const [mods, setMods] = useState(null);
+  const [srcNote, setSrcNote] = useState(60);   // octave the repeat reads
   const [range, setRange] = useState(100);      // length lane zoom, in cents
   const [root, setRoot] = useState(0);          // template root, 0 = C
+  // Which octave the REPEAT button reads from. Middle C's octave by
+  // default, because that is where a tuner works.
   const evName = grand ? 'grand_mod' : strings ? 'string_mod' : 'tine_mod';
 
   useEffect(() => {
@@ -222,6 +225,31 @@ function TineWorkshop({ onClose, strings, grand }) {
     JuceBridge.emitNative(evName, { index: i, len, dia });
     setMods((m) => { const c = m.slice(); c[i] = { len, dia }; return c; });
   };
+  // Stamp one octave's tuning across the compass. Most tunings ARE a
+  // twelve-note pattern repeated at the octave -- that is what a tuning
+  // system is -- so hand-tuning twelve notes and repeating them is the
+  // natural way to work, and it is what the tuning templates do
+  // internally. The source is the octave containing the note the player
+  // last touched (middle C's until they touch one), read as cents,
+  // rounded to nothing: the twelve values are copied exactly.
+  const repeatOctave = () => {
+    const base = WS_LO + 12 * Math.floor((srcNote - WS_LO) / 12);
+    const pattern = [];
+    for (let k = 0; k < 12; k++)
+    {
+      const idx = base - WS_LO + k;
+      pattern.push(idx >= 0 && idx < WS_N ? wsScaleToCents(mods[idx].len, strings) : 0);
+    }
+    setMods((m) => {
+      const c = m.map((e, i) => ({
+        len: wsCentsToScale(pattern[(i + WS_LO - base + 1200) % 12], strings),
+        dia: e.dia,
+      }));
+      c.forEach((e, i) => JuceBridge.emitNative(evName, { index: i, len: e.len, dia: e.dia }));
+      return c;
+    });
+  };
+
   const pushAll = (fnLenCents, fnDia) => {
     setMods((m) => {
       const c = m.map((e, i) => ({
@@ -293,6 +321,16 @@ function TineWorkshop({ onClose, strings, grand }) {
             </button>
           ))}
         </div>
+        <span className="wstoollabel">OCTAVE</span>
+        <div className="seg">
+          {[36, 48, 60, 72].map((n) => (
+            <button key={n} className={Math.floor((n - WS_LO) / 12) === Math.floor((srcNote - WS_LO) / 12) ? 'on' : ''}
+                    onClick={() => setSrcNote(n)}>
+              {'C' + (Math.floor(n / 12) - 1)}
+            </button>
+          ))}
+        </div>
+        <button className="wschip" onClick={repeatOctave} title="Copy this octave's twelve offsets to every octave">REPEAT</button>
         <span className="wstoollabel">GAUGE</span>
         {diaTemplates.map(([n, fn]) => (
           <button key={n} className="wschip" onClick={fn}>{n}</button>
@@ -313,7 +351,8 @@ function TineWorkshop({ onClose, strings, grand }) {
               format={fmtDia} />
       <div className="wsnote">
         PAINT ACROSS A LANE · SHIFT FOR FINE · DOUBLE-CLICK RESETS A BAR · TEMPLATES ROTATE TO
-        THE CHOSEN ROOT · A BRIGHT BAR TOP SITS BEYOND THIS ZOOM · SAVED WITH THE PROJECT
+        THE CHOSEN ROOT · REPEAT STAMPS ONE OCTAVE'S TWELVE OFFSETS ACROSS THE COMPASS ·
+        A BRIGHT BAR TOP SITS BEYOND THIS ZOOM · SAVED WITH THE PROJECT
       </div>
     </WsModal>
   );
