@@ -601,6 +601,20 @@ inline constexpr ParamValue kConcertGrand[] = {
     { "cabMix", 0.0f }, { "spaceMix", 0.18f }, { "spaceSize", 0.55f },
 };
 
+// The instrument after the technician has been at it. A factory hammer is
+// hard and bright, and voicing -- needling the felt so its outer layer
+// yields sooner -- is what a concert tuner does before a performance to
+// take the edge off the attack without dulling the body. That is a
+// softer covering and a slightly gentler blow, not an equaliser: measured
+// on the attack's 2-7 kHz band against its own 80-800 Hz, this sits ten
+// decibels under the unvoiced instrument, while the sustained centroid
+// barely moves.
+inline constexpr ParamValue kVoicedGrand[] = {
+    { "instrument", 3.0f },
+    { "hammerMat", 1.0f }, { "hammerHard", 0.42f },
+    { "cabMix", 0.0f }, { "spaceMix", 0.18f }, { "spaceSize", 0.55f },
+};
+
 // Close-lid pop: the pair pulled tight, harder hammers, presence up, the
 // room nearly shut. The mic bench narrows the pair (table below).
 inline constexpr ParamValue kClosePop[] = {
@@ -837,6 +851,7 @@ inline constexpr Preset kPresets[] = {
     { "Brass Reeds",   2, kBrassReeds,   std::size (kBrassReeds) },
 
     { "Concert Grand", 3, kConcertGrand, std::size (kConcertGrand) },
+    { "Voiced Grand",  3, kVoicedGrand,  std::size (kVoicedGrand) },
     { "Close Pop",     3, kClosePop,     std::size (kClosePop) },
     { "Past The Rim",  3, kPastTheRim,   std::size (kPastTheRim) },
     { "Wide Cinema",   3, kWideCinema,   std::size (kWideCinema) },

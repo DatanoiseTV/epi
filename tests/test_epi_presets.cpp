@@ -622,6 +622,14 @@ int main()
     tremAt  ("Reed Tremolo", 5.5);
 
     darker  ("Felt Grand",   "Concert Grand");
+    // Voicing is an attack operation: the needled felt yields sooner, so the
+    // blow's high band drops while the body the strings produce stays. The
+    // row measures where the effect actually lives -- the >4 kHz share --
+    // rather than the centroid, which averages the attack away.
+    row ("Voiced Grand", "attack top drops vs the unvoiced instrument",
+         fmt ("< %.5f top-ratio", mm["Concert Grand"].topRatio),
+         fmt ("%.5f top-ratio", mm["Voiced Grand"].topRatio),
+         mm["Voiced Grand"].topRatio < mm["Concert Grand"].topRatio);
     // The lid's shadow takes the top of the range, not the balance of the
     // fundamentals -- the centroid barely sees it, the high band does.
     row ("Past The Rim", "lid shades 4 kHz up vs Concert",
