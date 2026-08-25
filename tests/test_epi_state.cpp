@@ -13,6 +13,7 @@
 // contract, not slack.
 // ---------------------------------------------------------------------------
 
+#include "EpiAnalysis.h"
 #include "epi/PluginProcessor.h"
 #include "epi/ui/WebEditor.h"
 
@@ -20,6 +21,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <vector>
 
 namespace
 {
@@ -217,6 +219,117 @@ int main()
         }
         row ("S8", ("all " + juce::String (set.size()) + " parameters round-trip").toRawUTF8(),
              ! set.empty() && bad.isEmpty(), bad.joinIntoString (", ").toRawUTF8());
+    }
+
+    // S9 -- the MPE switch. It lives on the bench tree rather than the
+    // parameter tree (it is a setup switch, not something a player rides),
+    // so S8 cannot see it and it needs the bench treatment: default on a
+    // fresh processor, a round trip through project state, and a state
+    // written before it existed meaning Detect rather than whatever the
+    // receiving processor happened to be set to.
+    {
+        EpiAudioProcessor fresh;
+        row ("S9a", "fresh processor: MPE on Detect",
+             fresh.getMpeMode() == EpiAudioProcessor::kMpeModeDefault);
+
+        EpiAudioProcessor a;
+        a.setMpeMode (2);                       // forced on
+        juce::MemoryBlock blob;
+        a.getStateInformation (blob);
+        EpiAudioProcessor b;
+        b.setStateInformation (blob.getData(), static_cast<int> (blob.getSize()));
+        row ("S9b", "project state: MPE mode survives the trip",
+             b.getMpeMode() == 2);
+
+        EpiAudioProcessor pristine;
+        juce::MemoryBlock legacy;
+        pristine.getStateInformation (legacy);
+        EpiAudioProcessor c;
+        c.setMpeMode (0);                       // forced off, then handed an old project
+        c.setStateInformation (legacy.getData(), static_cast<int> (legacy.getSize()));
+        row ("S9c", "legacy state without an MPE entry means Detect",
+             c.getMpeMode() == EpiAudioProcessor::kMpeModeDefault);
+    }
+
+    // S10 -- what the whole campaign turns on, at the plugin's own boundary:
+    // a plain-MIDI block must build exactly the note events it always did.
+    // A note-on carries a per-note tuning offset now, and on anything that is
+    // not an open MPE zone that offset has to be zero -- not small, zero.
+    {
+        EpiAudioProcessor a;
+        a.prepareToPlay (48000.0, 64);
+        juce::AudioBuffer<float> buf (2, 64);
+        juce::MidiBuffer midi;
+        // The traffic a plain-MIDI host sends, including a wheel: on no zone
+        // that is the global bend, exactly as before.
+        midi.addEvent (juce::MidiMessage::pitchWheel (1, 12000), 0);
+        midi.addEvent (juce::MidiMessage::noteOn (1, 60, 0.7f), 1);
+        midi.addEvent (juce::MidiMessage::controllerEvent (1, 64, 127), 2);
+        a.processBlock (buf, midi);
+        bool finite = true;
+        for (int ch = 0; ch < 2; ++ch)
+            for (int i = 0; i < 64; ++i)
+                finite = finite && std::isfinite (buf.getSample (ch, i));
+        row ("S10", "plain-MIDI block renders, no zone opened", finite);
+    }
+
+    // S11 -- the whole per-note tuning path through the artifact, with real
+    // MIDI. The offline suite drives the tuning register directly; this row
+    // is the only place the JUCE parsing in between is exercised, so it sends
+    // the bytes a host sends -- an MPE Configuration Message, a member-channel
+    // wheel, a note on that member channel -- and reads the pitch back out of
+    // the rendered audio rather than trusting the parameter.
+    {
+        constexpr double fs = 48000.0;
+        constexpr int block = 512;
+        constexpr int seconds = 2;
+        constexpr int total = static_cast<int> (fs) * seconds;
+        constexpr int note = 60;
+        // A whole quarter tone, well clear of any measurement slack, at the
+        // MPE member default of +/-48 semitones.
+        constexpr double wantCents = 50.0;
+        const int wheel = 8192 + juce::roundToInt (wantCents / (48.0 * 100.0) * 8192.0);
+        const double asked = (wheel - 8192) / 8192.0 * 48.0 * 100.0;
+
+        auto renderMidi = [&] (bool mpe)
+        {
+            EpiAudioProcessor a;
+            a.prepareToPlay (fs, block);
+            juce::AudioBuffer<float> buf (2, block);
+            std::vector<double> mono;
+            mono.reserve (static_cast<std::size_t> (total));
+            for (int i = 0; i < total; i += block)
+            {
+                juce::MidiBuffer midi;
+                if (i == 0)
+                {
+                    if (mpe)
+                    {
+                        // RPN 6 on channel 1: the lower zone, 15 members.
+                        midi.addEvent (juce::MidiMessage::controllerEvent (1, 101, 0), 0);
+                        midi.addEvent (juce::MidiMessage::controllerEvent (1, 100, 6), 0);
+                        midi.addEvent (juce::MidiMessage::controllerEvent (1, 6, 15), 0);
+                        midi.addEvent (juce::MidiMessage::pitchWheel (2, wheel), 1);
+                    }
+                    midi.addEvent (juce::MidiMessage::noteOn (2, note, 0.7f), 2);
+                }
+                buf.clear();
+                a.processBlock (buf, midi);
+                for (int n = 0; n < block && i + n < total; ++n)
+                    mono.push_back (0.5 * (static_cast<double> (buf.getSample (0, n))
+                                         + static_cast<double> (buf.getSample (1, n))));
+            }
+            return mono;
+        };
+
+        const double nominal = 440.0 * std::pow (2.0, (note - 69) / 12.0);
+        const double plain = epianalysis::refineF0 (renderMidi (false), fs, nominal, 0.3, 1.6);
+        const double tuned = epianalysis::refineF0 (renderMidi (true),  fs, nominal, 0.3, 1.6);
+        const double got = 1200.0 * std::log2 (tuned / plain);
+        char detail[96];
+        std::snprintf (detail, sizeof detail, "(asked %+.1f ct, measured %+.2f ct)", asked, got);
+        row ("S11", "MPE stream through the artifact retunes the note",
+             std::abs (got - asked) < 1.0, detail);
     }
 
     std::printf ("\nSUMMARY fail=%d\n", failures);

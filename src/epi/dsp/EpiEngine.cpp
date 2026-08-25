@@ -46,6 +46,21 @@ static constexpr float kTrimGrand  = 150.0f;   // mic-pair units are small. Deli
 static constexpr double kGrandActionGain = 0.6;
 static constexpr float kTrimClav   = 0.292f;  // matched to the -24 dBFS mf bench like the other four
 
+// Per-note tuning folded into the configuration a voice is BUILT to.
+//
+// It goes exactly where the workshop's length trim goes -- into the geometry
+// solve, through the same detuneCents the TUNE knob and the wheel already
+// travel on -- so the tuner's offset and the modder's shorter tine compose
+// instead of fighting: cents add, and the length trim's own 1/L^2 retune is
+// applied first by setGeometryTrim. At zero the configuration is returned
+// untouched, which is what keeps an instrument nobody has retuned bit-exact.
+template <typename Cfg>
+static Cfg withNoteTune (Cfg c, float cents)
+{
+    if (cents != 0.0f) c.detuneCents += static_cast<double> (cents);
+    return c;
+}
+
 void EpiEngine::prepare (double sampleRate, int)
 {
     fs = sampleRate;
@@ -181,6 +196,17 @@ void EpiEngine::reset()
     clavPre.prepare (fs * ClavinetVoice::kOver);
     clavKnock.reset();
     keyDown.fill (false);
+    // Per-note tuning is the host's state, not the instrument's: a reset
+    // returns every string to what the TUNE knob alone says, and marks the
+    // ones that were carrying an offset for a re-cut so none is left tuned to
+    // something nothing is asking for any more. Strings at nominal are not
+    // touched, so a reset on an instrument nobody retuned does nothing.
+    for (int i = 0; i < kNumTines; ++i)
+        if (noteCents[static_cast<std::size_t> (i)] != 0.0f)
+        {
+            noteCents[static_cast<std::size_t> (i)] = 0.0f;
+            invalidateNoteBuild (i);
+        }
     harp.reset();
     action.reset();
     room.reset();
@@ -385,6 +411,19 @@ void EpiEngine::handleEvent (const NoteEvent& e, const EngineParams& p)
                             * std::clamp (expression, 0.0f, 2.0f);
 
             keyDown[i] = true;
+            // The tuner's instruction for this string, latched at the strike.
+            // Only here: a change on the way in retunes the string BEFORE the
+            // hammer lands, which is a tuning pin turned between two notes;
+            // there is no path by which a later change reaches a string that
+            // is already ringing, because nothing else reads this field. The
+            // banks that are not sounding go stale with it, so switching
+            // instrument later finds the same tuning rather than nominal.
+            if (noteCents[static_cast<std::size_t> (i)] != e.tuneCents)
+            {
+                noteCents[static_cast<std::size_t> (i)] = e.tuneCents;
+                invalidateNoteBuild (i);
+            }
+
             // A tine that has been waiting its turn is built before it is hit.
             if (tineCfgVersion[i] != cfgVersion
                 || tineMod[static_cast<std::size_t> (i)].dirty.load (std::memory_order_acquire))
@@ -401,10 +440,12 @@ void EpiEngine::handleEvent (const NoteEvent& e, const EngineParams& p)
             {
                 if (clavCfgVersion[static_cast<std::size_t> (i)] != cfgVersion)
                 {
-                    clav[static_cast<std::size_t> (i)].setNote (kLoNote + i, clavConfig (p));
+                    rebuildClav (i, clavConfig (p));
                     clavCfgVersion[static_cast<std::size_t> (i)] = cfgVersion;
                 }
-                clav[static_cast<std::size_t> (i)].noteOn (e.note, vel, clavConfig (p), seed);
+                clav[static_cast<std::size_t> (i)].noteOn (
+                    e.note, vel,
+                    withNoteTune (clavConfig (p), noteCents[static_cast<std::size_t> (i)]), seed);
                 clavKnock.strike (i, vel);
             }
             else if (p.instrument == 3)
@@ -415,16 +456,21 @@ void EpiEngine::handleEvent (const NoteEvent& e, const EngineParams& p)
                     rebuildGrandString (i, grandConfig (p));
                     grandCfgVersion[static_cast<std::size_t> (i)] = cfgVersion;
                 }
-                grand[static_cast<std::size_t> (i)].noteOn (e.note, vel, grandConfig (p), grandBoard, seed);
+                grand[static_cast<std::size_t> (i)].noteOn (
+                    e.note, vel,
+                    withNoteTune (grandConfig (p), noteCents[static_cast<std::size_t> (i)]),
+                    grandBoard, seed);
             }
             else if (p.instrument == 2)
             {
                 if (wurliCfgVersion[static_cast<std::size_t> (i)] != cfgVersion)
                 {
-                    wurli[static_cast<std::size_t> (i)].setNote (kLoNote + i, wurliConfig (p));
+                    rebuildWurli (i, wurliConfig (p));
                     wurliCfgVersion[static_cast<std::size_t> (i)] = cfgVersion;
                 }
-                wurli[static_cast<std::size_t> (i)].noteOn (e.note, vel, wurliConfig (p), seed);
+                wurli[static_cast<std::size_t> (i)].noteOn (
+                    e.note, vel,
+                    withNoteTune (wurliConfig (p), noteCents[static_cast<std::size_t> (i)]), seed);
             }
             else if (p.instrument == 1)
             {
@@ -434,10 +480,12 @@ void EpiEngine::handleEvent (const NoteEvent& e, const EngineParams& p)
                     rebuildString (i, cp70Config (p));
                     cp70CfgVersion[i] = cfgVersion;
                 }
-                cp70[i].noteOn (e.note, vel, cp70Config (p), seed);
+                cp70[i].noteOn (e.note, vel,
+                                withNoteTune (cp70Config (p), noteCents[static_cast<std::size_t> (i)]), seed);
             }
             else
-                tines[i].noteOn (e.note, vel, rhodesConfig (p), seed);
+                tines[i].noteOn (e.note, vel,
+                                 withNoteTune (rhodesConfig (p), noteCents[static_cast<std::size_t> (i)]), seed);
             // The mechanism knocks whether or not the tine is heard. It goes
             // into the frame, not into the output -- see ActionNoise.
             action.strike (i, static_cast<double> (i) / (kNumTines - 1), vel);
@@ -514,7 +562,41 @@ void EpiEngine::rebuildTine (int i, const RhodesVoice::Config& cfg)
     tines[static_cast<std::size_t> (i)].setPickupTrim (m.pkH.load (std::memory_order_relaxed),
                                                        m.pkG.load (std::memory_order_relaxed));
     m.dirty.store (false, std::memory_order_release);
-    tines[static_cast<std::size_t> (i)].setNote (kLoNote + i, cfg);
+    tines[static_cast<std::size_t> (i)].setNote (kLoNote + i,
+                                                 withNoteTune (cfg, noteCents[static_cast<std::size_t> (i)]));
+}
+
+// The Wurlitzer's and the Clavinet's banks have no workshop bench of their
+// own, so these two exist only to give per-note tuning the single fold point
+// the other three already have. Every path that re-cuts one of those voices
+// goes through here, which is what keeps a background rebuild from quietly
+// putting a retuned string back to nominal.
+void EpiEngine::rebuildWurli (int i, const WurliVoice::Config& cfg)
+{
+    wurli[static_cast<std::size_t> (i)].setNote (kLoNote + i,
+                                                 withNoteTune (cfg, noteCents[static_cast<std::size_t> (i)]));
+}
+
+void EpiEngine::rebuildClav (int i, const ClavinetVoice::Config& cfg)
+{
+    clav[static_cast<std::size_t> (i)].setNote (kLoNote + i,
+                                                withNoteTune (cfg, noteCents[static_cast<std::size_t> (i)]));
+}
+
+// A note's tuning has moved, so every bank's copy of that note is stale.
+// cfgVersion is only ever compared for equality, so any other value means
+// "rebuild me": the sounding bank picks it up on the way into this very
+// strike, and the four that are not sounding pick it up through their own
+// priority loop if they are ever switched to.
+void EpiEngine::invalidateNoteBuild (int i)
+{
+    const std::uint32_t stale = cfgVersion - 1u;
+    const auto u = static_cast<std::size_t> (i);
+    tineCfgVersion[u]  = stale;
+    cp70CfgVersion[u]  = stale;
+    wurliCfgVersion[u] = stale;
+    grandCfgVersion[u] = stale;
+    clavCfgVersion[u]  = stale;
 }
 
 void EpiEngine::process (float* outL, float* outR, int numSamples,
@@ -1282,7 +1364,7 @@ void EpiEngine::processClav (float* outL, float* outR, int numSamples,
                 if (clavCfgVersion[static_cast<std::size_t> (i)] == cfgVersion) continue;
                 const bool live = clav[static_cast<std::size_t> (i)].isRinging() || keyDown[i];
                 if (pass == 0 && ! live) continue;
-                clav[static_cast<std::size_t> (i)].setNote (kLoNote + i, cfg);
+                rebuildClav (i, cfg);
                 clavCfgVersion[static_cast<std::size_t> (i)] = cfgVersion;
                 --budget;
             }
@@ -1425,7 +1507,9 @@ void EpiEngine::rebuildGrandString (int i, const GrandVoice::Config& cfg)
     grand[static_cast<std::size_t> (i)].setGeometryTrim (m.len.load (std::memory_order_relaxed),
                                                          m.dia.load (std::memory_order_relaxed));
     m.dirty.store (false, std::memory_order_release);
-    grand[static_cast<std::size_t> (i)].setNote (kLoNote + i, cfg, grandBoard);
+    grand[static_cast<std::size_t> (i)].setNote (kLoNote + i,
+                                                withNoteTune (cfg, noteCents[static_cast<std::size_t> (i)]),
+                                                grandBoard);
 }
 
 // One CP-70 course, built to the configuration and its own steel.
@@ -1435,7 +1519,8 @@ void EpiEngine::rebuildString (int i, const CP70Voice::Config& cfg)
     cp70[static_cast<std::size_t> (i)].setGeometryTrim (m.len.load (std::memory_order_relaxed),
                                                         m.dia.load (std::memory_order_relaxed));
     m.dirty.store (false, std::memory_order_release);
-    cp70[static_cast<std::size_t> (i)].setNote (kLoNote + i, cfg);
+    cp70[static_cast<std::size_t> (i)].setNote (kLoNote + i,
+                                               withNoteTune (cfg, noteCents[static_cast<std::size_t> (i)]));
 }
 
 // ---------------------------------------------------------------------------
@@ -1724,14 +1809,14 @@ void EpiEngine::processWurli (float* outL, float* outR, int numSamples,
         {
             if (wurliCfgVersion[static_cast<std::size_t> (i)] == cfgVersion) continue;
             if (! (wurli[static_cast<std::size_t> (i)].isRinging() || pedalDown || keyDown[i])) continue;
-            wurli[static_cast<std::size_t> (i)].setNote (kLoNote + i, cfg);
+            rebuildWurli (i, cfg);
             wurliCfgVersion[static_cast<std::size_t> (i)] = cfgVersion;
             --budget;
         }
         for (int i = 0; i < kNumTines && budget > 0; ++i)
         {
             if (wurliCfgVersion[static_cast<std::size_t> (i)] == cfgVersion) continue;
-            wurli[static_cast<std::size_t> (i)].setNote (kLoNote + i, cfg);
+            rebuildWurli (i, cfg);
             wurliCfgVersion[static_cast<std::size_t> (i)] = cfgVersion;
             --budget;
         }
