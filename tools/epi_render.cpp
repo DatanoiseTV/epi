@@ -285,6 +285,116 @@ int main (int argc, char** argv)
         render (s, p, dir + "/09-far-wide-pole.wav", fs);
     }
 
+    // ---- 10. The other four instruments ------------------------------------
+    // The renderer predates them; a demo set that only shows the tine piano
+    // sells a fifth of the instrument. One phrase per instrument, played to
+    // what each one is FOR rather than to a common tune.
+    {
+        auto ballad = [] (Score& s, double t0)
+        {
+            // A slow ii-V-I in Eb, voiced where each instrument sits best.
+            s.pedal.push_back ({ t0 - 0.1, true });
+            s.chord (t0 + 0.0, 2.2, { 53, 60, 63, 67 }, 0.52);   // Fm9
+            s.chord (t0 + 2.3, 2.2, { 46, 58, 62, 65 }, 0.48);   // Bb13
+            s.chord (t0 + 4.6, 3.4, { 51, 58, 63, 67, 70 }, 0.56);
+            s.pedal.push_back ({ t0 + 8.0, false });
+        };
+
+        {   // E-Grand: the long sustain of a rigid bridge, pedalled.
+            Score s; s.length = 11.0;
+            ballad (s, 0.4);
+            EngineParams p; p.instrument = 1; p.tremDepth = 0.0f;
+            p.bassDb = 1.5f; p.spaceMix = 0.16f;
+            render (s, p, dir + "/10-egrand-ballad.wav", fs);
+        }
+        {   // Reed: the bark, which only appears when you dig in. Same
+            // phrase soft, then the same chords hard, so the nonlinearity
+            // is the only thing that changed.
+            Score s; s.length = 12.0;
+            s.chord (0.3, 1.6, { 52, 59, 64 }, 0.25);
+            s.chord (2.1, 1.6, { 50, 57, 62 }, 0.25);
+            s.chord (4.0, 1.6, { 52, 59, 64 }, 0.95);
+            s.chord (5.8, 1.6, { 50, 57, 62 }, 0.95);
+            s.chord (7.6, 3.6, { 45, 52, 57, 64 }, 0.98);
+            EngineParams p; p.instrument = 2; p.tremDepth = 0.55f; p.tremRate = 5.5f;
+            render (s, p, dir + "/11-reed-bark.wav", fs);
+        }
+        {   // Clav: what it is for. Sixteenths, damped short, bridge pickup.
+            Score s; s.length = 9.0;
+            const int riff[] = { 40, 52, 47, 52, 45, 52, 43, 52 };
+            double t = 0.25;
+            for (int rep = 0; rep < 8; ++rep)
+                for (int i = 0; i < 8; ++i)
+                {
+                    s.add (t, 0.085, riff[i] + (rep % 4 == 3 ? 3 : 0),
+                           i % 2 == 0 ? 0.92 : 0.55);
+                    t += 0.125;
+                }
+            EngineParams p; p.instrument = 4;
+            p.clavSwitch = 1; p.preampDrive = 0.42f; p.spaceMix = 0.05f;
+            render (s, p, dir + "/12-clav-riff.wav", fs);
+        }
+        {   // Grand: the whole point of the acoustic path -- pedal down, let
+            // the board and the open strings answer. Voiced hammers, because
+            // a concert instrument is voiced before it is played.
+            Score s; s.length = 14.0;
+            s.pedal.push_back ({ 0.1, true });
+            s.add (0.3, 0.5, 33, 0.55);
+            s.chord (0.9, 3.0, { 60, 64, 67, 71 }, 0.40);
+            s.add (2.4, 0.4, 76, 0.62);
+            s.add (2.9, 0.4, 79, 0.58);
+            s.chord (4.0, 3.0, { 57, 62, 65, 69 }, 0.45);
+            s.add (5.6, 0.4, 74, 0.60);
+            s.chord (7.2, 5.0, { 41, 53, 60, 65, 69, 72 }, 0.68);
+            s.pedal.push_back ({ 12.6, false });
+            EngineParams p; p.instrument = 3;
+            p.hammerMat = 1;            // voiced, per the Voiced Grand preset
+            p.hammerHard = 0.42f;
+            p.spaceMix = 0.18f; p.spaceSize = 0.55f;
+            render (s, p, dir + "/13-grand-voiced.wav", fs);
+        }
+        {   // The same grand phrase in the church, to show the room profiles
+            // are geometry rather than a reverb knob.
+            Score s; s.length = 16.0;
+            s.pedal.push_back ({ 0.1, true });
+            s.chord (0.3, 3.0, { 48, 55, 60, 64 }, 0.55);
+            s.chord (3.6, 3.0, { 46, 53, 58, 62 }, 0.50);
+            s.chord (7.0, 6.0, { 41, 48, 53, 60, 65 }, 0.62);
+            s.pedal.push_back ({ 13.5, false });
+            EngineParams p; p.instrument = 3;
+            p.hammerMat = 1; p.hammerHard = 0.42f;
+            p.roomProfile = 5; p.spaceMix = 0.30f; p.spaceSize = 0.55f;
+            render (s, p, dir + "/14-grand-church.wav", fs);
+        }
+    }
+
+    // ---- 11. Benches that no other instrument has --------------------------
+    // The same note through the same everything, with one physical thing
+    // changed. These are the demos that show what the plugin IS.
+    {
+        {   // String material: steel against nylon on the grand. Nylon keeps
+            // its fundamental and sheds the top, because string loss acts
+            // only on the bending share.
+            Score s; s.length = 8.0;
+            s.pedal.push_back ({ 0.05, true });
+            s.chord (0.2, 6.0, { 48, 55, 60, 64 }, 0.7);
+            EngineParams p; p.instrument = 3; p.hammerMat = 1;
+            render (s, p, dir + "/15-grand-steel.wav", fs);
+            p.material = 7;   // nylon
+            render (s, p, dir + "/16-grand-nylon.wav", fs);
+        }
+        {   // Tangent-rubber wear on the Clav: mint against thirty years of
+            // weekends. The difference lives in the release.
+            Score s; s.length = 7.0;
+            double t = 0.25;
+            for (int i = 0; i < 14; ++i) { s.add (t, 0.18, 52 + (i % 3) * 4, 0.75); t += 0.42; }
+            EngineParams p; p.instrument = 4; p.preampDrive = 0.33f;
+            render (s, p, dir + "/17-clav-mint.wav", fs);
+            p.wearAmount = 0.85f;
+            render (s, p, dir + "/18-clav-worn.wav", fs);
+        }
+    }
+
     std::printf ("\nDone.\n");
     return 0;
 }
