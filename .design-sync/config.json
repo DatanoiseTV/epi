@@ -1,0 +1,125 @@
+{
+  "projectId": "7bd124df-8544-4a9a-8a6c-df23cb0b0f33",
+  "shape": "package",
+  "pkg": "epi-ui",
+  "globalName": "EpiUI",
+  "buildCmd": "node .design-sync/adapter/build-adapter.mjs",
+  "cssEntry": "epi.css",
+  "docsDir": "docs",
+  "provider": {
+    "component": "EpiSurface"
+  },
+  "overrides": {
+    "TineWorkshop": {
+      "cardMode": "single",
+      "viewport": "1240x840"
+    },
+    "PickupWorkshop": {
+      "cardMode": "single",
+      "viewport": "1240x840"
+    },
+    "CabinetWorkshop": {
+      "cardMode": "single",
+      "viewport": "1240x840"
+    },
+    "MicStudio": {
+      "cardMode": "single",
+      "viewport": "1240x840"
+    },
+    "VelocityWorkshop": {
+      "cardMode": "single",
+      "viewport": "1240x840"
+    },
+    "PresetBrowser": {
+      "cardMode": "single",
+      "viewport": "1240x840"
+    },
+    "WsModal": {
+      "cardMode": "single",
+      "viewport": "1240x840"
+    },
+    "Knob": {
+      "cardMode": "column",
+      "viewport": "900x1020"
+    },
+    "PKnob": {
+      "cardMode": "column"
+    },
+    "App": {
+      "cardMode": "single",
+      "viewport": "1280x900"
+    },
+    "VizCard": {
+      "cardMode": "single",
+      "viewport": "1220x460"
+    },
+    "WsLane": {
+      "cardMode": "column",
+      "viewport": "1100x900"
+    },
+    "FxPanel": {
+      "cardMode": "single",
+      "primaryStory": "Default"
+    },
+    "MaterialRow": {
+      "cardMode": "single",
+      "primaryStory": "Tine"
+    },
+    "AmpPanel": {
+      "cardMode": "column"
+    },
+    "PickupPanel": {
+      "cardMode": "column",
+      "viewport": "900x1000"
+    },
+    "TinePanel": {
+      "cardMode": "column",
+      "viewport": "900x1700"
+    },
+    "Header": {
+      "cardMode": "column",
+      "viewport": "1240x420"
+    },
+    "PedalLamp": {
+      "cardMode": "column"
+    },
+    "MicStage": {
+      "cardMode": "column",
+      "viewport": "900x1060"
+    },
+    "StageView": {
+      "cardMode": "column"
+    },
+    "ActionPanel": {
+      "cardMode": "column",
+      "viewport": "900x880"
+    },
+    "HeaderMeters": {
+      "cardMode": "column"
+    },
+    "LiveBar": {
+      "cardMode": "column"
+    },
+    "PCycle": {
+      "cardMode": "column"
+    },
+    "PFader": {
+      "cardMode": "column",
+      "viewport": "900x780"
+    },
+    "PHead": {
+      "cardMode": "column"
+    },
+    "PRocker": {
+      "cardMode": "column"
+    },
+    "PSeg": {
+      "cardMode": "column"
+    }
+  },
+  "guidelinesGlob": [],
+  "readmeHeader": ".design-sync/conventions.md",
+  "dtsPropsFor": {
+    "Knob": "value?: number;\n  onChange?: (value: number) => void;\n  size?: 'sm' | 'md' | 'lg';\n  /** null hides the label row entirely; undefined renders it empty. */\n  label?: string | null;\n  format?: (value: number) => string;\n  bipolar?: boolean;\n  defaultValue?: number;\n  showValue?: boolean;"
+  }
+}
