@@ -33,3 +33,14 @@ videos/
 
 # Rendered demo audio (regenerate with tools/epi_render.cpp)
 demos/
+
+# design-sync
+.ds-sync/
+ds-bundle/
+.design-sync/.cache/
+.design-sync/learnings/
+.design-sync/node_modules
+
+# Private working notes, never published
+COMPARISON-NOTES.local.md
+RELEASE_OPINION.md
