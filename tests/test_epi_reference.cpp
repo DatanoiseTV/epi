@@ -268,6 +268,15 @@ static void sectionA()
              fmt ("%+.1f dB", h21[1]), within (h21[1], 6.0, 24.0));
         row (idSoft, (std::string ("H2-H1 soft, ") + tn.name).c_str(), "-40 .. -10 dB",
              fmt ("%+.1f dB", h21[0]), within (h21[0], -40.0, -10.0));
+        // A4 is not a third measurement: it is A2 minus A3, so the three
+        // rows fence the launch law from both ends at once and the middle of
+        // that fence is narrow. Swept on the launch floor with everything
+        // else held, A3 at E2 crosses its -10 dB ceiling at a floor of
+        // 0.203 m/s and A4 at E3 crosses its 37 dB ceiling at 0.192 -- a
+        // window of three percent around the shipped value, with A4 at E3
+        // the tighter of the two by a few tenths. That is why the
+        // transduction work in the checklist stalls here rather than on the
+        // field: there is nothing in the velocity mapping to hand it.
         row ("A4", (std::string ("velocity swing, ") + tn.name).c_str(), "16 .. 37 dB",
              fmt ("%.1f dB", h21[1] - h21[0]), within (h21[1] - h21[0], 16.0, 37.0));
     }
@@ -408,8 +417,13 @@ static void sectionB()
              // measured ceiling, so the swing cannot be driven deeper to buy
              // more rise -- with this field map the two move together, where
              // the real pole hands the extra energy to H6-H15 instead (see
-             // G2). The rise must stay clearly positive: falling away at the
-             // tine's own rate would mean no field excursion at all.
+             // G2). Measured since across four separate levers -- hammer
+             // mass, coil radius, pickup gap and pickup height -- every one
+             // of them buys rise at 0.2 to 0.5 dB/s per decibel of A2, and
+             // A2 has two decibels to give, so no combination reaches the
+             // band's +2.2 floor with A2 still under its +24 ceiling. The
+             // rise must stay clearly positive: falling away at the tine's
+             // own rate would mean no field excursion at all.
              gap (rise, 2.2, 3.9, 0.0, 6.0));
     }
 

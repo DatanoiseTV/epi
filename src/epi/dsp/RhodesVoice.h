@@ -327,14 +327,15 @@ public:
         // player does below mezzo-forte into the part of the magnet's field
         // that is nearly flat, and the instrument came out as a sine bank with
         // a bark that only appeared at the very top of the velocity range.
-        const double v = 0.195 + 5.6 * std::pow (std::clamp (velocity, 0.0, 1.0), 1.7);
+        // The floor is not a taste setting either: it is the speed at let-off
+        // that still lands the hammer on the longest tine after the free
+        // flight below has taxed it. It moved with the let-off graduation --
+        // the manual's line is shorter than the ramp this used to carry at
+        // the reference bass note, so the same arrival speed needs less at
+        // let-off: sqrt(0.195^2 - 2 g 0.42 (4.65 - 4.08) mm) = 0.183.
+        const double v = 0.183 + 5.6 * std::pow (std::clamp (velocity, 0.0, 1.0), 1.7);
 
-        // Escapement: the gap left between tip and tine with the key fully
-        // down. The service manual specifies a quarter to three eighths of an
-        // inch in the bass falling to a thirty-second in the treble, because a
-        // long bass tine whips far enough to strike a closer hammer twice.
-        const double reg = registerPosition();
-        const double escMm = (6.4 - 5.6 * reg) * (0.4 + 1.2 * cfg.escapementNorm);
+        const double escMm = escapementMm (midiNote, cfg.escapementNorm);
         // After escapement the hammer is in free flight UPWARD through the
         // let-off gap, and gravity taxes it a fixed energy: v' = sqrt(v^2 -
         // 2 g h). The height that matters is the CENTRE OF GRAVITY's rise,
@@ -355,6 +356,40 @@ public:
         traceIdx = 0;
         for (int i = 0; i < kTraceLen; ++i) trace[i] = 0.0f;
         strikeFlag = true;
+    }
+
+    // Escapement: the gap left between tip and tine with the key fully down.
+    // It exists because "the whipping action of the Tine ... increases as it
+    // becomes longer toward the Bass end" -- a bass tine struck hard swings
+    // back down past where a closer hammer would still be sitting, and gets
+    // struck a second time on its own downstroke.
+    //
+    // The service manual graduates it, and Figure 4-2 gives it as a BAND at
+    // three points on the rail rather than one line: 6.35-9.53 mm at the
+    // extreme bass, 1.59-3.18 mm at tone bar 41, 0.79-2.38 mm at the extreme
+    // treble. Two things follow that this used to get wrong. The graduation
+    // is not a straight line in tone-bar number -- a straight line would put
+    // bar 41 at 3.6 mm where the figure reads 1.6 -- so it is interpolated
+    // in log between the documented points, one segment either side of bar
+    // 41, which is how the striking line and the tine lengths progress too.
+    // And the band is the whole of the service adjustment, so the control
+    // spans it and nothing beyond: at the default the instrument is set a
+    // little tight of centre, which is a regulated instrument rather than
+    // one at the edge of tolerance. The ramp this replaces sat 12% BELOW
+    // the band at both ends and above it in the middle.
+    static double escapementMm (int note, double norm)
+    {
+        struct Point { double note, lo, hi; };
+        constexpr Point bass  {  21.0, 6.350, 9.525 };   // tone bar 1, A0
+        constexpr Point mid   {  61.0, 1.588, 3.175 };   // tone bar 41
+        constexpr Point treb  { 108.0, 0.794, 2.381 };   // tone bar 88, C8
+        const double n = std::clamp (static_cast<double> (note), bass.note, treb.note);
+        const Point& a = n <= mid.note ? bass : mid;
+        const Point& b = n <= mid.note ? mid  : treb;
+        const double t  = (n - a.note) / (b.note - a.note);
+        const double lo = a.lo * std::pow (b.lo / a.lo, t);
+        const double hi = a.hi * std::pow (b.hi / a.hi, t);
+        return lo * std::pow (hi / lo, std::clamp (norm, 0.0, 1.0));
     }
 
     void noteOff() { held = false; }

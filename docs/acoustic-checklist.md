@@ -112,7 +112,8 @@ not over seconds.
   6.6 g at the upper-mid knee, then tracking 0.30x the strike-point
   effective mass down through the treble) because the manual's line meets
   the bass tine at a twentieth of the old effective mass; the velocity
-  floor moved 0.18 to 0.195 m/s; and the residual axial restraint behind
+  floor moved 0.18 to 0.195 m/s, and 0.183 when the let-off was later put
+  on the manual's graduation; and the residual axial restraint behind
   the large-amplitude sharpness recalibrated from 5% to 3.5% for the same
   F1 glide at the corrected amplitudes. Net effect on the tracked rows:
   C2 and F2 closed, C1's bass rows moved from the band edge to mid-band,
@@ -283,6 +284,128 @@ required and softens the aperture, and it does not resolve the corner.
 
 So the product law is right and the chain around it is not ready for it:
 adopting it means re-deriving the velocity mapping that A2/A3/A4 fence
-together. Until then B5, B6 and G2 stay gaps with this table as their
-price, and the shipped map keeps the honest far field without the
-transduction change.
+together. That re-derivation was then done, and it is written up below.
+
+## Re-deriving the velocity chain: one fix, and four measured dead ends
+
+The chain is MIDI velocity to launch speed, through the hammer's mass and
+tip and the let-off, into the contact, out as tine swing. A2 and A3 fence
+its two ends and A4 is their difference, so the whole thing is pinned by
+three rows that are really two. Each link was taken in turn.
+
+**Adopted -- the let-off is now the manual's graduation.** Figure 4-2 of
+the service manual gives the escapement as a BAND at three points on the
+rail: 6.35-9.53 mm at the extreme bass, 1.59-3.18 mm at tone bar 41,
+0.79-2.38 mm at the extreme treble. The model carried a straight ramp
+instead, and it was wrong in three ways at once: it sat about 12% BELOW
+the band at both ends of the compass and above it in the middle, and it
+was linear in register where the figure is convex -- a straight line
+between the documented ends would put bar 41 at 3.6 mm against the 1.6
+that is printed there. It is now interpolated in log between the three
+measured points, one segment either side of bar 41, the way the striking
+line and the tine lengths themselves progress; and the control spans the
+documented tolerance band and nothing outside it, so the shipped default
+is a regulated instrument rather than one at the edge. The treble let-off
+more than doubles (0.70 to 1.55 mm at E6), the low mid loses about half a
+millimetre. Because the free flight is what taxes a soft blow, the launch
+floor was re-derived at the same arrival speed on the reference bass note:
+sqrt(0.195^2 - 2 g 0.42 (4.65 - 4.08) mm) = 0.183 m/s. Suite: `fail=0`,
+gaps unchanged at 5, and both fenced margins slightly better than before
+(A3 at E2 -10.6 to -10.9, A4 at E3 36.7 to 36.6).
+
+**Measured -- the launch floor is pinned to three percent.** Swept with
+everything else held, A3 at E2 crosses its -10 dB ceiling at a floor of
+0.203 m/s and A4 at E3 crosses its 37 dB ceiling at 0.192: floor 0.15
+gives -14.5 dB and 41.0 dB, 0.17 gives -12.4 and 38.8, 0.195 gives -10.6
+and 36.7, 0.21 gives -9.8 and 35.7. The pianissimo end of the chain has a
+window of a few parts in a hundred and no headroom to hand anything.
+
+**Measured and NOT adopted -- the hammer as one moulding.** The manual has
+one plastic hammer body across the compass and graduates the TIPS, and
+`rhodes-mechanics-open-questions.md` computes the effective tine mass at
+the manual's striking line as nearly constant (11 g falling to 5.5 g), so
+one hammer should work everywhere. Replacing the rising ceiling (2.24 g at
+A0 to 6.6 g at the upper-mid knee) with a constant one was measured from
+3.0 to 11 g. It does exactly what that research predicts: at 3.7 g the ff
+tip swing becomes monotone with pitch, which closes BOTH known gaps in the
+DSP suite -- the swing span across the keyboard and the growl gradient --
+and it takes G2 from 6.12 to 4.61 and A4 at E3 from 36.7 to 33.6. It also
+breaks four measured rows, from both sides at once. Below 3.8 g the mid
+register goes flat: G1 at D4 falls to 2.53 against a 2.5 floor, G4 rises
+to 0.98 against a 0.94 ceiling (a soft attack that is no longer duller
+than its own sustain), and C2 at E3 over-cleans to -94.4 dB against a -92
+floor. Above 3.8 g the bass goes hot: A3 at E2 reaches -9.8 and A2 at E2
++25.4. The window is 0.3 g wide and nothing fits in it.
+
+The reason it cannot be one moulding *here* is worth recording, because it
+names the next piece of work rather than this one. The model's effective
+tine mass at the strike point runs 114 g at A0 down to 7.5 g at C8, a
+fifteenfold spread, where the manual's rail gives twofold. Its strike
+fraction sits near 0.25 across the whole compass instead of falling from
+about 0.36 to 0.17, because the beam solve makes the bass tines some 40%
+longer than Shear measured them -- 220.9 mm at A0 against 157, 180.4 mm at
+E1 against 128-135 -- and a real tine is shorter than the bare cantilever
+because its tuning spring loads the tip. The hammer graduation is
+compensating for that. One moulding needs the tine geometry first.
+
+**Measured and NOT adopted -- the manual's tip-hardness graduation.** The
+tip table (Shore A 30 for hammers 1-30, 50, 70, 90, then wrapped) converts
+through Gent's relation to a modulus span of about 1.1 to 50 MPa, and the
+research file argues correctly that this, not mass, is where the real
+graduation lives. Applied to the contact stiffness it collapses the treble
+contact to 1.0 ms and throws the top two octaves out to 2.5 mm of swing
+where they should move a fraction of a millimetre -- the exact failure the
+code comment beside the stiffness already predicted. It needs the same
+tine-geometry work first.
+
+**Measured and still NOT adopted -- the product transduction, re-run on
+the corrected chain.** With the let-off fixed and the floor re-derived,
+and with the tine's own 1.905 mm cross-section averaged into the flux as
+the physics requires:
+
+| coil mean radius (mm) | B6 | A2 at E2 | A3 at E2 | A4 at E3 | verdict |
+| --- | --- | --- | --- | --- | --- |
+| linear in B (shipped) | +1.31 | +22.0 | -10.9 | 36.6 | ships |
+| 2.6 | +1.92 | +23.6 | -10.7 | 38.1 | A4 fails |
+| 3.2 | +1.61 | +23.0 | -10.6 | 37.4 | A4 fails |
+| 3.6 | +1.45 | +22.7 | -10.6 | 37.0 | A4 at the ceiling |
+| 4.4 | +1.25 | +22.1 | -10.6 | 36.4 | passes, B6 below the shipped law |
+| 5.5 | +1.16 | +21.8 | -10.6 | 36.1 | passes, B6 below the shipped law |
+
+The law's whole effect is a function of how tightly the winding hugs the
+slug, and the two ends of that range are useless in opposite directions:
+inside 3.6 mm it buys real rise and fails A4, and by the radius where A4
+fits it has stopped doing anything -- at 4.4 mm and beyond the fundamental
+rises MORE SLOWLY than under the plain linear law. The documented winding
+puts the mean turn radius in the upper half of that range: 180 ohms of
+fine wire on a bobbin over the 2.38 mm slug is a build of one to three
+millimetres, so the honest radius is around 3.2 to 4 mm, which is either
+just failing or already inert.
+
+So the conclusion after re-deriving the chain is the opposite of a green
+light. The product law is still the right physics and it is still not
+adoptable, and the reason has moved: it is no longer that the velocity
+mapping has not been checked, it is that the mapping is pinned to a few
+percent by A3 and A4 together, the hammer graduation is pinned by four
+more rows, and the transduction's own free parameter has no setting that
+is both physical and useful. What separates B6 from A2 is not in the
+chain and not in the transduction law -- it is the far structure of the
+field itself, which is what G2 has been saying all along.
+
+One inconsistency surfaced by this work and deliberately left open,
+because it decides how the tine geometry above should be judged and
+cannot be settled from the files on disk. The known-gap entry at the top
+of this document records the model's hard-velocity tip swing as 3.9 mm at
+the bottom against "3.1 measured"; `rhodes-mechanics-open-questions.md`
+records the same quantity as 25-50 mm at the longest tine, attributed to
+Shear section 3.1, and derives the strike-point swing independently from
+the manual's escapement (6.35-9.5 mm in the bass, which the tine must not
+exceed or it strikes the resting hammer on the way back down). Those are
+an order of magnitude apart. The model currently sits at the small
+figure, and its strike-point swing at the bottom is 0.9 mm against the
+manual's 6-plus. Whichever is right, the hammer graduation and the tine
+lengths are being judged against it.
+
+Until then B5, B6 and G2 stay gaps with these tables as their price, and
+the shipped map keeps the honest far field without the transduction
+change.
