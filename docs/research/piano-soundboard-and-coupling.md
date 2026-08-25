@@ -481,17 +481,10 @@ the honest target.
 ## 8. Per-note mobility spread: measured, priced, not adopted
 
 Open question 4 (the per-note spread of the radiated transduction, rather
-than the compass-smooth mean the radiator's direct branch uses) was
-implemented twice and measured against the full grand suite. Both
-variants were reverted; this section records what they cost and bought,
-so the next attempt starts from the numbers instead of the idea.
-
-**The hypothesis is confirmed.** Row T1's note says A3 reads a few dB
-weak in its late field because its bridge point sits in a mobility dip
-and the read uses the mean. Giving the read the note's own transfer
-closes exactly that gap: A3's -20 dB time moves from 1.60 s (gap, band
-1.72..3.58 s) into the band. The mechanism named in the row comment is
-the right one.
+than the compass-smooth mean the radiator's direct branch uses) has now been
+implemented three times and measured against the full grand suite. All three
+were reverted; this section records what they cost and bought, so the next
+attempt starts from the numbers instead of the idea.
 
 **Variant A -- driving-point receptance.** Read gain per partial =
 |omega H(f)| at the note's bridge point over the Skudrzyk mean the shape
@@ -501,43 +494,239 @@ moved (1.60 -> 1.65 s), the una corda ripple ratio got worse
 (1.74x -> 1.40x), and three passing rows broke: W2 (A3 trichord spread),
 W5 (D#2 knee 3.9 s vs >= 4), T1 (A0 -20 dB 4.00 s vs 6.70 +/-35%).
 
-The physical objection to A: a radiated read that follows the DRIVING
-POINT counts modes that radiate nothing. Below coincidence -- where the
-whole in-loop band sits -- what leaves the board is its volume velocity.
+The physical objection raised against A at the time: a radiated read that
+follows the DRIVING POINT counts modes that radiate nothing. Below
+coincidence, the argument ran, what leaves the board is its volume velocity.
+Section 8.2 below shows that argument does not survive contact with this
+board's own dimensions or with the reference corpus.
 
 **Variant B -- volume-velocity (monopole) transfer.** Weight each mode by
 Phi_m(x_bridge) * <Phi_m> instead of Phi_m squared, with
 <Phi_m> = phiAmp (2/(p pi)) (2/(r pi)) for odd p, r and exactly zero
 otherwise (an even index moves as much plate up as down); normalise by
 the RMS of the same quantity over a 16 x 24 grid of bridge points and
-in-band frequencies, computed once per board configuration, so the
-compass-mean level is unchanged by construction and only the spread is
-new. Result: `fail=10 gap=3` -- three gaps CLOSED including T1's A3, and
-ten rows broken:
+in-band frequencies, computed once per board configuration, so that the
+compass-mean level is -- so the claim went -- unchanged by construction and
+only the spread is new. Result on the first pass: `fail=10 gap=3`, recorded
+at the time as three gaps closed. The rebuild below shows the gap COUNT falls
+because two of the three left the gap column by failing outright; exactly one
+row, T1's A3, actually reaches its band.
 
-| row | target | measured |
-| --- | --- | --- |
-| W2 A3 trichord components | >= 3, spread >= 4x | 2 components |
-| W4 C3 knee time | 1.1 s +/-0.6 | 2.55 s |
-| W4 C5 knee depth | -24 dB +/-8 | -39.8 dB |
-| W5 A3 fundamental | dip > -3 dB | -5.7 dB |
-| T1 C5 / C6 -20 dB time | 1.15 / 0.85 s +/-35% | 0.70 / 0.45 s |
-| S3 ILD A1 (bass lobe left) | +0.5..+7 dB | -0.4 dB |
-| UC1 ripple / level | >= 2x, -1 +/-1 dB | 1.0x, -3.4 dB |
-| MS10 mic seat band split | each +/-2 dB | -4.23 dB low band |
+### 8.1 The recalibration campaign, and why it did not run
 
-**The price, stated plainly.** Every one of those rows was calibrated
-against the smooth-mean read: the decay tables, the knee family, the
-stereo ILD law, the una corda pair, and the mic stage's seat gauge. A
-per-note read is not a local change -- it re-derives the compass level
-and decay calibration, and the mic gauge with it. That is a campaign
-with its own measurement pass, not a patch. Until it is run, the mean
-read stays and T1/U2/W5/UC1 stay bounded gaps with this section as
-their price tag.
+The campaign that section priced -- re-derive the ten broken rows'
+constants WITH the spread in place -- was set up and abandoned at step 1,
+because reproducing variant B and instrumenting it showed that the headline
+result is an artefact of the normaliser rather than a consequence of the
+per-note transfer. Two rebuilds settle it.
 
-Reproduction: variant B is about forty lines -- a `radiatedTransfer` on
-GrandBoard next to `receptance` (same loop, `phi[m] * modeMean[m]`,
-skipping zero-volume modes), the grid-RMS normaliser computed where
-`thunkPhi` is filled, and one factor on `S.readShape[idx]` in
-GrandVoice's mode placement, applied to the coupled prefix only and
-above the ladder's first mode.
+Rebuilt to the recipe (RMS normaliser, 16 x 24 grid, frequencies log-spaced
+over 77..1300 Hz, bridge points at 21 + 87 (i + 0.5)/16), the suite reads
+`fail=11 gap=3` -- one row worse than the recorded `fail=10 gap=3`, and
+several rows a good way off the recorded values (W4's C3 knee 2.30 s where
+2.55 was recorded, MS10's low band -2.23 dB where -4.23 was recorded, UC1's
+ripple 1.11x where 1.0x was recorded). **The recipe does not pin its own
+normaliser.** |omega H_rad| is a Lorentzian-peaked function of frequency at
+this board's modal overlap; its RMS over a 24-point grid is set by whether
+any grid point happens to land near a resonance, so the normaliser moves
+several dB with the grid's phase and the whole read moves with it. Anything
+built on top of it inherits that.
+
+Worse, the RMS normaliser does not do what it is advertised to do. The RMS
+of a heavy-tailed transfer is carried by a handful of near-resonant points,
+while the population that is actually read is the string partials, which are
+spread through the band. Measured through the rebuilt `radiatedTransfer`, the
+factor a partial actually receives has a median of about 0.10 across the
+tested notes -- the typical coupled partial is read 20 dB DOWN, not at unity.
+"The compass mean is unchanged by construction" is false as stated: what is
+held fixed is the mean SQUARE over a grid, and that is not the level the
+suite's decay and level rows measure.
+
+Replacing it with the normaliser that does hold the compass level -- the
+geometric mean of the same quantity over the same grid, i.e. zero mean dB
+offset, which is the correct centre for a gain the suite reads in dB -- and
+changing nothing else gives `fail=8 gap=6`:
+
+| row | baseline (mean read) | variant B, RMS norm | variant B, geometric norm |
+| --- | --- | --- | --- |
+| T1 A3 -20 dB (2.65 s +/-35%) | 1.60 s GAP | 1.95 s PASS | 1.60 s GAP |
+| T1 C3 -20 dB (2.00 s +/-35%) | 2.55 s PASS | 3.65 s FAIL | 5.10 s FAIL |
+| T1 C5 -20 dB (1.15 s +/-35%) | 0.90 s PASS | 0.70 s FAIL | 0.80 s PASS |
+| T1 C6 -20 dB (0.85 s +/-35%) | 0.60 s PASS | 0.45 s FAIL | 0.50 s FAIL |
+| W4 C3 knee time (1.1 s +/-0.6) | 0.75 s PASS | 2.30 s FAIL | 2.10 s FAIL |
+| W5 A3 fundamental (dip > -3 dB) | -4.7 dB GAP | -5.5 dB FAIL | -4.9 dB GAP |
+| S1 A0 fundamental (-20..-30 dB) | -35.1 dB GAP | -33.4 dB GAP | -41.0 dB GAP |
+| S3 ILD A1 (+0.5..+7 dB) | +1.1 dB PASS | -0.3 dB FAIL | +1.6 dB PASS |
+| UC1 level (-1 +/-1 dB) | -0.8 dB PASS | -3.2 dB FAIL | -1.7 dB PASS |
+| MS10 seat low band (+/-2 dB) | -1.56 dB PASS | -2.23 dB FAIL | -2.40 dB FAIL |
+| SUMMARY | fail=0 gap=6 | fail=11 gap=3 | fail=8 gap=6 |
+
+**A3's gap closes only under the normaliser that also attenuates the whole
+direct branch by 20 dB.** With the compass level genuinely held, A3 reads
+1.60 s -- unmoved from the mean read at the suite's 50 ms envelope hop --
+and eight rows are still broken. The closure and the breakage are the same
+effect, not two effects to be traded against each other by recalibration.
+
+That effect is identifiable. Under the RMS normaliser every one of A3's five
+in-band partials receives a factor at or below 0.64; its direct branch all
+but disappears and the modal board readout, which carries A3's slow trichord
+response, takes over the late field. The direct branch's whole reason for
+existing is to prevent exactly that (GrandRadiator.h: "without it a partial
+whose bridge point sits in a mobility dip all but vanishes from the mix --
+measured: A3's slow fundamental radiating 21 dB below its own second
+partial, which no close-mic recording shows"), and the suite reports the
+side effects in the same run: S1's A0 fundamental moves from -35.1 to
+-41.0 dB against a -20..-30 dB target, and W5's A3 dip deepens.
+
+One more cost, which no recalibration can pay off, only shows up outside
+the grand suite. The engine suite reads `fail=3 gap=0` under variant B, and
+two of the three are click fences: "Grand rings through a body size" and
+"Grand rings through a body material" both demand no reset and no step in a
+held note when the knob moves, and measure steps of 2.90x and 3.39x. The
+cause is structural. The per-note factor is a function of the board
+configuration -- the mode frequencies carry `bodyFScale` and the normaliser
+is recomputed per configuration -- so every voice's read gain jumps when the
+body knobs move, on notes that are already sounding. The mean read does not
+have this problem because it is compass-flat and configuration-independent.
+Any adopted per-note read would have to be smoothed per voice, which is a
+second piece of machinery with its own calibration. (The third engine
+failure is row 12.0, the release grab's fresh HF, at +2.0 dB over pre
+against a > +6 dB fence.) The preset character fences stay green throughout.
+
+### 8.2 Why the volume-velocity premise fails on this board
+
+The premise is that below coincidence what leaves the board is its monopole
+component, so each mode should be weighted by its surface average. That
+conflates being below coincidence with being acoustically COMPACT, and only
+the second makes the net volume velocity the radiating quantity. Three
+independent checks, all from numbers already in this repository:
+
+- **Dimensions.** The header essay's board is a 2 m grand's. At c = 343 m/s
+  it is acoustically compact (k L < 1) only below 27 Hz, and is one full
+  acoustic wavelength across its length at 172 Hz. The in-loop band is
+  77..1300 Hz and the model's own radiation-collapse corner sits at 200 Hz,
+  so every part of the band that survives the collapse is non-compact. Above
+  compactness the surface average is at most the on-axis far-field term; the
+  reference corpus (section 4) is close-mic'd, where the near field follows
+  the local velocity -- which is what the board's point readout already is.
+
+- **Interchannel coherence.** Section 4 measures 0.49..0.68 from 200 Hz up
+  across A1, C3, C4 and C5. A monopole has one output; a read dominated by
+  the board's volume velocity would put the two channels at coherence 1.0
+  through the whole in-loop band. The corpus says the two mics see
+  substantially different things there.
+
+- **ILD.** Section 4 measures ILD tracking register (+3.2 dB at A1, -4.7 dB
+  at C5) and attributes it to note position along the bridge relative to the
+  pair. A monopole has no position and therefore no ILD. Variant B's S3 row
+  is the prediction being read back: A1's ILD collapses from +1.1 to
+  -0.3 dB, against a +0.5..+7 dB band.
+
+The construction has a further defect that is pure arithmetic. Of the 72
+in-loop modes, only 21 have any monopole weight at all, their weight falls
+as 1/(p r), and the first mode (p=1, r=1, 77 Hz) alone carries 74% of the
+total monopole weight energy; everything above 300 Hz carries 12% between
+them. So above roughly 300 Hz the "radiated transfer" is not a transfer with
+the board's modal statistics -- it is the quasi-static skirt of the 77 Hz
+mode, small and smooth, with a note-dependent sign. That is why the treble
+collapses: C5's fundamental at 523 Hz is read 30 dB below the compass centre
+and C6's at 1046 Hz 6 dB below, and their coupled prefixes are one and two
+modes respectively, so the radiated envelope is handed to the uncoupled high
+partials, which decay fast. T1's C5 and C6 -20 dB times shorten accordingly
+in every variant tested.
+
+### 8.3 The rows that resisted, and what they depend on
+
+Two rows resist every setting of the read, and they are the ones that
+matter, because they are C3's and they contradict A3's directly.
+
+| row | target | mean read | best per-note setting found |
+| --- | --- | --- | --- |
+| T1 C3 -20 dB time | 2.00 s +/-35% (1.28..2.73) | 2.55 s | 4.10 s |
+| W4 C3 knee time | 1.1 s +/-0.6 (0.50..1.70) | 0.75 s | 2.30 s |
+
+C3's fundamental sits near a peak of its own radiated transfer -- 5.6x the
+compass centre, the highest factor in its own set of nine in-band partials
+-- and C3's fundamental is its SLOW partial (section 4: early -3.96 dB/s,
+late -0.94 dB/s). Any read that weights a note's partials by its own bridge
+transfer therefore hands C3's late field to its slowest partial and stretches
+both its knee and its -20 dB time. A3 is the same mechanism seen from the
+other side -- its transfer suppresses its whole prefix, the board branch
+takes over the late field, and the -20 dB time lengthens -- and the model
+needs the two to move in opposite directions from one read. They are
+measured constraints on the same model, and no recalibration reconciles
+them, because the constants they
+share -- `grandAlphaIntr`, `grandPolRatio`, `grandAlphaBoardHF` and the
+`dampTrim` scaling on all three -- act on frequency, not on note, and C3's
+and A3's partials interleave through 130..1300 Hz. Shortening C3 shortens
+A3 with it by construction.
+
+For completeness, the depth sweep. Raising the normalised transfer to a
+power (geometric-mean normalisation makes the centre invariant to the
+exponent, so this is a pure spread-depth control) gives `fail=2 gap=4` at
+one quarter power, the best result found anywhere in the sweep: UC1's ripple
+closes properly (21.6 -> 8.8 dB, a 2.5x flattening against a >= 2x fence),
+only C3's two rows break, and T1's A3 reads 1.70 s against a lower band edge
+of 1.6975 s. That last is not a closed gap. Two and a half milliseconds of
+margin is a twentieth of the suite's own 50 ms envelope hop; the row would
+change verdict on any other floating-point environment. Nor does the
+exponent have a derivation -- a quarter power of a mobility magnitude is not
+a physical quantity -- so the sweep is a diagnostic, not a candidate. What it
+does say is quantitative and worth carrying: the raw
+transfer's spread across the compass runs from 0.03 to 24.6, a range of
+58 dB, where this board's own calibration target for the per-note radiated
+envelope is +/-10..15 dB (GrandBoard.h, from the sources ranked high in
+section 7). At one quarter power the spread is 14 dB, inside that target.
+The transfer is not merely mis-centred; it is three to four times too deep
+in dB, which is a second, independent reason it cannot be adopted by
+recalibrating anything downstream of it.
+
+### 8.4 What would settle it
+
+The quantity the direct branch needs is a per-note, near-field, coherent
+force-to-pressure transfer: drive each note's bridge seat with a measured
+force and record the pressure at the reference pair's positions over
+77..1300 Hz. That is |P(f)/F(f)| per note, exactly what the branch's factor
+is standing in for, and it answers the two questions the model cannot
+answer from its own construction -- how deep the per-note spread of the
+RADIATED transfer really is (against the +/-10..15 dB the mobility
+envelope carries), and whether the C3-versus-A3 contradiction above lives in
+the transfer or in the fitted bridge arc. A hammer, a pair of mics at the
+section 4 positions, and a two-channel interface will do it; the analysis is
+the section 4 script with the excitation known instead of inferred.
+
+The cheaper proxy, if the Salamander set returns: per-note radiated partial
+levels at 0.1 s after the peak across the compass, divided by the strike
+spectrum the hammer model predicts for the same velocity layer. That
+separates transfer from excitation well enough to bound the spread, though
+not well enough to give the branch a factor.
+
+One row in the sweep behaves well enough to be worth chasing separately.
+UC1's beat ripple is a bounded gap at 1.74x under the mean read, and under
+the geometric normaliser it passes at every spread depth tested, with the
+post-shift ripple falling monotonically as the spread deepens -- 9.6 dB at
+zero depth, then 8.8, 7.9, 7.0 and 6.2 dB at quarter, half, three-quarter
+and full. The likely reason does not depend on the transfer being right: the
+members of a choir are detuned by a cent or two, so a read gain that varies
+sharply with frequency gives each of them a slightly different gain, and
+contributions of unequal size cannot cancel at a beat minimum. That is the
+same argument GrandVoice.h's hammer-voicing inequality already makes, from a
+measured basis. If it holds, a cheaper and better-founded route to UC1 lives
+inside the model as it stands -- widen the voicing inequality -- and it
+should be tried, and the mechanism checked by measuring the per-string read
+gains directly, before anything is asked of the radiated transfer again.
+
+Until one of those exists, the mean read stays, and T1/U2/W5/UC1/S1 stay
+bounded gaps with this section as their price tag. The reverted state is the
+shipped one: `fail=0 gap=6` on the grand suite, `fail=0 gap=0` on the engine
+suite, and the preset character fences green.
+
+Reproduction of variant B is about forty lines -- a `radiatedTransfer` on
+GrandBoard next to `receptance` (same loop, `phi[m] * modeMean[m]`, skipping
+zero-volume modes), a grid normaliser computed where `thunkPhi` is filled
+(RMS for the recorded result, geometric mean for the corrected one), and one
+factor on `S.readShape[idx]` in GrandVoice's mode placement, applied to the
+coupled prefix only and above the ladder's first mode. Whoever runs it next
+should instrument the factor's own distribution first: median, geometric
+mean and range in dB per note. The two rebuilds above differ in nothing but
+that number, and they disagree about whether the hypothesis works.
