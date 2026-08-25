@@ -481,6 +481,50 @@ const WSC_TEMPLATES = [
   ['FLAT PA',   [1.0, 1.0, 0.8, 0.0, 1.0]],
 ];
 
+/* Cabinet pictograms.
+   A row of five words asks you to remember which is which; a row of five
+   boxes tells you. Each icon is the cabinet the model actually describes --
+   the suitcase's row of twelves, the twin's pair, the single fifteen, the
+   little practice combo, and the PA's cone under a horn. Drawn in
+   currentColor so they light with their label when the chip is chosen. */
+function WsCabIcon({ name }) {
+  const cone = (cx, r) => (
+    <g key={cx}>
+      <circle cx={cx} cy="9" r={r} />
+      <circle cx={cx} cy="9" r={r * 0.34} className="cabcone" />
+    </g>
+  );
+  const shapes = {
+    'SUITCASE': (<>
+      <rect x="1.5" y="2.5" width="23" height="11" rx="1.5" />
+      {[6.4, 11.1, 15.8, 20.5].map((x) => cone(x, 1.9))}
+      <path d="M4 13.5v1.6M22 13.5v1.6" />
+    </>),
+    'TWIN 2×12': (<>
+      <rect x="3" y="2" width="20" height="12" rx="1.5" />
+      {[9, 17].map((x) => cone(x, 3))}
+    </>),
+    /* One fifteen fills its box almost to the walls -- that is what a 1x15
+       looks like, and it is what separates it from the small combo. */
+    'BASS 1×15': (<>
+      <rect x="4" y="1" width="18" height="14" rx="1.5" />
+      {cone(13, 5.6)}
+    </>),
+    'PRACTICE': (<>
+      <rect x="9" y="5" width="8" height="8" rx="1.2" />
+      {cone(13, 2.2)}
+    </>),
+    /* A full-range PA box is tall, with the horn slot above the cone. */
+    'FLAT PA': (<>
+      <rect x="8" y="0.5" width="10" height="15" rx="1.5" />
+      <circle cx="13" cy="10.5" r="3" />
+      <circle cx="13" cy="10.5" r="1" className="cabcone" />
+      <rect x="10" y="3" width="6" height="3.4" rx="0.8" className="cabhorn" />
+    </>),
+  };
+  return <svg viewBox="0 0 26 16" className="cabicon" aria-hidden="true">{shapes[name]}</svg>;
+}
+
 const WSC_KNOBS = [
   ['box',   'BOX',        (v) => 'fc ' + Math.round(140 * Math.pow(60 / 140, v)) + ' Hz'],
   ['cone',  'CONE',       (v) => (2.5 * Math.pow(6000 / 2500, v)).toFixed(1) + ' kHz'],
@@ -517,7 +561,10 @@ function CabinetWorkshop({ onClose }) {
       <div className="wstools">
         <span className="wstoollabel">CABINETS</span>
         {WSC_TEMPLATES.map(([n, t]) => (
-          <button key={n} className="wschip" onClick={() => push(t.slice())}>{n}</button>
+          <button key={n} className="wschip cab" onClick={() => push(t.slice())}>
+            <WsCabIcon name={n} />
+            <span>{n}</span>
+          </button>
         ))}
       </div>
       <div className="wscabknobs">

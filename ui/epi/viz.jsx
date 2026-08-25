@@ -172,31 +172,76 @@ function VizCard() {
       const sx = (VZ_TILT - 0.2) * 0.5, sy = 1 - sx * 0.25;
       const baseY = VZ_H - VZ_KH - 24, hyRest = VZ_H - VZ_KH - 12;
 
-      /* -- keys -- */
+      /* -- keys --
+         Ivory is not one colour. It sits in the fallboard's shadow at the
+         back, crowns just in front of that, and turns away from the light
+         again at the lip -- and every key carries a seam and a front edge.
+         A struck key is not painted over: it is lit from the back, where
+         the hammer actually is, and the light falls off toward the player. */
+      const kTop = VZ_H - VZ_KH;
+      const gWhite = ctx.createLinearGradient(0, kTop, 0, VZ_H);
+      gWhite.addColorStop(0.00, '#c6bda8');
+      gWhite.addColorStop(0.10, '#efe8d6');
+      gWhite.addColorStop(0.72, '#e0d8c4');
+      gWhite.addColorStop(1.00, '#cbc3ae');
+      const gLit = ctx.createLinearGradient(0, kTop, 0, VZ_H);
+      gLit.addColorStop(0.00, 'rgba(233,182,104,.95)');
+      gLit.addColorStop(0.45, 'rgba(214,155,74,.62)');
+      gLit.addColorStop(1.00, 'rgba(190,132,60,.20)');
+      const gBlack = ctx.createLinearGradient(0, kTop, 0, kTop + VZ_KH * 0.6);
+      gBlack.addColorStop(0.00, '#191610');
+      gBlack.addColorStop(0.14, '#0d0b08');
+      gBlack.addColorStop(0.88, '#060504');
+      gBlack.addColorStop(1.00, '#121009');
+      const gBlackLit = ctx.createLinearGradient(0, kTop, 0, kTop + VZ_KH * 0.6);
+      gBlackLit.addColorStop(0.00, 'rgba(226,171,92,.92)');
+      gBlackLit.addColorStop(1.00, 'rgba(150,101,44,.55)');
+
       for (let i = 0; i < VZ_N; i++) {
         const k = VZ_KEYS[VZ_LO + i];
         if (k.black) continue;
-        ctx.fillStyle = '#d9d2bf';
-        ctx.fillRect(k.x + 0.5, VZ_H - VZ_KH, k.w - 1, VZ_KH);
-        ctx.fillStyle = 'rgba(0,0,0,.18)';
-        ctx.fillRect(k.x + 0.5, VZ_H - 3, k.w - 1, 3);
+        /* The key is always painted opaque first; the lit wash goes OVER it.
+           Swapping one for the other let the case show through a struck key. */
+        ctx.fillStyle = gWhite;
+        ctx.fillRect(k.x + 0.5, kTop, k.w - 1, VZ_KH);
         if (isDown(i)) {
-          ctx.fillStyle = 'rgba(202,164,94,.85)';
-          ctx.fillRect(k.x + 0.5, VZ_H - VZ_KH, k.w - 1, VZ_KH);
+          ctx.fillStyle = gLit;
+          ctx.fillRect(k.x + 0.5, kTop, k.w - 1, VZ_KH);
         }
+        if (isDown(i)) {                       /* the strike end reads hottest */
+          ctx.fillStyle = 'rgba(255,226,170,.85)';
+          ctx.fillRect(k.x + 0.5, kTop, k.w - 1, 1.5);
+        }
+        ctx.fillStyle = 'rgba(0,0,0,.24)';     /* seam to the next key */
+        ctx.fillRect(k.x + k.w - 0.5, kTop, 1, VZ_KH);
+        ctx.fillStyle = 'rgba(255,251,242,.30)';   /* lip catches the light */
+        ctx.fillRect(k.x + 0.5, VZ_H - 5, k.w - 1, 1);
+        ctx.fillStyle = 'rgba(0,0,0,.22)';         /* and the front turns away */
+        ctx.fillRect(k.x + 0.5, VZ_H - 4, k.w - 1, 4);
       }
       for (let i = 0; i < VZ_N; i++) {
         const k = VZ_KEYS[VZ_LO + i];
         if (!k.black) continue;
-        ctx.fillStyle = '#15130f';
-        ctx.fillRect(k.x, VZ_H - VZ_KH, k.w, VZ_KH * 0.6);
-        ctx.fillStyle = 'rgba(255,255,255,.06)';
-        ctx.fillRect(k.x, VZ_H - VZ_KH, k.w, 2);
-        if (isDown(i)) {
-          ctx.fillStyle = 'rgba(202,164,94,.9)';
-          ctx.fillRect(k.x, VZ_H - VZ_KH, k.w, VZ_KH * 0.6);
+        const bh = VZ_KH * 0.6;
+        ctx.fillStyle = 'rgba(0,0,0,.45)';     /* the sharp casts onto the ivory */
+        ctx.fillRect(k.x - 1, kTop, k.w + 2, bh + 2);
+        ctx.fillStyle = gBlack;                /* ebony stays opaque ... */
+        ctx.fillRect(k.x, kTop, k.w, bh);
+        if (isDown(i)) {                       /* ... and the wash sits on it */
+          ctx.fillStyle = gBlackLit;
+          ctx.fillRect(k.x, kTop, k.w, bh);
         }
+        ctx.fillStyle = isDown(i) ? 'rgba(255,226,170,.75)' : 'rgba(236,229,211,.10)';
+        ctx.fillRect(k.x, kTop, k.w, 1.5);     /* crown */
+        ctx.fillStyle = 'rgba(255,255,255,.05)';
+        ctx.fillRect(k.x, kTop, 1, bh);        /* left edge */
       }
+      /* The balance-rail felt, where the keys run back under the case. */
+      ctx.fillStyle = 'rgba(96,38,30,.55)';
+      ctx.fillRect(VZ_PAD, kTop - 2, VZ_W - 2 * VZ_PAD, 2);
+      ctx.fillStyle = 'rgba(0,0,0,.5)';
+      ctx.fillRect(VZ_PAD, kTop, VZ_W - 2 * VZ_PAD, 1);
+
       ctx.fillStyle = 'rgba(60,55,44,.95)';
       ctx.font = '8px Space Grotesk';
       ctx.textAlign = 'center';
@@ -362,6 +407,26 @@ function VizCard() {
         ctx.fill();
         ctx.shadowBlur = 0;
       });
+
+      /* One pass of case light across the rod field.
+         The rods carry their own physics -- swing, second mode, the dB
+         mapping that separates struck gold from sympathetic silver -- and
+         none of that is touched here. What was missing was light: every rod
+         was one flat value along its whole length, which is why the field
+         read as a wireframe rather than as steel. `source-atop` tints only
+         pixels that are already drawn, so this lands on the rods, the
+         collars and the rail and nowhere else, and it stops short of the
+         keybed. Brightest where the case light reaches, falling into the
+         shadow the hammers sit in. */
+      ctx.save();
+      ctx.globalCompositeOperation = 'source-atop';
+      const gLight = ctx.createLinearGradient(0, 24, 0, baseY);
+      gLight.addColorStop(0.00, 'rgba(255, 246, 226, .17)');
+      gLight.addColorStop(0.45, 'rgba(255, 246, 226, .05)');
+      gLight.addColorStop(1.00, 'rgba(0, 0, 0, .22)');
+      ctx.fillStyle = gLight;
+      ctx.fillRect(0, 0, VZ_W, baseY + 4);
+      ctx.restore();
 
       raf = requestAnimationFrame(frame);
     };

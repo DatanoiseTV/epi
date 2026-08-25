@@ -27,13 +27,13 @@ function ActionPanel({ inst }) {
           tine for about four milliseconds, which lowpasses the strike hard
           enough that the tine's own overtones never get excited. */}
       {inst !== 4 && (
-        <div className="matrow bodyrow">
+        <div className="matrow bodyrow stack">
           <PCycle id="damperFelt" options={FELTS} label="FELT" />
           {inst <= 3 && <PCycle id="keyBed" options={KEYBEDS} label="KEYBED" />}
         </div>
       )}
       {inst !== 4 && (
-        <div className="matrow bodyrow">
+        <div className="matrow bodyrow stack">
           <PCycle id="hammerMat" options={HAMMERS} label="HAMMER" />
           {inst === 3 && <PCycle id="softMode" options={['SHIFT', 'RAIL']} label="SOFT PED" />}
         </div>
