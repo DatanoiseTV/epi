@@ -37,8 +37,12 @@
 namespace epi
 {
 
-// Which instrument. Order must match epi::ids::instrumentNames.
-enum class Instrument { rhodes = 0, wurlitzer, clavinet, cp70 };
+// There is deliberately no Instrument enum. There was one, unused, and it
+// had drifted: it listed four instruments in an order that stopped matching
+// the parameter's own names, and never gained the grand. A second statement
+// of an ordering that nothing reads is a trap for whoever trusts it -- the
+// authority is epi::ids::instrumentNames, and the engine dispatches on the
+// integer that parameter carries.
 
 // Clavinet pickup switching. Order must match epi::ids::pickupSelNames.
 enum class PickupSelect { neck = 0, bridge, bothIn, bothOut };

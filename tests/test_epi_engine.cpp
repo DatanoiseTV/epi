@@ -18,6 +18,7 @@
 */
 
 #include "EpiAnalysis.h"
+#include "epi/EngineParamMap.h"
 #include "epi/dsp/EpiEngine.h"
 
 #include <algorithm>
@@ -1794,6 +1795,948 @@ static void sectionSoftPedal()
 }
 
 // ===========================================================================
+// 14. The parameter space, not the parameter axis.
+//
+// Section 7 abuses the rail with the shipped voicing; the knob sections move
+// one control at a time. Neither of those visits the CORNERS: a vector that
+// is simultaneously at the pickup's rail, the drive's rail, the damper's
+// rail and a material the instrument was never voiced for. Those corners are
+// where a passivity argument that holds "for reasonable settings" stops
+// holding, and a player reaches them by turning knobs.
+//
+// The sweep is seeded, so a break is an exact vector that can be replayed,
+// and the vectors are drawn THROUGH EngineParamMap -- the same function the
+// processor uses -- from a replica of the APVTS layout. A parameter that
+// exists in the layout but is never read by the map would draw a value that
+// goes nowhere, and the preset suite already fences that; here the point is
+// that whatever the plugin can send, the engine survives.
+//
+// A third of every draw lands exactly on a rail rather than inside the range:
+// uniform sampling of fifty axes visits a corner essentially never.
+// ===========================================================================
+
+namespace sweep
+{
+struct ParamSpec { const char* id; float lo, hi; bool discrete; };
+
+// The APVTS layout again (test_epi_presets.cpp keeps the other replica). Two
+// copies on purpose, for the reason stated there: a shared table cannot catch
+// drift with itself.
+static const ParamSpec kLayout[] = {
+    { "tune",        -100.0f, 100.0f, false }, { "velCurve",    0.0f,  1.0f, false },
+    { "hammerHard",     0.0f,   1.0f, false }, { "hammerMass",  0.0f,  1.0f, false },
+    { "escapement",     0.0f,   1.0f, false }, { "strikeNoise", 0.0f,  1.0f, false },
+    { "damperGrip",     0.0f,   1.0f, false }, { "tipMass",     0.0f,  1.0f, false },
+    { "resDamp",        0.0f,   1.0f, false }, { "barCouple",   0.0f,  1.0f, false },
+    { "barTune",      -24.0f,  24.0f, false }, { "bodyMix",     0.0f,  1.0f, false },
+    { "nonlinAmt",      0.0f,   1.0f, false }, { "pickupPos",  -1.0f,  1.0f, false },
+    { "pickupDist",     0.0f,   1.0f, false }, { "pickupSel",   0.0f,  3.0f, true  },
+    { "coilFreq",       0.0f,   1.0f, false }, { "coilQ",       0.0f,  1.0f, false },
+    { "coilSat",        0.0f,   1.0f, false }, { "preampDrive", 0.0f,  1.0f, false },
+    { "bass",         -12.0f,  12.0f, false }, { "treble",    -12.0f, 12.0f, false },
+    { "tremRate",       0.1f,  12.0f, false }, { "tremDepth",   0.0f,  1.0f, false },
+    { "tremStereo",     0.0f,   1.0f, false }, { "cabMix",      0.0f,  1.0f, false },
+    { "phaserMix",      0.0f,   1.0f, false }, { "phaserRate",  0.02f, 8.0f, false },
+    { "phaserDepth",    0.0f,   1.0f, false }, { "phaserFb",    0.0f,  1.0f, false },
+    { "spaceMix",       0.0f,   1.0f, false }, { "spaceSize",   0.0f,  1.0f, false },
+    { "outGain",      -24.0f,  12.0f, false }, { "instrument",  0.0f,  4.0f, true  },
+    { "clarity",      -12.0f,  12.0f, false }, { "material",    0.0f,  7.0f, true  },
+    { "clavSwitch",     0.0f,   3.0f, true  }, { "clavBrill",   0.0f,  1.0f, true  },
+    { "clavTreb",       0.0f,   1.0f, true  }, { "clavMed",     0.0f,  1.0f, true  },
+    { "clavSoft",       0.0f,   1.0f, true  }, { "bodyMat",     0.0f,  7.0f, true  },
+    { "bodySize",       0.0f,   1.0f, false }, { "damperFelt",  0.0f,  3.0f, true  },
+    { "keyBed",         0.0f,   3.0f, true  }, { "hammerMat",   0.0f,  5.0f, true  },
+    { "roomProfile",    0.0f,   5.0f, true  }, { "softMode",    0.0f,  1.0f, true  },
+    { "wearAmount",     0.0f,   1.0f, false },
+};
+static constexpr int kNumParams = static_cast<int> (sizeof kLayout / sizeof kLayout[0]);
+
+// One vector, drawn from the seed. Rails a third of the time, uniform
+// otherwise; discrete axes snap to their integers.
+static EngineParams draw (unsigned seed, int instrument, float* out)
+{
+    std::mt19937 rng (seed);
+    for (int i = 0; i < kNumParams; ++i)
+    {
+        const auto& s = kLayout[i];
+        const double u = static_cast<double> (rng() % 1000001u) / 1000000.0;
+        const unsigned m = rng() % 3u;
+        double v = m == 0 ? s.lo : m == 1 ? s.hi : s.lo + u * (s.hi - s.lo);
+        if (s.discrete) v = std::floor (v + 0.5);
+        out[i] = static_cast<float> (v);
+    }
+    for (int i = 0; i < kNumParams; ++i)
+        if (std::strcmp (kLayout[i].id, "instrument") == 0)
+            out[i] = static_cast<float> (instrument);
+
+    return engineParamsFrom ([&] (const char* id) -> float
+    {
+        for (int i = 0; i < kNumParams; ++i)
+            if (std::strcmp (kLayout[i].id, id) == 0) return out[i];
+        std::printf ("  parameter '%s' is read by the map and missing from the layout replica\n", id);
+        std::exit (2);
+    });
+}
+
+static void printVector (const float* v)
+{
+    for (int i = 0; i < kNumParams; ++i)
+        std::printf ("       %-12s %g\n", kLayout[i].id, static_cast<double> (v[i]));
+}
+} // namespace sweep
+
+static void sectionParamSweep()
+{
+    heading ("14. parameter-space sweep: the corners, not the axes");
+
+    const double fs = 48000.0;
+    const int block = 256;
+    const int perInst = 12;          // 60 vectors; the sweep is the slow row here
+    const double seconds = 1.0;
+    const int N = static_cast<int> (fs * seconds);
+
+    for (int inst = 0; inst < 5; ++inst)
+    {
+        double worstPeak = 0.0;
+        bool allOk = true;
+        int firstBad = -1;
+        float badVec[sweep::kNumParams] {};
+
+        for (int trial = 0; trial < perInst; ++trial)
+        {
+            float vals[sweep::kNumParams];
+            const EngineParams p = sweep::draw (0xA57E0000u
+                                                + static_cast<unsigned> (inst * 10000 + trial),
+                                                inst, vals);
+
+            EpiEngine e;
+            e.prepare (fs, block);
+            std::vector<NoteEvent> evs;
+            evs.push_back ({ 0, NoteEvent::sustainOn, 0, 1.0f });
+            for (int n : { 40, 47, 52, 59, 64, 71, 76 })
+                evs.push_back ({ 0, NoteEvent::noteOn, n, 1.0f });
+
+            std::vector<float> L (static_cast<std::size_t> (block));
+            std::vector<float> R (static_cast<std::size_t> (block));
+            double pk = 0.0;
+            bool finite = true;
+            for (int i = 0; i < N; i += block)
+            {
+                const int n = std::min (block, N - i);
+                e.process (L.data(), R.data(), n, p,
+                           i == 0 ? evs.data() : nullptr, i == 0 ? static_cast<int> (evs.size()) : 0);
+                for (int k = 0; k < n; ++k)
+                {
+                    pk = std::max (pk, std::fabs (static_cast<double> (L[static_cast<std::size_t> (k)])));
+                    pk = std::max (pk, std::fabs (static_cast<double> (R[static_cast<std::size_t> (k)])));
+                    finite = finite && std::isfinite (L[static_cast<std::size_t> (k)])
+                                    && std::isfinite (R[static_cast<std::size_t> (k)]);
+                }
+            }
+            worstPeak = std::max (worstPeak, pk);
+            if (! finite || pk > 1.0)
+            {
+                allOk = false;
+                if (firstBad < 0)
+                {
+                    firstBad = trial;
+                    std::memcpy (badVec, vals, sizeof badVec);
+                }
+            }
+        }
+
+        char idb[12], what[72];
+        std::snprintf (idb, sizeof idb, "14.%d", inst);
+        std::snprintf (what, sizeof what, "%s %d full-range vectors, ff + pedal",
+                       kInstName[inst], perInst);
+        row (idb, what, "finite, pk<=1 (rail asymptote)",
+             fmt ("worst pk %.4f", worstPeak), verdict (allOk));
+        if (! allOk)
+        {
+            std::printf ("    first breaking vector (seed trial %d):\n", firstBad);
+            sweep::printVector (badVec);
+        }
+    }
+
+    // 14.5 -- the denormal fence. A decaying physical model walks its state
+    // down through the denormal range on the way to silence, and on x86 a
+    // denormal storm costs one to two orders of magnitude per operation. It
+    // shows as the TAIL of a render costing far more than its middle, which
+    // is the opposite of the honest profile (the attack is the expensive
+    // part: eighty-eight rebuilds and a strike). Ratio of medians, so a
+    // scheduling hiccup on a loaded runner cannot move it; the bound is 10x
+    // because a storm is 10x and steady-state variation is a few percent.
+    {
+        for (int inst = 0; inst < 5; ++inst)
+        {
+            EpiEngine e;
+            e.prepare (fs, block);
+            EngineParams p = measParams (inst);
+            std::vector<float> L (static_cast<std::size_t> (block));
+            std::vector<float> R (static_cast<std::size_t> (block));
+            std::vector<NoteEvent> on;
+            for (int n : { 40, 47, 52, 59 }) on.push_back ({ 0, NoteEvent::noteOn, n, 1.0f });
+            NoteEvent off { 0, NoteEvent::allNotesOff, 0, 0.0f };
+
+            std::vector<double> us;
+            const int blocks = static_cast<int> (6.0 * fs) / block;
+            const int offAt  = static_cast<int> (0.5 * fs) / block;
+            for (int b = 0; b < blocks; ++b)
+            {
+                const auto t0 = std::chrono::steady_clock::now();
+                e.process (L.data(), R.data(), block, p,
+                           b == 0 ? on.data() : b == offAt ? &off : nullptr,
+                           b == 0 ? static_cast<int> (on.size()) : b == offAt ? 1 : 0);
+                us.push_back (std::chrono::duration<double> (
+                                  std::chrono::steady_clock::now() - t0).count() * 1.0e6);
+            }
+            auto medOf = [&] (double f0, double f1)
+            {
+                std::vector<double> v (us.begin() + static_cast<std::ptrdiff_t> (us.size() * f0),
+                                       us.begin() + static_cast<std::ptrdiff_t> (us.size() * f1));
+                std::sort (v.begin(), v.end());
+                return v[v.size() / 2];
+            };
+            const double mid  = medOf (0.30, 0.60);
+            const double tail = medOf (0.85, 1.00);
+            char idb[12], what[72];
+            std::snprintf (idb, sizeof idb, "14.5%d", inst);
+            std::snprintf (what, sizeof what, "%s decay tail costs no more than mid", kInstName[inst]);
+            row (idb, what, "tail/mid <= 10 (denormal fence)",
+                 fmt2 ("%.2f (mid %.0f us)", tail / std::max (1.0e-9, mid), mid),
+                 verdict (tail <= 10.0 * mid));
+        }
+    }
+}
+
+// ===========================================================================
+// 15. Rate independence of the mechanisms added after section 9 was written.
+//
+// Section 9 fences the resonators. The mechanisms bolted around them since --
+// the room's image sources and its switch fade, the mic stage's arrival
+// delays, the trapwork thunk -- are all TIMES, and every one of them is a
+// place where a length can be written in samples and silently mean a
+// different thing on a 192 kHz session. Each row below measures a
+// millisecond quantity at 44.1, 48, 88.2, 96 and 192 kHz and holds the five
+// against each other; a length kept in samples cannot survive that.
+// ===========================================================================
+
+static const double kRateSet[5] = { 44100.0, 48000.0, 88200.0, 96000.0, 192000.0 };
+
+static double spreadPct (const double* v, int n)
+{
+    double lo = v[0], hi = v[0];
+    for (int i = 1; i < n; ++i) { lo = std::min (lo, v[i]); hi = std::max (hi, v[i]); }
+    return 100.0 * (hi - lo) / std::max (1.0e-12, lo);
+}
+
+static void sectionRateNew()
+{
+    heading ("15. rate independence of the room, the mic stage and the trapwork");
+
+    // 15.0 -- the image-source arrivals of rows 11.8..11.10, now at five
+    // rates. The wet path is exactly zero until the first tap fires, so the
+    // first nonzero sample is the arrival. Bound: 2 %, which is the
+    // quantisation of a 2.1 ms arrival by one sample at 44.1 kHz (1.08 %)
+    // with room for the same at the far end.
+    {
+        static const struct { int profile; const char* name; } kP[3] = {
+            { 1, "Booth" }, { 2, "Studio" }, { 3, "Stage" } };
+        for (int k = 0; k < 3; ++k)
+        {
+            double ms[5];
+            for (int i = 0; i < 5; ++i)
+            {
+                const double fs = kRateSet[i];
+                Room r;
+                r.prepare (fs);
+                r.setProfile (kP[k].profile);
+                r.setSize (0.5f);
+                r.reset();
+                ms[i] = -1.0;
+                const int n = static_cast<int> (fs * 0.05);
+                for (int s = 0; s < n; ++s)
+                {
+                    const double x = s == 0 ? 1.0 : 0.0;
+                    double wl = 0.0, wr = 0.0;
+                    r.process (x, x, wl, wr);
+                    if (std::fabs (0.5 * (wl + wr)) > 1.0e-9) { ms[i] = 1000.0 * s / fs; break; }
+                }
+            }
+            const double sp = spreadPct (ms, 5);
+            char id[12], what[72];
+            std::snprintf (id, sizeof id, "15.0%d", k);
+            std::snprintf (what, sizeof what, "%s first reflection, 44.1..192k", kP[k].name);
+            row (id, what, "spread <= 2% (one sample at 44.1k)",
+                 fmt2 ("%.3f ms, spread %.2f%%", ms[1], sp),
+                 verdict (ms[0] > 0.0 && sp <= 2.0));
+        }
+    }
+
+    // 15.1 -- the profile-switch fade. Room.h derives it as
+    // 1/round(0.015*fs), so it is 15 ms of TIME at every rate; the row
+    // measures the time from setProfile() to the wet null on a continuously
+    // driven room. The detector's own 0.5 ms time constant is 3 % of 15 ms,
+    // which is where the 6 % bound comes from.
+    {
+        double ms[5];
+        for (int i = 0; i < 5; ++i)
+        {
+            const double fs = kRateSet[i];
+            Room r;
+            r.prepare (fs);
+            r.setProfile (2);
+            r.setSize (0.5f);
+            r.reset();
+            std::mt19937 rng (7);
+            std::uniform_real_distribution<double> d (-1.0, 1.0);
+            for (int s = 0; s < static_cast<int> (fs * 0.5); ++s)
+            { double l = 0.0, rr = 0.0; r.process (d (rng), d (rng), l, rr); }
+            r.setProfile (4);
+            double env = 0.0, best = 1.0e30;
+            int bestI = 0;
+            const double a = 1.0 - std::exp (-1.0 / (0.0005 * fs));
+            for (int s = 0; s < static_cast<int> (fs * 0.06); ++s)
+            {
+                double l = 0.0, rr = 0.0;
+                r.process (d (rng), d (rng), l, rr);
+                env += a * (std::fabs (l) - env);
+                if (s > static_cast<int> (fs * 0.002) && env < best) { best = env; bestI = s; }
+            }
+            ms[i] = 1000.0 * bestI / fs;
+        }
+        const double sp = spreadPct (ms, 5);
+        row ("15.1", "room fade to the swap null, 44.1..192k", "15 ms +/-20%, spread <= 6%",
+             fmt2 ("%.2f ms, spread %.2f%%", ms[1], sp),
+             verdict (ms[1] >= 12.0 && ms[1] <= 18.0 && sp <= 6.0));
+    }
+
+    // 15.2 -- the mic stage's arrival delay is r/c, and r is metres. Park
+    // one Stage mic at the board (z 0.2) and one across the room (z 5.0) and
+    // measure how much later the note arrives. Prediction from the geometry
+    // alone: (sqrt(5.0^2 + 0.6^2) - sqrt(0.2^2 + 0.6^2)) / 343 = 12.84 ms,
+    // where 0.6 m is the mic height and 343 m/s the stage's own speed of
+    // sound. 3 % covers the fractional-delay interpolator's group delay and
+    // the onset threshold; a lag kept in samples would move by 4x across
+    // this rate span, which is 335 %.
+    {
+        double lag[5];
+        for (int i = 0; i < 5; ++i)
+        {
+            const double fs = kRateSet[i];
+            auto onsetOf = [&] (double z)
+            {
+                EpiEngine e;
+                e.prepare (fs, 64);
+                e.grandMicStage().setMode (1);
+                GrandMicStage::Mic m;
+                m.on = true; m.x = 0.0; m.z = z; m.h = 0.6; m.gainDb = 0.0; m.pan = 0.0;
+                e.grandMicStage().setMic (0, m);
+                for (int k = 1; k < GrandMicStage::kMaxMics; ++k)
+                { GrandMicStage::Mic o; o.on = false; e.grandMicStage().setMic (k, o); }
+
+                EngineParams p {};
+                p.instrument = 3; p.outGainLin = 0.5f; p.spaceMix = 0.0f;
+                const int N = static_cast<int> (fs * 0.1);
+                std::vector<double> y (static_cast<std::size_t> (N));
+                std::vector<float> L (64), R (64);
+                const int at = static_cast<int> (0.02 * fs);
+                for (int s = 0; s < N; s += 64)
+                {
+                    const int n = std::min (64, N - s);
+                    NoteEvent on { 0, NoteEvent::noteOn, 60, 0.9f };
+                    const bool fire = at >= s && at < s + n;
+                    if (fire) on.offset = at - s;
+                    e.process (L.data(), R.data(), n, p, fire ? &on : nullptr, fire ? 1 : 0);
+                    for (int k = 0; k < n; ++k)
+                        y[static_cast<std::size_t> (s + k)] = L[static_cast<std::size_t> (k)];
+                }
+                double pk = 0.0;
+                for (double v : y) pk = std::max (pk, std::fabs (v));
+                for (std::size_t k = 0; k < y.size(); ++k)
+                    if (std::fabs (y[k]) > 0.02 * pk) return 1000.0 * static_cast<double> (k) / fs;
+                return -1.0;
+            };
+            lag[i] = onsetOf (5.0) - onsetOf (0.2);
+        }
+        const double pred = 1000.0 * (std::sqrt (25.0 + 0.36) - std::sqrt (0.04 + 0.36)) / 343.0;
+        double worst = 0.0;
+        for (int i = 0; i < 5; ++i) worst = std::max (worst, std::fabs (lag[i] / pred - 1.0));
+        row ("15.2", "Stage mic 0.2 m -> 5.0 m arrival lag", fmt ("%.2f ms +/-3%% at 5 rates", pred),
+             fmt2 ("%.2f ms, worst %+.1f%%", lag[1], 100.0 * worst),
+             verdict (worst <= 0.03));
+    }
+
+    // 15.3 -- the trapwork thunk. Its raised cosine is 18 ms of real time,
+    // and it used to be written as 864 SAMPLES with a comment saying "18 ms
+    // at 48 kHz" -- which made it 19.6 ms at 44.1 and 4.5 ms at 192. The
+    // excitation's bandwidth followed the sample rate, and because the
+    // board's radiation weight climbs as f^2/(f^2 + fc^2) below a couple of
+    // hundred hertz, the shorter pulse reached modes that radiate far
+    // better: the response peak ROSE with the rate even though the
+    // delivered impulse fell, 14.1 dB across the supported range, and the
+    // engine's own thunk row (12.2) read 2 dB outside its calibrated band
+    // at 192 kHz. The length is now derived in GrandBoard::prepare, and
+    // this row is what holds it there. Measured on the board itself,
+    // driven directly, so nothing else is in the path.
+    {
+        auto boardPeak = [] (double fs)
+        {
+            GrandBoard b;
+            b.prepare (fs);
+            b.pedalThunk (2.2);
+            const int N = static_cast<int> (fs * 0.4);
+            double pk = 0.0;
+            for (int i = 0; i < N; ++i)
+            {
+                b.tick();
+                pk = std::max (pk, std::fabs (b.outputL()));
+            }
+            return pk;
+        };
+
+        double ship[5];
+        for (int i = 0; i < 5; ++i) ship[i] = boardPeak (kRateSet[i]);
+        double lo = ship[0], hi = ship[0];
+        for (int i = 1; i < 5; ++i) { lo = std::min (lo, ship[i]); hi = std::max (hi, ship[i]); }
+        const double shipDb = 20.0 * std::log10 (hi / std::max (1.0e-300, lo));
+        row ("15.3", "pedal thunk level, 44.1..192k", "<= 1 dB",
+             fmt ("%.3f dB", shipDb), verdict (shipDb <= 1.0));
+    }
+}
+
+// ===========================================================================
+// 16. Determinism, and what reset() is supposed to mean.
+//
+// The instrument claims to be deterministic: the same events into the same
+// parameters must give the same samples, or a bounce is not a bounce. Three
+// separate claims live under that, and they are not the same claim:
+//
+//   - two engines built the same way agree,
+//   - the host's buffer size is not part of the sound,
+//   - reset() returns the engine to the state it was built in.
+//
+// The first two hold. The third does not, on one instrument, and the row
+// says so with the line of code that causes it.
+// ===========================================================================
+
+static void sectionDeterminism()
+{
+    heading ("16. determinism: engines, buffers, and reset");
+
+    const double fs = 48000.0;
+
+    // A deterministic scratch performance: pedal down, two dozen notes at
+    // scattered offsets, so the sympathetic field is fully engaged (that is
+    // where a shared bus and a control-rate seam would show).
+    struct Plan { int sample; NoteEvent ev; };
+    auto makePlan = [] (int inst, int N)
+    {
+        std::mt19937 rng (0xBEEF00u + static_cast<unsigned> (inst));
+        std::vector<Plan> plan;
+        plan.push_back ({ 0, { 0, NoteEvent::sustainOn, 0, 1.0f } });
+        for (int i = 0; i < 24; ++i)
+            plan.push_back ({ static_cast<int> (rng() % static_cast<unsigned> (N / 2)),
+                              { 0, NoteEvent::noteOn,
+                                40 + static_cast<int> (rng() % 40u),
+                                0.2f + static_cast<float> (rng() % 800u) / 1000.0f } });
+        std::sort (plan.begin(), plan.end(),
+                   [] (const Plan& a, const Plan& b) { return a.sample < b.sample; });
+        return plan;
+    };
+    auto renderPlan = [&] (int inst, int block, const std::vector<Plan>& plan, int N)
+    {
+        EpiEngine e;
+        e.prepare (fs, block);
+        EngineParams p {};
+        p.instrument = inst;
+        p.outGainLin = 0.7f;
+        std::vector<float> y (static_cast<std::size_t> (N));
+        std::vector<float> L (static_cast<std::size_t> (block));
+        std::vector<float> R (static_cast<std::size_t> (block));
+        std::vector<NoteEvent> be;
+        for (int i = 0; i < N; i += block)
+        {
+            const int n = std::min (block, N - i);
+            be.clear();
+            for (const auto& q : plan)
+                if (q.sample >= i && q.sample < i + n)
+                { NoteEvent ev = q.ev; ev.offset = q.sample - i; be.push_back (ev); }
+            e.process (L.data(), R.data(), n, p, be.empty() ? nullptr : be.data(),
+                       static_cast<int> (be.size()));
+            for (int k = 0; k < n; ++k)
+                y[static_cast<std::size_t> (i + k)] = L[static_cast<std::size_t> (k)];
+        }
+        return y;
+    };
+
+    // 16.0 -- two engines, same events, same parameters: bit for bit. Not
+    // "close": a physical model with shared nonlinear buses has no tolerance
+    // to spend, and any divergence at all means uninitialised state.
+    {
+        const int N = 48000;
+        bool allSame = true;
+        for (int inst = 0; inst < 5; ++inst)
+        {
+            const auto plan = makePlan (inst, N);
+            allSame = allSame && renderPlan (inst, 256, plan, N) == renderPlan (inst, 256, plan, N);
+        }
+        row ("16.0", "two fresh engines, same performance", "bit-identical, all five",
+             allSame ? "identical" : "DIVERGED", verdict (allSame));
+    }
+
+    // 16.1 -- the buffer size is not part of the sound. Solo notes are bit
+    // identical from a one-sample block to a 512-sample one. With the pedal
+    // down and two dozen notes the LAST bits diverge -- eighty-eight coupled
+    // resonators on one bus amplify a control-rate difference, which is what
+    // a coupled system does -- so the row holds the quantity that has to be
+    // invariant: the loudness. 0.1 dB is a tenth of the smallest level
+    // difference this suite treats as real anywhere else.
+    {
+        bool soloExact = true;
+        double worstRms = 0.0;
+        for (int inst = 0; inst < 5; ++inst)
+        {
+            const std::vector<Plan> solo { { 0, { 0, NoteEvent::noteOn, 60, 0.8f } } };
+            soloExact = soloExact && renderPlan (inst, 1, solo, 24000)
+                                  == renderPlan (inst, 512, solo, 24000);
+
+            const auto plan = makePlan (inst, 48000);
+            const auto a = renderPlan (inst, 64, plan, 48000);
+            const auto b = renderPlan (inst, 512, plan, 48000);
+            double ea = 0.0, eb = 0.0;
+            for (std::size_t i = 0; i < a.size(); ++i)
+            {
+                ea += static_cast<double> (a[i]) * a[i];
+                eb += static_cast<double> (b[i]) * b[i];
+            }
+            worstRms = std::max (worstRms,
+                                 std::fabs (10.0 * std::log10 (ea / std::max (1.0e-300, eb))));
+        }
+        row ("16.1a", "solo note, block 1 vs block 512", "bit-identical, all five",
+             soloExact ? "identical" : "DIVERGED", verdict (soloExact));
+        row ("16.1b", "pedalled performance, block 64 vs 512", "level within 0.1 dB",
+             fmt ("%.3f dB", worstRms), verdict (worstRms <= 0.1));
+    }
+
+    // 16.2 -- reset() must leave every bank empty. It does not: EpiEngine::
+    // reset() resets the tine, CP-70, grand and Clavinet banks and every
+    // chain around them, and never touches the reed bank -- there is no
+    // `for (auto& v : wurli) v.reset();` in it. The engine keeps sounding a
+    // full-level note through a host reset, and wurliEnergy() reads back
+    // exactly what it read before the call.
+    //
+    // KNOWN GAP, one missing line in EpiEngine.cpp. Held where it measures.
+    {
+        for (int inst = 0; inst < 5; ++inst)
+        {
+            EpiEngine e;
+            e.prepare (fs, 256);
+            EngineParams p = measParams (inst);
+            p.strikeNoise = 0.0f;
+            std::vector<float> L (256), R (256);
+            NoteEvent on { 0, NoteEvent::noteOn, 60, 1.0f };
+            e.process (L.data(), R.data(), 256, p, &on, 1);
+            double atk = 0.0;
+            for (int b = 0; b < 40; ++b)
+            {
+                e.process (L.data(), R.data(), 256, p, nullptr, 0);
+                for (float v : L) atk = std::max (atk, std::fabs (static_cast<double> (v)));
+            }
+            e.reset();
+            double after = 0.0;
+            for (int b = 0; b < 200; ++b)
+            {
+                e.process (L.data(), R.data(), 256, p, nullptr, 0);
+                for (float v : L) after = std::max (after, std::fabs (static_cast<double> (v)));
+            }
+            const double db = 20.0 * std::log10 (after / std::max (1.0e-12, atk) + 1.0e-30);
+            char id[12], what[72];
+            std::snprintf (id, sizeof id, "16.2%d", inst);
+            std::snprintf (what, sizeof what, "%s is silent after reset()", kInstName[inst]);
+            row (id, what, "< -120 dB vs its own attack", fmt ("%.1f dB", db),
+                 gapIf (db < -120.0, db < -2.0));
+        }
+    }
+
+    // 16.3 -- and reset() must make the NEXT note the same note. Strike,
+    // reset, strike again, six times: four instruments repeat to the last
+    // bit. The reed's bank is cleared now and it repeats exactly; so do the
+    // E-Grand, the grand and the Clav.
+    //
+    // The tine still shifts by 0.01 dB and only the tine. It was 1.5 dB
+    // when this row was written, and three things were fixed on the way
+    // down, each correct on its own account: the let-off graduation moved
+    // to the manual's own figure (which is what took the bulk of it), the
+    // engine's free-running generators -- the per-note `seed` and the
+    // action layer's `noiseRng` -- are returned to their constructed
+    // values, and the block-rate smoothers are returned to the sentinel
+    // that makes the first block after a reset snap the way the first
+    // block after construction does. What remains is a tenth of a percent
+    // in amplitude, inaudible, and none of those three is its cause: each
+    // was measured separately and none of them moves it. The remaining
+    // candidate is per-voice glide state that survives RhodesVoice::reset
+    // (the saturation and pickup-offset ramps), which is worth pinning
+    // when someone is next in that file. Held at 2.0 dB so it cannot
+    // silently widen back.
+    {
+        for (int inst = 0; inst < 5; ++inst)
+        {
+            EpiEngine e;
+            e.prepare (fs, 256);
+            EngineParams p = measParams (inst);
+            p.strikeNoise = 0.0f;
+            std::vector<float> L (256), R (256);
+            double first = 0.0, worst = 0.0;
+            for (int pass = 0; pass < 6; ++pass)
+            {
+                if (pass > 0) e.reset();
+                NoteEvent on { 0, NoteEvent::noteOn, 60, 0.8f };
+                double q = 0.0;
+                for (int b = 0; b < 188; ++b)
+                {
+                    e.process (L.data(), R.data(), 256, p, b == 0 ? &on : nullptr, b == 0 ? 1 : 0);
+                    for (float v : L) q = std::max (q, std::fabs (static_cast<double> (v)));
+                }
+                if (pass == 0) first = q;
+                else worst = std::max (worst, std::fabs (20.0 * std::log10 (q / first)));
+            }
+            const double hold = inst == 2 ? 10.0 : inst == 0 ? 2.0 : 0.001;
+            char id[12], what[72];
+            std::snprintf (id, sizeof id, "16.3%d", inst);
+            std::snprintf (what, sizeof what, "%s repeats across six reset cycles", kInstName[inst]);
+            row (id, what, "peak within 0.001 dB of the first",
+                 fmt ("%.2f dB", worst), gapIf (worst <= 0.001, worst <= hold));
+        }
+    }
+
+    // 16.4 -- the per-note hash is alive. Every bank scatters its notes with
+    // a deterministic hash of the note number (note * 2654435761u), and a
+    // hash that returned a constant would leave the keyboard a set of
+    // transposed clones -- audible immediately as a synthesiser, and
+    // invisible to every other row in this suite. The test is a shape, not
+    // a level: measure each key's own RMS across two octaves, subtract the
+    // smooth register trend (a five-point mean), and look at what is left.
+    // A live hash leaves scatter with no memory from key to key; a dead one
+    // leaves a smooth curve, i.e. a residual near zero whose successive
+    // values still agree (lag-1 autocorrelation near +1).
+    {
+        for (int inst : { 1, 3 })
+        {
+            std::vector<double> lvl;
+            for (int note = 48; note <= 75; ++note)
+            {
+                EpiEngine e;
+                e.prepare (fs, 256);
+                EngineParams p = measParams (inst);
+                p.strikeNoise = 0.0f;
+                std::vector<float> L (256), R (256);
+                NoteEvent on { 0, NoteEvent::noteOn, note, 0.8f };
+                double en = 0.0;
+                for (int b = 0; b < 120; ++b)
+                {
+                    e.process (L.data(), R.data(), 256, p, b == 0 ? &on : nullptr, b == 0 ? 1 : 0);
+                    for (float v : L) en += static_cast<double> (v) * v;
+                }
+                lvl.push_back (10.0 * std::log10 (en / (120.0 * 256.0) + 1.0e-30));
+            }
+            std::vector<double> res;
+            for (std::size_t i = 2; i + 2 < lvl.size(); ++i)
+                res.push_back (lvl[i] - 0.2 * (lvl[i-2] + lvl[i-1] + lvl[i] + lvl[i+1] + lvl[i+2]));
+            double s2 = 0.0, lag = 0.0;
+            for (double v : res) s2 += v * v;
+            for (std::size_t i = 1; i < res.size(); ++i) lag += res[i] * res[i-1];
+            const double rms = std::sqrt (s2 / static_cast<double> (res.size()));
+            const double ac  = lag / std::max (1.0e-300, s2);
+            char id[12], what[72];
+            std::snprintf (id, sizeof id, "16.4%d", inst);
+            std::snprintf (what, sizeof what, "%s adjacent keys are not clones", kInstName[inst]);
+            row (id, what, "residual > 0.15 dB, lag-1 < 0.5",
+                 fmt2 ("%.3f dB, r1 %+.3f", rms, ac),
+                 verdict (rms > 0.15 && ac < 0.5));
+        }
+    }
+}
+
+// ===========================================================================
+// 17. The state machine at its edges.
+//
+// Every one of these is a thing a host does and a test rarely does: an
+// all-notes-off that lands inside the instrument-switch fade, a pedal event
+// arriving while the old instrument is still fading out, the whole compass
+// struck at once under the pedal and then switched, and buffer sizes a DAW
+// only produces at the ends of a loop.
+// ===========================================================================
+
+static void sectionEdges()
+{
+    heading ("17. state-machine edges");
+
+    const double fs = 48000.0;
+
+    // 17.0 -- a pedal or panic event landing at eight different points
+    // inside the switch fade, for each of the three event types that can
+    // reach the fade. The fade is the one place the engine holds two
+    // instruments at once and parks notes for the new one; an event handled
+    // against the wrong side of it is how a note goes missing or a damper
+    // stays open on a bank nobody is listening to.
+    {
+        static const char* const kNm[3] = { "allNotesOff", "sustainOn", "sustainOff" };
+        static const NoteEvent::Type kTy[3] = { NoteEvent::allNotesOff,
+                                                NoteEvent::sustainOn, NoteEvent::sustainOff };
+        for (int t = 0; t < 3; ++t)
+        {
+            bool finite = true;
+            double pk = 0.0;
+            for (int delay = 0; delay < 8; ++delay)
+            {
+                EpiEngine e;
+                e.prepare (fs, 64);
+                EngineParams p {};
+                p.instrument = 0;
+                p.outGainLin = 0.7f;
+                std::vector<float> L (64), R (64);
+                std::vector<NoteEvent> on;
+                for (int n = 48; n < 60; ++n) on.push_back ({ 0, NoteEvent::noteOn, n, 1.0f });
+                e.process (L.data(), R.data(), 64, p, on.data(), static_cast<int> (on.size()));
+                for (int b = 0; b < 20; ++b) e.process (L.data(), R.data(), 64, p, nullptr, 0);
+                p.instrument = 3;              // the fade starts on the next block
+                for (int b = 0; b < 240; ++b)
+                {
+                    NoteEvent ev { 0, kTy[t], 0, 1.0f };
+                    const bool fire = b == delay * 3;
+                    e.process (L.data(), R.data(), 64, p, fire ? &ev : nullptr, fire ? 1 : 0);
+                    for (float v : L) { pk = std::max (pk, std::fabs (static_cast<double> (v)));
+                                        finite = finite && std::isfinite (v); }
+                    for (float v : R) { pk = std::max (pk, std::fabs (static_cast<double> (v)));
+                                        finite = finite && std::isfinite (v); }
+                }
+            }
+            char id[12], what[72];
+            std::snprintf (id, sizeof id, "17.0%d", t);
+            std::snprintf (what, sizeof what, "%s inside the switch fade x8", kNm[t]);
+            row (id, what, "finite, pk<=1", fmt ("pk %.3f", pk), verdict (finite && pk <= 1.0));
+        }
+    }
+
+    // 17.1 -- the whole compass at fortissimo, the pedal down, and then the
+    // instrument changed under it, for five ordered pairs. Eighty-eight
+    // voices are all sounding when the fade starts, so both banks are live
+    // at once and the parked-note path is loaded.
+    {
+        bool finite = true;
+        double pk = 0.0;
+        for (int a = 0; a < 5; ++a)
+        {
+            const int b2 = (a + 1) % 5;
+            EpiEngine e;
+            e.prepare (fs, 128);
+            EngineParams p {};
+            p.instrument = a;
+            p.outGainLin = 0.7f;
+            std::vector<float> L (128), R (128);
+            std::vector<NoteEvent> evs;
+            evs.push_back ({ 0, NoteEvent::sustainOn, 0, 1.0f });
+            for (int n = EpiEngine::kLoNote; n <= EpiEngine::kHiNote; ++n)
+                evs.push_back ({ 0, NoteEvent::noteOn, n, 1.0f });
+            auto step = [&] (int blocks, const NoteEvent* ev, int nev)
+            {
+                for (int k = 0; k < blocks; ++k)
+                {
+                    e.process (L.data(), R.data(), 128, p, k == 0 ? ev : nullptr, k == 0 ? nev : 0);
+                    for (float v : L) { pk = std::max (pk, std::fabs (static_cast<double> (v)));
+                                        finite = finite && std::isfinite (v); }
+                    for (float v : R) { pk = std::max (pk, std::fabs (static_cast<double> (v)));
+                                        finite = finite && std::isfinite (v); }
+                }
+            };
+            step (40, evs.data(), static_cast<int> (evs.size()));
+            p.instrument = b2;
+            step (200, nullptr, 0);
+        }
+        row ("17.1", "88 notes + pedal, then switched (5 pairs)", "finite, pk<=1",
+             fmt ("pk %.3f", pk), verdict (finite && pk <= 1.0));
+    }
+
+    // 17.2 -- block sizes a host really produces: a single sample at a loop
+    // boundary, small primes that never divide any internal decimation
+    // period, and a buffer larger than any scratch the engine owns.
+    {
+        int bIdx = 0;
+        for (int block : { 1, 3, 5, 8192 })
+        {
+            bool finite = true;
+            double pk = 0.0;
+            for (int inst = 0; inst < 5; ++inst)
+            {
+                EpiEngine e;
+                e.prepare (fs, block);
+                EngineParams p {};
+                p.instrument = inst;
+                p.outGainLin = 0.7f;
+                std::vector<float> L (static_cast<std::size_t> (block));
+                std::vector<float> R (static_cast<std::size_t> (block));
+                std::vector<NoteEvent> on;
+                for (int n = 55; n < 62; ++n) on.push_back ({ 0, NoteEvent::noteOn, n, 1.0f });
+                on.push_back ({ 0, NoteEvent::sustainOn, 0, 1.0f });
+                const int N = static_cast<int> (fs * 0.4);
+                for (int i = 0; i < N; i += block)
+                {
+                    const int n = std::min (block, N - i);
+                    e.process (L.data(), R.data(), n, p, i == 0 ? on.data() : nullptr,
+                               i == 0 ? static_cast<int> (on.size()) : 0);
+                    for (int k = 0; k < n; ++k)
+                    {
+                        const float l = L[static_cast<std::size_t> (k)];
+                        const float r = R[static_cast<std::size_t> (k)];
+                        pk = std::max (pk, std::max (std::fabs (static_cast<double> (l)),
+                                                     std::fabs (static_cast<double> (r))));
+                        finite = finite && std::isfinite (l) && std::isfinite (r);
+                    }
+                }
+            }
+            char id[12], what[72];
+            std::snprintf (id, sizeof id, "17.2%d", bIdx++);
+            std::snprintf (what, sizeof what, "block %d, all five, ff + pedal", block);
+            row (id, what, "finite, pk<=1", fmt ("pk %.3f", pk), verdict (finite && pk <= 1.0));
+        }
+    }
+}
+
+// ===========================================================================
+// 18. Passivity, with the excitation gone.
+//
+// The project's law is that a nonlinear term is quadratised so that it
+// cannot generate: the potential is carried as psi = sqrt(2V) and
+// contributes psi^2/2, a square, and a square has no sign to give away. That
+// is an argument, and arguments are cheap. Once the hammer has left the
+// resonator there is nothing pushing it, so the resonator's own energy must
+// fall on EVERY step, at every setting, for as long as anyone listens --
+// including with the large-deflection coupling and the hammer hardness at
+// their rails, which is where a term that could generate would.
+//
+// Three banks expose their modal energy to tests and get the strict form.
+// The grand and the Clavinet do not, so they get the honest weaker one: the
+// radiated output is not an energy (the board takes up the string's energy
+// over the first second and radiates it better than the string did), so the
+// row holds that no window after the strike ever exceeds the strike itself.
+// ===========================================================================
+
+static void sectionPassivity()
+{
+    heading ("18. passivity after the excitation leaves");
+
+    const double fs = 48000.0;
+    const int block = 256;
+
+    // 18.0 -- the strict form, on the banks with an energy accessor.
+    {
+        static const struct { const char* name; int inst; } kBank[3] = {
+            { "tine", 0 }, { "E-Grand string", 1 }, { "reed", 2 } };
+        for (int k = 0; k < 3; ++k)
+        {
+            EpiEngine e;
+            e.prepare (fs, block);
+            EngineParams p {};
+            p.instrument   = kBank[k].inst;
+            p.outGainLin   = 0.7f;
+            p.nonlinAmt    = 1.0f;    // large-deflection coupling at its rail
+            p.hammerHard   = 1.0f;
+            p.tipMass      = 1.0f;
+            p.barCouple    = 1.0f;
+            p.strikeNoise  = 0.0f;
+            std::vector<float> L (static_cast<std::size_t> (block));
+            std::vector<float> R (static_cast<std::size_t> (block));
+            NoteEvent on { 0, NoteEvent::noteOn, 45, 1.0f };
+            e.process (L.data(), R.data(), block, p, &on, 1);
+            const int idx = 45 - EpiEngine::kLoNote;
+            auto energy = [&]
+            {
+                return kBank[k].inst == 0 ? e.tineEnergy (idx)
+                     : kBank[k].inst == 1 ? e.cp70Energy (idx)
+                                          : e.wurliEnergy (idx);
+            };
+            // 55 ms for the hammer to leave the string, then watch for 9.6 s.
+            for (int b = 0; b < 10; ++b) e.process (L.data(), R.data(), block, p, nullptr, 0);
+            double prev = energy(), first = prev, worst = 1.0;
+            int rises = 0;
+            for (int b = 0; b < 1800; ++b)
+            {
+                e.process (L.data(), R.data(), block, p, nullptr, 0);
+                const double v = energy();
+                const double r = v / std::max (1.0e-300, prev);
+                if (r > 1.0) { ++rises; worst = std::max (worst, r); }
+                prev = v;
+            }
+            char id[12], what[72];
+            std::snprintf (id, sizeof id, "18.0%d", k);
+            std::snprintf (what, sizeof what, "%s modal energy never rises, 9.6 s", kBank[k].name);
+            row (id, what, "0 rising blocks of 1800",
+                 fmt ("%.0f rising, ", static_cast<double> (rises))
+                     + fmt2 ("E %.2e -> %.2e", first, prev),
+                 verdict (rises == 0 && prev < first));
+        }
+    }
+
+    // 18.1 -- the weaker form for the two banks without an accessor: three
+    // notes at fortissimo, every nonlinear control at its rail, no pedal, no
+    // room and no cabinet, then twenty 0.25 s windows. No window after the
+    // strike may exceed it.
+    {
+        for (int inst : { 3, 4 })
+        {
+            EpiEngine e;
+            e.prepare (fs, block);
+            EngineParams p {};
+            p.instrument  = inst;
+            p.outGainLin  = 0.7f;
+            p.nonlinAmt   = 1.0f;
+            p.hammerHard  = 1.0f;
+            p.preampDrive = 1.0f;
+            p.strikeNoise = 0.0f;
+            p.spaceMix    = 0.0f;
+            p.cabMix      = 0.0f;
+            p.tremDepth   = 0.0f;
+            p.phaserMix   = 0.0f;
+            std::vector<float> L (static_cast<std::size_t> (block));
+            std::vector<float> R (static_cast<std::size_t> (block));
+            std::vector<NoteEvent> on;
+            for (int n : { 40, 47, 52 }) on.push_back ({ 0, NoteEvent::noteOn, n, 1.0f });
+            e.process (L.data(), R.data(), block, p, on.data(), static_cast<int> (on.size()));
+
+            const int perWin = static_cast<int> (0.25 * fs) / block;
+            double firstWin = 0.0, worstRatio = 0.0, lastWin = 0.0;
+            bool finite = true;
+            for (int w = 0; w < 20; ++w)
+            {
+                double acc = 0.0;
+                for (int b = 0; b < perWin; ++b)
+                {
+                    e.process (L.data(), R.data(), block, p, nullptr, 0);
+                    for (int i = 0; i < block; ++i)
+                    {
+                        const float l = L[static_cast<std::size_t> (i)];
+                        const float r = R[static_cast<std::size_t> (i)];
+                        acc += static_cast<double> (l) * l + static_cast<double> (r) * r;
+                        finite = finite && std::isfinite (l) && std::isfinite (r);
+                    }
+                }
+                if (w == 0) firstWin = acc;
+                else worstRatio = std::max (worstRatio, acc / std::max (1.0e-300, firstWin));
+                lastWin = acc;
+            }
+            char id[12], what[72];
+            std::snprintf (id, sizeof id, "18.1%d", inst);
+            std::snprintf (what, sizeof what, "%s ff, all nonlinears at rail, 5 s", kInstName[inst]);
+            row (id, what, "no window exceeds the strike",
+                 fmt2 ("worst %.3f, last/first %.2e", worstRatio,
+                       lastWin / std::max (1.0e-300, firstWin)),
+                 verdict (finite && worstRatio <= 1.0));
+        }
+    }
+}
+
+// ===========================================================================
 
 int main()
 {
@@ -1818,6 +2761,11 @@ int main()
     sectionGrabNoise();
     sectionKeyNoise();
     sectionSoftPedal();
+    sectionParamSweep();
+    sectionRateNew();
+    sectionDeterminism();
+    sectionEdges();
+    sectionPassivity();
 
     const double wall = std::chrono::duration<double> (std::chrono::steady_clock::now() - t0).count();
     std::printf ("\nsuite wall time %.1f s\n", wall);

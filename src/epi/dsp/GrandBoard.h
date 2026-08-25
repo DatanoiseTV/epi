@@ -96,7 +96,13 @@ class GrandBoard
 {
 public:
     static constexpr int kModes = 72;
-    static constexpr int kThunkLen = 864;   // 18 ms at 48 kHz
+    // The trapwork pulse is 18 ms of real time, so its length in SAMPLES
+    // has to be derived when the rate is known. It was a compile-time
+    // constant of 864, which is 18 ms only at 48 kHz -- at 44.1 the thump
+    // ran 19.6 ms and at 192 kHz it ran 4.5, so the pulse's bandwidth
+    // followed the sample rate and the thunk's level moved 14 dB across the
+    // supported range. Time is time.
+    static constexpr double kThunkSeconds = 0.018;
     using System = SavModalSystem<kModes, 2>;
 
     // The band edge: above this the board is out of the loop entirely.
@@ -128,6 +134,8 @@ public:
     void prepare (double sampleRate)
     {
         fs = sampleRate;
+        thunkLen = std::max (1, static_cast<int> (std::lround (kThunkSeconds * fs)));
+        thunkPos = thunkLen;          // idle
         sys.prepare (sampleRate);
         buildLadder();
         configure (Config {});
@@ -284,9 +292,9 @@ public:
     // its state sample-synchronously.
     void tick()
     {
-        if (thunkPos < kThunkLen)
+        if (thunkPos < thunkLen)
         {
-            const double t = thunkPos / double (kThunkLen);
+            const double t = thunkPos / double (thunkLen);
             const double f = thunkAmp * 0.5 * (1.0 - std::cos (2.0 * kPiD * t));
             double* d = sys.driveData();
             for (int m2 = 0; m2 < kModes; ++m2) d[m2] += thunkPhi[m2] * f;
@@ -414,7 +422,8 @@ private:
     double phiAmp = 0.0;
     double thunkPhi[kModes] {};
     double thunkAmp = 0.0;
-    int    thunkPos = kThunkLen;
+    int    thunkLen = 864;      // set in prepare from kThunkSeconds
+    int    thunkPos = 864;      // idle until prepare sets it
     double bodyFScale = 1.0, bodyMScale = 1.0, bodyEta = 0.0;
     double appliedRadFc = kRadFcHz;
     double modeF[kModes] {};

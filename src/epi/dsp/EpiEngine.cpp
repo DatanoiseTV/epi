@@ -158,6 +158,12 @@ void EpiEngine::reset()
 {
     for (auto& v : tines) v.reset();
     for (auto& v : cp70) { v.reset(); }
+    // The reed bank, which this forgot: every other bank was reset here and
+    // the Wurlitzer's was not, so a reed caught mid-ring kept ringing
+    // through a host's reset and arrived in the next render as an
+    // uninvited note (measured -3.8 dB against its own attack, and 8.6 dB
+    // of variation between supposedly identical strikes afterwards).
+    for (auto& v : wurli) { v.reset(); }
     cp70Preamp.reset();
     wurliBus.reset();
     wurliPre.reset();
@@ -178,6 +184,21 @@ void EpiEngine::reset()
     harp.reset();
     action.reset();
     room.reset();
+    // The two free-running generators, which this left where they were.
+    // Every strike takes its per-note randomisation from `seed`, and the
+    // action layer walks `noiseRng` continuously, so a reset that did not
+    // return them left the NEXT strike drawing from a different point in
+    // the sequence: the instrument did not repeat across a reset, which is
+    // precisely what a bounce is supposed to be. Restored to the values a
+    // freshly constructed engine starts on.
+    seed = 0x2545f491u;
+    noiseRng = Rng { 0x51ed270bu };
+    // And the block-rate smoothers, which carry the previous session's
+    // drive, tone and gain across a reset and start the next note gliding
+    // from wherever the last one left them. Returned to their sentinel so
+    // the first block after a reset snaps to its parameters, exactly as the
+    // first block after construction does.
+    sm = SmoothedParams {};
     pedalDown = false;
     pedalAmount = 0.0;
     unaCorda = false;
