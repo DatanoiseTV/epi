@@ -79,9 +79,16 @@ public:
     struct Geometry
     {
         // All in metres. A Rhodes pole piece is ground to a narrow wedge, and
-        // what matters is not the size of the slug but the width of the region
-        // whose field the tine actually samples -- Pfeifle's FEM shows only a
-        // small part of the tip carries the field.
+        // halfWidth is the EFFECTIVE half-width of the region whose field the
+        // tine actually samples, not a measurement of the slug -- Pfeifle's
+        // FEM shows only a small part of the tip carries the field, and 1.6 mm
+        // is a calibration against the harmonic content (see FEATURES.md's
+        // inference table). One number then serves both roles the geometry
+        // needs, and integrate() uses it as both: surfaceGap() recedes to the
+        // full wedge depth by |v| = halfWidth, and the charge footprint is a
+        // disc of RADIUS halfWidth, chorded so the charge tapers to nothing at
+        // the rim. Widening it therefore widens the sampled region and the
+        // charge sheet together, which is the intended coupling.
         //
         // This number is half the story of the instrument's voice. The other
         // half is how far the tine swings, and it is their RATIO that decides
@@ -90,7 +97,8 @@ public:
         // tine only ever sees the flat top of the curve and the output is a
         // sine -- which is what this model did at any normal playing strength
         // until the pole was narrowed and the hammer given its proper energy.
-        float halfWidth   = 1.6e-3f;   // half the pole face, centreline to edge
+        float halfWidth   = 1.6e-3f;   // effective pole half-width, and the
+                                       // charge disc's radius (see above)
         float flatHalf    = 0.28e-3f;  // half-width of the flat at the wedge tip
         float wedgeDepth  = 0.95e-3f;  // how far the surface recedes at the edge
         float nominalGap  = 1.5e-3f;   // tine-to-wedge-tip distance at rest
@@ -112,9 +120,19 @@ public:
     // Wide enough that the tine never reaches the edge. The lookup clamps
     // there, and a clamp is a corner in the first derivative sitting in the
     // middle of the signal path -- the same defect that has been measured
-    // costing tens of decibels of alias floor in other implementations. Out at
-    // eight half-widths the field is already three orders of magnitude down,
-    // so the clamp is on a value indistinguishable from zero.
+    // costing tens of decibels of alias floor in other implementations.
+    //
+    // What makes the clamp harmless is NOT that the field has died: with the
+    // two-sheet slug the far field is the return flux beside the magnet, so
+    // the curve crosses zero at 5.1 half-widths (8.2 mm at the nominal gap,
+    // the sign change the integrate() note describes) and then settles into
+    // an opposite-signed lobe. Measured on the built table at the nominal
+    // gap, the value at the span is -44.9 dB against the centreline -- a bit
+    // over two orders of magnitude down, not three -- but it sits within a
+    // quarter of a percent of that lobe's own extremum, so the SLOPE there
+    // is 5e-5 per half-width against 0.55 near the centreline. The clamp is
+    // on a stationary value, which is what a first-derivative corner needs,
+    // and that is the reason the span is where it is.
     static constexpr float kVSpan = 8.0f;   // in units of halfWidth
     // The table must reach BELOW anything the voice can ask for. Its floor
     // used to sit at 0.35 of the nominal gap -- 0.53 mm -- while the gap
@@ -204,8 +222,9 @@ private:
     // decays, and past about eight millimetres it changes sign: out there
     // you are beside the magnet, where the flux is on its way back.
     //
-    // The footprint is the slug's disc rather than an infinite strip: at
-    // lateral offset v the chord across a disc of radius halfWidth is
+    // The footprint is a disc rather than an infinite strip: at lateral
+    // offset v the chord across a disc of radius halfWidth (the effective
+    // pole half-width -- see Geometry) is
     // 2 sqrt(halfWidth^2 - v^2), which tapers the charge to nothing at the
     // rim instead of cutting it off at a cliff the model then has to
     // interpolate across.
@@ -312,22 +331,26 @@ public:
     // that turns it into a signal, and it is a real property of a pickup: turns,
     // wire gauge, and how much of the tine sits in the field. A Rhodes coil is
     // about 180 ohms of AWG 37 around an Alnico 5 slug; the turns count is not
-    // published anywhere, so this is calibrated by measurement instead --
-    // set so a fortissimo note arrives at the preamp just into its curve, and a
-    // mezzo-forte one sits about seventeen decibels below that.
+    // published anywhere, so this is calibrated by measurement instead.
+    //
+    // ONE target owns it: a single fortissimo note arrives about twelve
+    // decibels below the preamp's knee. That headroom is not slack -- the
+    // instrument sums every note onto one bus before the preamp, so a
+    // six-note chord with the pedal down reaches two and a half times a
+    // single note, and with the level set for one note that chord arrives as
+    // a square wave. Leaving the room means the drive control decides how
+    // hard the stage is pushed, rather than the number of keys held deciding
+    // it. (This superseded an earlier target of "fortissimo just into the
+    // curve", which is the level the chord argument moved away from. Any
+    // ff-to-mf SPREAD belongs to the launch law and the velocity map, not
+    // here: a scalar sensitivity moves both ends together and cannot set a
+    // ratio.)
     //
     // Getting it wrong is not a level problem. Too hot and every note lands in
     // the same place on the preamp's tanh, the instrument loses its dynamics
     // entirely, and velocity stops doing anything at all -- which is exactly
     // what the first render measured: a 49 dB spread at the coil arriving as
     // 0 dB of difference at the output.
-    // Set so a single fortissimo note arrives about twelve decibels below the
-    // preamp's knee. That headroom is not slack: the instrument sums every
-    // note onto one bus before the preamp, so a six-note chord with the pedal
-    // down reaches two and a half times a single note, and with the level set
-    // for one note that chord arrives as a square wave. Leaving the room means
-    // the drive control decides how hard it is pushed, rather than the number
-    // of keys held decide it.
     static constexpr float kNominalSensitivity = 3.0e-4f;
 
     void setSensitivity (float s) { sensitivity = std::max (0.0f, s); }

@@ -67,7 +67,6 @@ namespace epi::ids
     inline constexpr const char* coilQ      = "coilQ";      // 0..1
     inline constexpr const char* coilSat    = "coilSat";    // 0..1 core saturation
 
-    // Clavinet pickup switching. Order must match epi::PickupSelect.
     inline const juce::StringArray hammerMatNames {
         "Stock", "Soft Felt", "Hard Felt", "Lacquered", "Leather", "Wood" };
     inline const juce::StringArray damperFeltNames {
@@ -91,6 +90,9 @@ namespace epi::ids
         "Stock", "Spruce", "Maple", "Birch Ply",
         "Aluminium", "Steel", "Brass", "Carbon" };
 
+    // The Clavinet's pickup switch. Order must match epi::PickupSelect
+    // (neck, bridge, bothIn, bothOut) -- EngineParamMap passes the index
+    // through as clavSwitch.
     inline const juce::StringArray clavSwitchNames {
         // The D6 selector rockers resolved to their four states.
         "Center", "Bridge", "Both", "Out of Phase" };

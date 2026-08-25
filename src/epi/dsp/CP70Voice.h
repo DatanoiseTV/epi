@@ -34,12 +34,18 @@ namespace epi
 //     a linear functional of the modal state: no field, no saturation, no
 //     oversampling, no SAV terms. The pickup law and the preamp make the
 //     timbre.
-//   - NO coupling between the two strings of a bichord, and none to any
-//     frame. The research proved the rigid-bridge limit directly: the C4
-//     fundamental resolves into two independent pairs with no symmetric/
-//     antisymmetric splitting. Sympathetic resonance on this instrument
-//     would be an invented feature contradicted by the data. The one moment
-//     the unison strings interact is the millisecond they share the hammer.
+//   - NO direct coupling between the two strings of a bichord. The research
+//     proved the rigid-bridge limit directly: the C4 fundamental resolves
+//     into two independent pairs with no symmetric/antisymmetric splitting.
+//     The one moment the unison strings interact inside this class is the
+//     millisecond they share the hammer. What the strings DO share is the
+//     frame: the engine runs a weak linear spring from every string's
+//     termination to one bridge-frame coordinate (clampDisplacement /
+//     addClampForce / wakeSympathetic below, driven from EpiEngine's CP-70
+//     block). The measured -42 dB beat nulls BOUND that spring, they do not
+//     forbid it -- a linear spring preserves superposition exactly, which is
+//     what the P3 row tests. See the frame-path section further down for the
+//     derivation and for the two ways the coupling shape was got wrong.
 //
 // The pickup is the point. A piezo under the bridge reads the transverse
 // FORCE at the termination, F = T * dy/dx at x=0, so mode k's readout weight

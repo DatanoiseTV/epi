@@ -455,9 +455,16 @@ private:
 class ClavinetVoice
 {
 public:
-    // Worst case F1 at 48 kHz carries ~121 partials under the fs/pi budget
-    // [C, plan 1.4]; one more slot holds the beat partner. Shared constant
-    // with the CP-70, which needs 129.
+    // F1 -- the real instrument's lowest key -- carries 121 partials under
+    // the fs/pi budget at 48 kHz [C, plan 1.4], and one more slot holds the
+    // beat partner. The array has to be bigger than that, because the engine
+    // keeps its full A0-C8 note array as the other instruments do and the
+    // extrapolated notes below F1 ask for MORE, not fewer: the interpolated
+    // B keeps falling while f0 falls with it, and A1 wants 131. The count
+    // loop's `kV + 2 >= kMaxModes` guard is what actually bounds it there --
+    // A1 ships 130 partials plus its beat partner, one partial short of the
+    // budget, in the extrapolated range where no measurement exists anyway.
+    // Shared constant with the CP-70, which needs 129.
     static constexpr int kMaxModes = 132;
     using System = SavModalSystem<kMaxModes, 2>;   // SAV slots reserved, none
                                                    // active: the measured tone

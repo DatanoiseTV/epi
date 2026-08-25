@@ -427,12 +427,21 @@ public:
         damperEffHi = std::pow (damperFactor, feltWHi * x);
     }
 
-    // One sample of mechanics, four subsamples of transduction. Writes kOver
-    // capacitance perturbations DC_n = C0n * y/(1-y) in picofarads, relative
-    // to the resting value so a silent voice contributes exactly zero. The
-    // caller sums all voices onto one bus -- the real reed bar hangs all 64
-    // gaps on ONE 240 pF node, so superposition at the node is exact and
-    // intermodulation belongs to the preamp, where the circuit puts it.
+    // One sample of mechanics, four subsamples of transduction. On the native
+    // (electrostatic) path it writes kOver capacitance perturbations
+    // DC_n = C0n * (capLaw(y) - capLaw(rest)) in picofarads -- capLaw is the
+    // bounded stand-in for the parallel-plate y/(1-y), carrying the turnover
+    // at the plate plane; see its own note -- relative to the resting value,
+    // so a silent voice contributes exactly zero. The caller sums all voices
+    // onto one bus: the real reed bar hangs all 64 gaps on ONE 240 pF node,
+    // so superposition at the node is exact and intermodulation belongs to
+    // the preamp, where the circuit puts it.
+    //
+    // The swap lanes write the same slots but are not capacitances at all --
+    // magnetic writes a flux difference off the shared field table, contact
+    // the reed's inertial clamp force. Their output constants are
+    // probe-matched to the native path, which is what makes one summing bus
+    // legitimate for all three.
     void process (const Config& cfg, double* dcOut)
     {
         (void) cfg;
@@ -586,20 +595,27 @@ public:
     //
     // which IS y/(1-y) wherever |d| >> w (not just to second order -- the
     // small-signal law, the P2 asymmetry and the sensitivity anchor are
-    // untouched), peaks smoothly at the plane with height ~1/w, and decays
-    // toward the even far field beyond. w = 0.20 is the V1-calibration
-    // constant standing in for the slot's lateral clearance: it sets the
-    // peak (~5x the rest capacitance) and thereby how hard the spike train
+    // untouched), peaks smoothly at the plane at a height of order 1/w, and
+    // decays toward the even far field beyond. w = 0.20 is the
+    // V1-calibration constant standing in for the slot's lateral clearance:
+    // it sets the peak (g(1) = 4.26, so a little over four times the rest
+    // capacitance) and thereby how hard the spike train
     // drives the preamp's +2 V rail -- at 0.10 the taller spikes clip 7 dB
     // of harmonic energy off the measured A1 ff bark, at 0.20 the measured
     // bark lands on the recording's +26.7 dB. Plate CONTACT stays a fault,
     // not an operating point: the law is smooth and bounded everywhere, and
-    // its maximum slope is ~1/w^2 = 25, far below the knee's 278, which
-    // also eases the aliasing the oversampling has to remove.
+    // its maximum slope is 0.41/w^2 -- 10.2, measured on this very function,
+    // where the parallel-plate knee reaches 278 -- which also eases the
+    // aliasing the oversampling has to remove.
     static double capLaw (double y)
     {
         constexpr double w = 0.20;
-        constexpr double norm = 1.0606601717798212;   // (1 + w^2)^{3/2}
+        // (1 + w^2)^{3/2} is 1.06059606; the literal below is sqrt(9/8),
+        // six parts in a hundred thousand above it, so the small-signal
+        // slope at y = 0 is 1.00006 rather than exactly 1. Left as it
+        // stands because every level in this voice was calibrated through
+        // it, and the discrepancy is far under any row's tolerance.
+        constexpr double norm = 1.0606601717798212;
         constexpr double rest = 0.98058067569092022;  // 1/sqrt(1 + w^2)
         const double d = 1.0 - y;
         return norm * (1.0 / std::sqrt (d * d + w * w) - rest);
@@ -674,7 +690,7 @@ private:
 
     // One reference blow against a scratch copy of the configured reed, for
     // the stiffness calibration above. The copy is a value copy of the tiny
-    // four-mode system; its state is cleared, its modes kept.
+    // kReedModes-mode system; its state is cleared, its modes kept.
     double simulateContactSeconds (double stiffness) const
     {
         System scratch (sys);
@@ -820,7 +836,7 @@ private:
         // the measurement itself: a bisection over log-stiffness, each probe
         // one simulated reference blow (v = 2 m/s) against a scratch copy of
         // this reed's own modal system -- correctness measured, not assumed.
-        // Fourteen probes of a four-mode system for a few reed periods each;
+        // Fourteen probes of a three-mode system for a few reed periods each;
         // the engine already treats instrument builds as offline work.
         // The hardness knob then scales k the house way, x12^(hardness-0.5).
         {

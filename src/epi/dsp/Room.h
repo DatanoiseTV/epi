@@ -72,10 +72,11 @@ public:
     {
         fs = sampleRate;
 
-        // Mutually prime lengths, spread over about a 4:1 range, scaled from a
-        // 48 kHz reference so the room keeps its size at any sample rate. Prime
-        // lengths matter: any common factor between two delays puts their
-        // echoes on top of each other and the result rings at that period.
+        // Mutually prime lengths, spread over 2.7:1 (1327 to 3593 samples at
+        // 48 kHz -- kPrime48 below), scaled from that 48 kHz reference so the
+        // room keeps its size at any sample rate. Prime lengths matter: any
+        // common factor between two delays puts their echoes on top of each
+        // other and the result rings at that period.
         // The buffers are allocated for the longest profile (Church at full
         // size needs 1.24x the shipped set) so a profile change never
         // allocates; each profile then uses an effective length within them.
