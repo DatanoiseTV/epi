@@ -27,11 +27,16 @@ namespace epi
 // effect, not pretending to be physics.
 //
 // Six first-order all-pass sections with feedback, which is the topology every
-// pedal of that era used. Each section contributes 180 degrees of phase shift
-// at its corner, so six of them put five notches into the sum with the dry
-// signal; the feedback sharpens them into resonances rather than dips, and it
-// is most of what separates a phaser that sounds like anything from one that
-// sounds like a tone control being wobbled.
+// pedal of that era used. Each section sweeps from 0 to -180 degrees, passing
+// -90 AT its corner, so the cascade covers 1080 degrees and the sum with the
+// dry signal cancels at -180, -540 and -900: THREE notches, the usual
+// stages-over-two. Measured on this filter with the sweep parked at its
+// 800 Hz centre and no feedback, they land at 212 Hz, 794 Hz and 2.9 kHz.
+// The feedback sharpens them into resonances rather than dips, and it is most
+// of what separates a phaser that sounds like anything from one that sounds
+// like a tone control being wobbled. (At mix = 1 there is no dry half left in
+// the sum, so the notches vanish and the output is pure all-pass; the control
+// is a blend for a physical reason.)
 //
 // The sweep coefficient uses the bilinear map without prewarping, a = (1-w)
 // / (1+w). For a notch that is moving anyway the frequency error is inaudible,

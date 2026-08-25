@@ -133,8 +133,8 @@ instrument.
 </div>
 
 Everything the workshops hold is saved in your project **and inside every
-preset you save** — a saved sound is the whole sound. 46 factory presets
-ship across the five instruments, and every one is rendered and measured
+preset you save** — a saved sound is the whole sound. Factory presets ship
+across all five instruments, and every one of them is rendered and measured
 by its own test harness (levels, character claims, legal
 material-transducer pairings) before it ships.
 
@@ -188,13 +188,15 @@ submodule. `cmake -S . -B build && cmake --build build --target Epi_All`.
 Measured, not asserted. The models are calibrated against recordings of the
 real instruments and against the published measurements of the people who
 put them under high-speed cameras and spectrum analysers — and the repo
-carries the receipts: six test suites (350+ numbered rows) render audio
+carries the receipts: eight test suites of numbered rows render audio
 offline and measure it, from inharmonicity curves and per-partial decay
 rates to "a chord must equal the sum of its notes on the piezo bridge, and
 must NOT on a coupled soundboard". One suite per model family (tine, reed,
-grand, clav), one for the DSP cores, and one that renders every factory
-preset and holds it to its own claims — all run in CI on macOS, Windows,
-and Linux. `docs/` holds the implementation plans and the research notes
+grand, clav), one for the DSP cores, one that renders every factory preset
+and holds it to its own claims, one for the engine's seams (instrument
+switching, pedals, knob-sweep clicks, the output rail), and one that
+round-trips plugin state through the real processor — all run in CI on
+macOS, Windows, and Linux. `docs/` holds the implementation plans and the research notes
 with every number's provenance.
 
 ## Trademarks

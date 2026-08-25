@@ -36,7 +36,7 @@ many more modes, no per-voice transduction path at all.
 hammer -> string 1 (V + H polarisation)  --\
        -> string 2 (V + H polarisation)  ---+--> per-note bridge force (n-weighted)
                                              |        (x region trim)
-             73+ voices ---------------------+--> one bus -> 12 Hz HP -> preamp
+             73+ voices ---------------------+--> one bus -> bus HP -> preamp
                                                        -> tremolo panner -> out
 ```
 
@@ -330,6 +330,15 @@ passivity is untouched (nothing is filtered on a feedback path).
 - One shared **first-order high-pass at 12 Hz** on the summed bus
   (`OnePoleD`): 470 kΩ × C_bus ≈ 30 nF, inside the inferred 8–19 Hz window.
   Inaudible at E1's 41 Hz; present because it is real and it is one line.
+  > **Superseded by what shipped.** `CP70Preamp::prepare` runs **two poles at
+  > 60 Hz**, not one at 12. The reason is in that function's own comment: the
+  > model's termination readout faithfully reproduces the hammer's unipolar
+  > millisecond-scale force hump, the reference recordings do not contain it,
+  > and a 12 Hz corner passes it straight through. The element-plus-cable
+  > source capacitance against the input resistance sits far higher than the
+  > preamp's input cap anyway. Two poles at 60 Hz remove the hump at a cost
+  > of under a decibel on the D3 fundamental, which is what the measured
+  > attack-to-body ratios require.
 - **No pickup resonance of any kind.** Established two ways: the pooled
   spectral residual shows no narrow fixed peak 60 Hz–15 kHz that the control
   grand does not also show, and the computed block-on-piezo resonance sits at
@@ -500,7 +509,9 @@ through the case, not through string coupling.
 ```
 
 Engine CP path per sample: sum voice forces → region trim already folded into
-w_out → 12 Hz HP → tone stack biquads → JFET stage → vibrato panner → room.
+w_out → bus HP → tone stack biquads → JFET stage → vibrato panner → room.
+(The bus HP shipped as two poles at 60 Hz rather than the 12 Hz drafted in
+5.2 — see the note there.)
 
 ---
 
@@ -526,7 +537,7 @@ cp70-measured.md:
 | U2 | Two matched pairs at C4 | 4 components, pair split 0.5–1.5 c, centres 1–5 c | 4-exponential fit |
 | U3 | Superposition is exact | render string 1 only + string 2 only, sum, diff vs bichord render < −80 dB | proves no accidental coupling in code |
 | P1 | Force tilt is n-weighting | drive known modal state, partial ratio = k ratio ±0.1 dB | unit-level, no hammer |
-| P2 | Bus high-pass corner | 12 Hz ±4 | swept response |
+| P2 | Bus high-pass corner | 12 Hz ±4 — **not what shipped**: two poles at 60 Hz, see 5.2 | swept response |
 | P3 | No resonance 60 Hz–15 kHz | pooled residual < ±5 dB broad, no narrow peak | mirror of the research method |
 | P4 | Alias residue at base rate | < −70 dB | Goertzel at folded bins, hard note + full drive (gate for the no-oversampling decision) |
 | S1 | Mid scoop | 500 Hz −14.5, 100 Hz −7.5, 20 Hz +2.5 dB rel 10 kHz, ±1.5 | filter response direct |

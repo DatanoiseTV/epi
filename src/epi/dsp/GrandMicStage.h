@@ -39,8 +39,10 @@ namespace epi
 // position resolves where along it the force entered.
 //
 // Per mic, per source, the free-field pair every acoustics text gives:
-//   - amplitude 1/r, referenced to the calibrated pair's notional seat
-//     (kRefDist = 1.2 m) so the default mic lands at the calibrated level;
+//   - amplitude 1/r, referenced to the calibrated pair's notional seat --
+//     kSeatZ = 1.2 m out from the rim and kSeatH = 0.6 m above the board, so
+//     the reference radius is seatR() = 1.34 m -- and every path is gauged to
+//     unity there, so the default mic lands at the calibrated level;
 //   - arrival delay r/c, c = 343 m/s (dry air, 20 C), through a shared
 //     fractional-delay bus per source -- the interchannel phase that
 //     GrandMicPair fakes with allpasses in mode 0 falls out of the delay

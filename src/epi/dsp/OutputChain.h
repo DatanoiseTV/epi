@@ -49,7 +49,7 @@ public:
         const double k = std::tan (w * 0.5);
         const double kk = k * k;
 
-        // Butterworth pole pairs for a 6th-order lowpass.
+        // Butterworth pole pairs: kSections biquads, so order 2*kSections.
         for (int i = 0; i < kSections; ++i)
         {
             const double q = 1.0 / (2.0 * std::cos (kPiD * (2.0 * i + 1.0)
@@ -114,6 +114,19 @@ private:
 // reaches the speaker. That is the quantitative form of "a Suitcase needs its
 // bass turned up", and getting it wrong makes the whole instrument sound like
 // the wrong record.
+//
+// That table is the SOLVED CIRCUIT, i.e. the target. What ships is the
+// first-order pair below -- the 159 Hz input highpass and the 6030 Hz
+// feedback band limit -- which tracks it within about two decibels at the
+// extremes and a quarter of a decibel from 500 Hz to 5 kHz. Swept and
+// measured on the shipped class with the tone controls flat, relative to
+// 1 kHz:
+//
+//     20 Hz  -17.9   40  -12.0   60   -8.8   100  -5.3   200  -1.9
+//    500 Hz   -0.2   1k    0.0   2k   -0.2   5k   -1.9   10k  -4.9   15k -7.0
+//
+// The low end therefore rolls slightly HARDER than the circuit does and the
+// top slightly less; the 41 Hz figure above holds either way.
 //
 // The tone controls are very broad and low-turnover: bass reaches +/-18 dB at
 // 20 Hz but only +/-1 dB by 467 Hz, and treble +/-25 dB at 15 kHz but only
@@ -522,8 +535,10 @@ private:
 };
 
 // ---------------------------------------------------------------------------
-// The CP-70's electrical chain: 12 Hz piezo high-pass, the mid-scooped
-// cut-only tone stack, and one soft JFET stage.
+// The CP-70's electrical chain: the piezo's load high-pass (two poles at
+// 60 Hz -- see prepare(), where the corner is derived; the 12 Hz figure in
+// the plan is the preamp's own input cap and is NOT what ships), the
+// mid-scooped cut-only tone stack, and one soft JFET stage.
 //
 // The scoop is the most under-reported fact about the instrument and it is a
 // FIXED filter, not a user curve: re-fitted by digitising the circuit

@@ -2,12 +2,11 @@
 
 What the models cover, what they do not cover yet, and how each claim is
 verified. Every "covered" item below is fenced by at least one measured row
-in the test suites (eight suites, roughly three hundred rows: offline
-renders measured with Goertzel banks, f0 estimators, envelope fits and
-twin-diff isolation — never "the code ran"). Every "not covered" item is
-either a bounded gap with a named physical mechanism, or a known absence.
-The gap rows print on every suite run; nothing on the second list is
-hidden.
+in the test suites (eight suites of numbered rows: offline renders measured
+with Goertzel banks, f0 estimators, envelope fits and twin-diff isolation —
+never "the code ran"). Every "not covered" item is either a bounded gap with
+a named physical mechanism, or a known absence. The gap rows print on every
+suite run; nothing on the second list is hidden.
 
 Sources: published measurement papers (DAFx, ISMA, JASA, EURASIP), service
 manuals, published sample-set analyses, and practitioner reports. Comments
@@ -86,11 +85,13 @@ Covered:
   inverted), the lid as a specular image (+3.5 dB of 2-6 kHz on the open
   side), per-tap arrival-based fade-in, all paths unity-gauged at the
   calibrated seat. Classic mode is byte-identical to the shipped chain.
-- **59 factory presets**, every one rendered and measured (level,
-  spectrum, and character rows — a zing preset must measure its zing).
-  Workshop tables, mic placements and the velocity map are saved in
-  project state and inside every user preset; a state suite proves the
-  round-trips including legacy states.
+- **Factory presets on all five instruments**, every one of them rendered
+  and measured (level, spectrum, and character rows — a zing preset must
+  measure its zing); the preset suite also proves the names are unique and
+  that the bank's parameter set still matches the layout. Workshop tables,
+  mic placements and the velocity map are saved in project state and inside
+  every user preset; a state suite proves the round-trips including legacy
+  states.
 - **CPU (Grand)**: 34% of one core at 48 kHz for a ten-note pedal-down
   chord, 5% for four notes without pedal, 47% absolute worst case
   (88-note fortissimo pedal wash). Deterministic.
@@ -178,8 +179,8 @@ bypassed), supply voltage as a parameter, register voicing on the output
 sense, two-stage preamp with true amplitude tremolo, small-box speaker,
 bar-proximity sympathetic coupling, mechanical gap/centring glides.
 
-Verified: 44 rows including partial tuning through the full chain
-(0.040 cents worst persistent deviation — the apparent drift was
+Verified: every row of the Reed suite, including partial tuning through the
+full chain (0.040 cents worst persistent deviation — the apparent drift was
 harmonic-envelope zero crossings of the composite transducer+clip map,
 measured the way the source recordings were measured), even-harmonic
 level dependence, attack knock, release characteristics.
@@ -206,8 +207,9 @@ and pedal-lift wash, twin-diff calibrated at -38 dB) and the pedal thunk
 at the stops (the pedal boom emerges from the opened strings rather than
 being programmed).
 
-Verified: 65 rows against a published sample-set analysis — decay knees
-and times, unison behavior, Railsback stretch, attack crests, register
+Verified: every row of the Grand suite against a published sample-set
+analysis — decay knees and times, unison behavior, Railsback stretch,
+attack crests, register
 balance, sympathetic selectivity, radiation structure, mic-stage
 geometry (six rows), plus the small-sounds fences in the engine suite.
 
@@ -254,11 +256,11 @@ preamp at its measured THD points running at the oversampled rate, the
 second-harmonic balance held to the paper's own pickup geometry
 (20 log10 of 2 cos (pi d/L) per key).
 
-Verified: 42 rows, zero gaps — harmonic structure, comb notches,
-release drop, decay ripple, drive calibration.
+Verified: every row of the Clav suite, zero gaps — harmonic structure,
+comb notches, release drop, decay ripple, drive calibration.
 
 Covered as of the practitioner-report pass (primary evidence recorded in
-the research notes, 18 new rows):
+the research notes, which added its own rows to that suite):
 
 - The case in the pickup: six plate modes derived from the real cabinet's
   dimensions and ply constants (150-602 Hz), fed by the string

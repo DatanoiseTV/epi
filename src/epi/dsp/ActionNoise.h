@@ -25,11 +25,26 @@ namespace epi
 // A key going down on a Rhodes is not silent. The hammer's pivot knocks, the
 // key felt bottoms out, and on release the damper arm drops back onto the
 // tine. None of that reaches the output directly, and this is the part that
-// decides how it has to be modelled: the pickup is a coil round a magnet, and
-// a magnet cannot hear a wooden key. It can only see steel moving in front of
-// it. So the mechanism's noise gets out exactly one way -- it shakes the
-// frame, the frame shakes every tine bolted to it, and the pickups hear the
-// tines.
+// decides how it has to be modelled on the tine piano: the pickup is a coil
+// round a magnet, and a magnet cannot hear a wooden key. It can only see steel
+// moving in front of it. So on THAT instrument the noise gets out mechanically
+// -- tick() writes a force into the struck key's own tine clamp (see the
+// routing note on tick below), and the pickups hear the tine.
+//
+// The other four instruments have their own routes, because their transducers
+// are not coils, and the engine picks the route rather than this class:
+//
+//   - Tine: force into the struck key's own tine clamp (the path above).
+//   - Grand: the summed force enters the soundboard through
+//     GrandBoard::frameForce, so the knock inherits the board's colour and
+//     the body bench with it.
+//   - E-Grand and Reed: the summed force goes straight onto the output bus.
+//     The piezo is bolted to the frame it reads and an electrostatic gap
+//     cannot hear a wooden key either, so on both the mechanism arrives
+//     without any string carrying it.
+//   - Clav: this class is not used at all. The key-bottom thump is a force
+//     into ClavinetVoice's own case model, and the tangent/anvil knock is
+//     ClavinetKnock straight onto the pickup bus.
 //
 // Each strike is its own event, in its own voice, because each key is its own
 // mechanism. One shared envelope -- which is what this used to be -- meant a
@@ -135,13 +150,16 @@ public:
         return false;
     }
 
-    // One sample. Each voice's force goes to ITS OWN key's tine -- the
-    // mechanism is bolted under that key, and its impulse reaches that tine's
-    // clamp first and hardest. Routing the noise through the frame's modal
-    // sum instead played it through six discrete resonances, and six pinged
-    // resonances at 143 to 418 hertz are a set of chimes, which is what it
-    // was heard as. A tine forced at its clamp responds broadband -- the
-    // forced response follows the force, and only the tine's own note rings.
+    // One sample, written per key into forces[]. On the tine piano each
+    // voice's force then goes to ITS OWN key's tine -- the mechanism is
+    // bolted under that key, and its impulse reaches that tine's clamp first
+    // and hardest. (The three instruments that take the layer as a lump sum
+    // the array instead; see the routing list at the top of the class.)
+    // Routing the tine piano's noise through the frame's modal sum instead
+    // played it through six discrete resonances, and six pinged resonances at
+    // 143 to 418 hertz are a set of chimes, which is what it was heard as. A
+    // tine forced at its clamp responds broadband -- the forced response
+    // follows the force, and only the tine's own note rings.
     //
     // Returns how much (if anything) was written; forces[] must hold one slot
     // per tine and is NOT cleared here.

@@ -28,8 +28,13 @@ namespace epi
 // node is a stiff voltage source to any single reed -- so the node equation
 // linearises in the SIGNAL while keeping y exact:
 //
-//   v_out = -(u0 / C_total) * H(s) * SUM_n DC_n,   DC_n = C0n * y_n/(1 - y_n)
+//   v_out = -(u0 / C_total) * H(s) * SUM_n DC_n,   DC_n = C0n * g(y_n)
 //   H(s)  = s R C_total / (1 + s R C_total)
+//
+// where g is WurliVoice::capLaw, the bounded law that IS y/(1-y) away from
+// the plate plane and carries the measured turnover through it. What the
+// node argument fixes is the SHAPE of the equation -- memoryless per reed,
+// linear sum, one shared highpass -- not which per-reed law fills DC_n.
 //
 // Per-reed memoryless nonlinearity, linear sum, one shared first-order
 // highpass. This makes chord behaviour exact (superposition at the node) and

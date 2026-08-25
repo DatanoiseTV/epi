@@ -129,7 +129,11 @@ by element capacitance, and the **C_bus ≈ 20–50 nF, f_c ≈ 8–19 Hz** wind
 
 - **Confidence:** window medium (physics-bounded, twice-derived).
 - **Cheapest closure:** one LCR reading on any element. Impact stays low —
-  the 12 Hz HP ships either way.
+  and lower than this entry assumed: the bus high-pass is no longer set by
+  the element at all. It ships as two poles at 60 Hz, chosen to remove the
+  hammer's unipolar contact hump (see the note in the plan's 5.2), so
+  anywhere in the inferred 8–19 Hz window would sit an octave and a half
+  below the corner that actually ships.
 
 ---
 

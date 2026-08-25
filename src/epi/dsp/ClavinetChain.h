@@ -41,24 +41,35 @@ namespace epi
 //   Treble    (hoch)   L = 2 H, C = 4.7 nF         Z = (R_w+sL)/(1+sR_wC+s^2LC)
 //   Brilliant (scharf) L = 0.6 H                   Z = sL
 //
-// Each Z_i(s) goes through the bilinear transform and the engaged H_i(z) are
-// cascaded — EURASIP's own recipe, matched against SPICE in their Fig. 14, so
-// the shortcut is pre-validated for the combinations they showed. The full
-// loaded-divider circuit stays open question 5 of the plan.
+// EURASIP's recipe bilinear-transforms each Z_i(s) directly and cascades the
+// engaged H_i(z), matched against SPICE in their Fig. 14. This class does NOT
+// do that: what it transforms is the branch's DIVIDER against the source
+// resistance, D_i(s) = Z_i/(Z_i + Rs), for the reason in the kSourceR note
+// below. Cascading stays the shortcut it is in the paper; the full loaded
+// circuit is open question 5 of the plan.
 //
-// Two deviations from the paper's Table 3, both stated:
+// Three deviations from the paper's Table 3, all stated:
 //
+//  - The source loading itself (kSourceR). It is the big one: it is what
+//    turns the Treble branch from a resonance into a broad shelf and the
+//    Brilliant branch from a differentiator into a high-pass. Because the
+//    dividers are what get cascaded, the SPICE agreement the paper shows for
+//    bare impedances does not transfer to this cascade unchanged.
 //  - The Treble branch as printed is a LOSSLESS LC: its bilinear poles sit
 //    exactly on the unit circle, and a lossless resonator driven at resonance
 //    grows without bound. A real inductor is not lossless — the schematic
 //    prints the winding: 700 turns of 0.09 mm CuL, roughly 22 m of wire,
 //    about 60 ohms of copper. That series resistance goes into Z(s) before
-//    the transform, which damps the pole (Q ~ 350 at the 1.6 kHz branch
-//    resonance) and makes the branch passive, as the physical part is.
-//  - The H_i carry impedance units, so the cascade's absolute level is
-//    arbitrary. One shared reference — |Z_medium| at 1 kHz — scales every
-//    stage, so Medium alone is near unity at 1 kHz and the RELATIVE loudness
-//    between rockers stays what the branch impedances say [D].
+//    the transform. On its own it would leave a Q near 340 at the 1.64 kHz
+//    LC resonance; with the source in the divider the section ships
+//    OVERDAMPED (Q 0.27, two real poles at about 480 Hz and 6 kHz), so what
+//    the winding resistance really buys is a branch that is passive by
+//    construction rather than one that depends on the load to be stable.
+//  - The reference. The dividers are dimensionless, but their absolute
+//    level is still arbitrary against the rest of the chain, so one shared
+//    reference — |D_medium| at 1 kHz, zRef() below — scales every stage:
+//    Medium alone is near unity at 1 kHz and the RELATIVE loudness between
+//    rockers stays what the circuit says [D].
 //
 // Hohner's own rule ships: at least one rocker down or the instrument is
 // silent [R, both manuals] — enforced by falling back to Medium when the
@@ -80,7 +91,9 @@ public:
     // tames the branch resonances in the real instrument. Driven ideally,
     // the Treble branch's LC computes to Q ~ 340 and was heard as exactly
     // that -- a heavy 1.6 kHz resonance under the funk registration. With
-    // the source in place the working Q is a handful, and Brilliant's bare
+    // the source in place that section is overdamped outright (Q 0.27 --
+    // measured off the coefficients prepare() computes, two real poles near
+    // 480 Hz and 6 kHz), and Brilliant's bare
     // inductor becomes the ~1.5 kHz high-pass it must physically be rather
     // than a raw differentiator. 5.5 kOhm is the single-coil class typical;
     // the exact coil is the research doc's open contradiction and owns the
@@ -231,8 +244,10 @@ public:
         y += kHighGain * high.highpass (y);
 
         // The asymmetric stage. kDrive is the THD calibration: with the
-        // headroom split below, a 0.4 V sine measures 1.0% THD and a 0.9 V
-        // fortissimo chord peak reaches the 3.6% region.
+        // headroom split below, a 0.4 V 1 kHz sine measures 1.06% THD
+        // through this whole method, and the ff chord peak the row drives --
+        // 0.8 V, not 0.9 -- measures 3.82% against the paper's 3.6%. (Row E1
+        // takes both.)
         const double u = y * kDrive * drive;
         const double s = u >= 0.0 ? kSatPos * std::tanh (u / kSatPos)
                                   : kSatNeg * std::tanh (u / kSatNeg);
@@ -251,7 +266,7 @@ private:
 
     // Headroom ratio ~1:2.75: saturation (transformer + zener ceiling) bites
     // well before cutoff, the asymmetry the schematic implies. kDrive lands
-    // THD(0.4 V) = 1.0% — measured by row E1, not assumed.
+    // THD(0.4 V) at 1.06% — measured by row E1, not assumed.
     static constexpr double kSatPos = 1.0;
     static constexpr double kSatNeg = 2.75;
     static constexpr double kDrive  = 0.87;
