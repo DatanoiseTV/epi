@@ -139,6 +139,195 @@ struct NoteEvent
     Type  type     = noteOn;
     int   note     = 60;
     float velocity = 0.8f;
+    // Per-note tuning, in cents, read on a note-on and on nothing else. This
+    // is the tuner's offset for THIS string, not a bend: it is latched when
+    // the hammer lands and never revisited while the note rings. Zero is the
+    // instrument as the TUNE knob leaves it, and a stream that never sets it
+    // renders exactly as it did before the field existed.
+    float tuneCents = 0.0f;
+};
+
+// ---------------------------------------------------------------------------
+// A host's tuning system, taken as a tuner's instruction.
+//
+// These instruments have no pitch bend. There is no wheel on a piano, an
+// electric piano or a clavinet, and nobody turns a tuning pin while a string
+// rings. Per-note TUNING is a different action and an entirely physical one --
+// a tuner sets every string on its own, which is exactly what the workshop's
+// length lane already does -- so a host that retunes per note is answered at
+// the moment the hammer lands, and not after.
+//
+// The transport is MPE: each sounding note owns a channel, and that channel's
+// pitch bend carries the note's own offset (MMA RP-053). This class is the
+// register of what each channel is currently asking for. It emits nothing: the
+// value is read once, when a note-on on that channel is flattened into a
+// NoteEvent, and latched there. A later change on the same channel is the
+// tuner reaching for the next string, and it reaches the next note struck on
+// that channel.
+//
+// Framework-free so the semantics are measurable by the offline suites; the
+// plugin only feeds it the bytes it has already parsed.
+// ---------------------------------------------------------------------------
+class MpeTuning
+{
+public:
+    // RP-053, "Pitch Bend": a Member Channel's default sensitivity is +/-48
+    // semitones and a Master Channel's the usual +/-2. A host that sends
+    // RPN 0 on a channel overrides that channel's value.
+    static constexpr float kMemberRangeSemis = 48.0f;
+    static constexpr float kMasterRangeSemis = 2.0f;
+    static constexpr int   kNumChannels      = 16;
+
+    // Off: the register is inert and every note is tuned by the TUNE knob
+    // alone -- the instrument exactly as it was before this existed.
+    // Detect: a zone opens only when the host sends an MPE Configuration
+    // Message, so a host that speaks plain MIDI never enters this path.
+    // On: assume the standard full-keyboard lower zone (master channel 1,
+    // members 2-16) whether or not the configuration message arrived.
+    enum class Mode { off = 0, detect, on };
+
+    void setMode (Mode m)
+    {
+        mode = m;
+        if (m == Mode::off) closeZones();
+        // Forcing it on with no configuration message means the lower zone
+        // in its standard full-keyboard form.
+        if (m == Mode::on && lowerMembers == 0 && upperMembers == 0)
+            openLowerZone (15);
+    }
+    Mode getMode() const { return mode; }
+
+    void reset()
+    {
+        closeZones();
+        if (mode == Mode::on) openLowerZone (15);
+    }
+
+    bool isActive() const { return mode != Mode::off && (lowerMembers > 0 || upperMembers > 0); }
+
+    // Channels are 1-based, as the MIDI messages number them.
+    bool isMember (int channel) const
+    {
+        if (! isActive()) return false;
+        if (lowerMembers > 0 && channel >= 2 && channel <= 1 + lowerMembers) return true;
+        if (upperMembers > 0 && channel <= 15 && channel >= 16 - upperMembers) return true;
+        return false;
+    }
+
+    // A pitch wheel on a member channel is that channel's tuning and nothing
+    // else; returns true when it was taken that way, so the caller leaves the
+    // global bend alone. Everything else -- master channel, inactive zone,
+    // plain MIDI -- returns false and keeps the old behaviour verbatim.
+    bool pitchWheel (int channel, int value14)
+    {
+        if (! isMember (channel)) return false;
+        bend14[idx (channel)] = value14;
+        return true;
+    }
+
+    // One control change, already unpacked. Returns true when it was consumed
+    // as registered-parameter traffic. Only the four RPN controllers are
+    // touched, so no controller the instrument already reads can be swallowed.
+    bool controller (int channel, int cc, int value)
+    {
+        const int c = idx (channel);
+        switch (cc)
+        {
+            case 101: rpnMsb[c] = value; return true;    // RPN MSB
+            case 100: rpnLsb[c] = value; return true;    // RPN LSB
+            case 6:   dataMsb[c] = value; applyData (channel); return true;
+            case 38:  dataLsb[c] = value; applyData (channel); return true;
+            default:  return false;
+        }
+    }
+
+    // What a note struck on this channel is cut to, in cents.
+    float noteCents (int channel) const
+    {
+        if (! isMember (channel)) return 0.0f;
+        const int c = idx (channel);
+        return static_cast<float> (bend14[c] - 8192) / 8192.0f * rangeSemis[c] * 100.0f;
+    }
+
+    // Test and interface access: what the register currently holds.
+    int  memberCount (bool lower) const { return lower ? lowerMembers : upperMembers; }
+    float channelRangeSemis (int channel) const { return rangeSemis[idx (channel)]; }
+
+private:
+    static int idx (int channel) { return std::clamp (channel, 1, kNumChannels) - 1; }
+
+    void closeZones()
+    {
+        lowerMembers = upperMembers = 0;
+        for (int c = 0; c < kNumChannels; ++c)
+        {
+            bend14[c] = 8192;
+            rangeSemis[c] = kMasterRangeSemis;
+        }
+    }
+
+    // RP-053: a configuration message resets the zone's member channels to
+    // the default sensitivity and to centre. Not doing that leaves a stale
+    // offset on a channel the host believes it has just cleared.
+    void openLowerZone (int members)
+    {
+        lowerMembers = std::clamp (members, 0, 15);
+        rangeSemis[0] = kMasterRangeSemis;
+        for (int c = 1; c <= lowerMembers; ++c)
+        {
+            bend14[c] = 8192;
+            rangeSemis[c] = kMemberRangeSemis;
+        }
+    }
+
+    void openUpperZone (int members)
+    {
+        upperMembers = std::clamp (members, 0, 15);
+        rangeSemis[kNumChannels - 1] = kMasterRangeSemis;
+        for (int c = kNumChannels - 1 - upperMembers; c < kNumChannels - 1; ++c)
+        {
+            bend14[c] = 8192;
+            rangeSemis[c] = kMemberRangeSemis;
+        }
+    }
+
+    void applyData (int channel)
+    {
+        const int c = idx (channel);
+        if (rpnMsb[c] != 0) return;                       // only RPN 0x00xx here
+        if (rpnLsb[c] == 0)
+        {
+            // RPN 0: pitch bend sensitivity, semitones in the MSB and cents
+            // in the LSB. A host that sets it on a member channel is telling
+            // us how to read that channel's wheel.
+            rangeSemis[c] = static_cast<float> (dataMsb[c])
+                          + static_cast<float> (dataLsb[c]) / 100.0f;
+        }
+        else if (rpnLsb[c] == 6 && mode != Mode::off)
+        {
+            // RPN 6: the MPE Configuration Message. It is sent on the zone's
+            // master channel and its value is the member count; zero closes
+            // the zone. Off stays inert. On listens as well -- forcing it on
+            // means "do not wait to be told", not "ignore what the host says",
+            // so a host that configures eight member channels gets eight --
+            // but a zero count would close the zone, and an instrument the
+            // player has forced on is not allowed to end up with none.
+            const int members = dataMsb[c];
+            if (mode == Mode::on && members == 0) return;
+            if (channel == 1)       openLowerZone (members);
+            else if (channel == 16) openUpperZone (members);
+        }
+    }
+
+    Mode mode = Mode::detect;
+    int  lowerMembers = 0, upperMembers = 0;
+    int  bend14[kNumChannels] {};
+    float rangeSemis[kNumChannels] {};
+    int  rpnMsb[kNumChannels] {}, rpnLsb[kNumChannels] {};
+    int  dataMsb[kNumChannels] {}, dataLsb[kNumChannels] {};
+
+public:
+    MpeTuning() { closeZones(); }
 };
 
 // ---------------------------------------------------------------------------
@@ -596,6 +785,19 @@ private:
     void rebuildString (int i, const CP70Voice::Config& cfg);
     std::array<StringMod, kNumTines> grandMod {};
     void rebuildGrandString (int i, const GrandVoice::Config& cfg);
+    void rebuildWurli (int i, const WurliVoice::Config& cfg);
+    void rebuildClav (int i, const ClavinetVoice::Config& cfg);
+
+    // Per-note tuning, latched. This is the tuner's offset for each string,
+    // and it lives beside the workshop's steel because it is the same kind of
+    // thing: a per-note property of the instrument that every rebuild path has
+    // to carry, not a control the player rides. Written only from the audio
+    // thread, at a note-on, from that event's own tuneCents -- so a change
+    // reaches the NEXT note struck on that string and never the one ringing.
+    // All zero is the instrument as it has always been, and the rebuild
+    // helpers fold nothing in at zero, so the untouched path is untouched.
+    std::array<float, kNumTines> noteCents {};
+    void invalidateNoteBuild (int i);
     std::atomic<float> cabBox { 0.74f }, cabCone { 0.59f }, cabDist { 0.5f },
                        cabAngle { 0.25f }, cabSusp { 0.5f };
     std::atomic<bool> cabDirty { false };

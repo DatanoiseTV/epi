@@ -131,3 +131,18 @@ target_link_libraries(epi_state_tests PRIVATE
     juce::juce_recommended_lto_flags)
 add_test(NAME epi_state COMMAND epi_state_tests)
 set_tests_properties(epi_state PROPERTIES TIMEOUT 300)
+
+# ---------------------------------------------------------------------------
+# Per-note tuning: the MPE reception path and what it does to pitch. Framework-
+# free -- it drives the engine directly and measures f0 out of the rendered
+# audio, so it fences the physics rather than the MIDI parsing. (The one row
+# that exercises JUCE's own parsing lives in the state suite, which is the
+# suite that has a processor.)
+# ---------------------------------------------------------------------------
+add_executable(epi_tuning_tests
+    test_epi_tuning.cpp
+    ${CMAKE_SOURCE_DIR}/src/epi/dsp/EpiEngine.cpp)
+target_include_directories(epi_tuning_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_features(epi_tuning_tests PRIVATE cxx_std_20)
+add_test(NAME epi_tuning COMMAND epi_tuning_tests)
+set_tests_properties(epi_tuning PROPERTIES TIMEOUT 900)

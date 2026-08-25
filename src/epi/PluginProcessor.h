@@ -188,6 +188,27 @@ public:
     // spread, balance, distance, level L, level R -- the calibrated pair.
     static constexpr std::array<float, 5> kMicDefaults { 1.0f, 0.0f, 0.0f, 1.0f, 1.0f };
 
+    // MPE reception, so a host's tuning system can tune the instrument.
+    //
+    //   0 Off     -- plain MIDI only; every note takes the TUNE knob alone.
+    //   1 Detect  -- the default. A zone opens only when the host sends an
+    //                MPE Configuration Message, so a host that speaks plain
+    //                MIDI never enters the path at all.
+    //   2 On      -- assume the standard lower zone (master channel 1,
+    //                members 2-16) whether or not the message arrives.
+    //
+    // It lives on the bench tree rather than on the parameter tree because it
+    // is a setup switch, not something a player rides: nobody automates
+    // whether their keyboard is MPE. It travels with the project and with a
+    // preset exactly as the workshop benches do.
+    static constexpr int kMpeModeDefault = 1;
+    void setMpeMode (int mode)
+    {
+        mpeMode.store (juce::jlimit (0, 2, mode), std::memory_order_relaxed);
+    }
+    int getMpeMode() const { return mpeMode.load (std::memory_order_relaxed); }
+    void resetMpeMode() { setMpeMode (kMpeModeDefault); }
+
     void pushUiNote (int note, float velocity, bool on)
     {
         const auto w = uiNoteWrite.load (std::memory_order_relaxed);
@@ -240,6 +261,12 @@ private:
     std::array<float, 5> micMods = kMicDefaults;
     std::array<float, 31> micStage = kStageDefaults;
     std::array<float, 5> velMap { 0.0f, 0.25f, 0.5f, 0.75f, 1.0f };
+
+    // The tuning register. Touched ONLY from the audio thread (collectEvents),
+    // so it needs no atomics of its own; the mode arrives through one.
+    epi::MpeTuning mpe;
+    std::atomic<int> mpeMode { kMpeModeDefault };
+    int appliedMpeMode = kMpeModeDefault;
 
     struct UiNote { int note; float velocity; bool on; };
     static constexpr unsigned kUiNoteCap = 64;

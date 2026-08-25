@@ -70,6 +70,12 @@ bool EpiAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) cons
 void EpiAudioProcessor::prepareToPlay (double newSampleRate, int samplesPerBlock)
 {
     sampleRate = newSampleRate;
+    // The tuning register holds host state, and a host that stops and
+    // reconfigures re-sends its zone. Starting from a stale one would tune
+    // the first phrase of the next session to the last one's offsets.
+    appliedMpeMode = mpeMode.load (std::memory_order_relaxed);
+    mpe.setMode (static_cast<epi::MpeTuning::Mode> (appliedMpeMode));
+    mpe.reset();
     engine.prepare (newSampleRate, samplesPerBlock);
     monoScratch.assign (static_cast<size_t> (juce::jmax (1, samplesPerBlock)), 0.0f);
 }
@@ -89,6 +95,15 @@ void EpiAudioProcessor::collectEvents (juce::MidiBuffer& midi)
 {
     events.clear();
 
+    // The MPE switch is the only thing the message thread writes into the
+    // tuning register's world, and it arrives as one integer. Applying it
+    // here keeps every other member of MpeTuning audio-thread-only.
+    if (const int want = mpeMode.load (std::memory_order_relaxed); want != appliedMpeMode)
+    {
+        appliedMpeMode = want;
+        mpe.setMode (static_cast<epi::MpeTuning::Mode> (want));
+    }
+
     // Notes clicked on the interface, queued from the message thread.
     for (auto r = uiNoteRead.load (std::memory_order_relaxed);
          r != uiNoteWrite.load (std::memory_order_acquire);
@@ -106,7 +121,13 @@ void EpiAudioProcessor::collectEvents (juce::MidiBuffer& midi)
         const int t = meta.samplePosition;
 
         if (m.isNoteOn())
-            events.push_back ({ t, epi::NoteEvent::noteOn, m.getNoteNumber(), m.getFloatVelocity() });
+        {
+            // The tuner's offset for this string, read once, here. Zero unless
+            // an MPE zone is open and this is one of its member channels, so a
+            // plain-MIDI stream builds exactly the event it always did.
+            events.push_back ({ t, epi::NoteEvent::noteOn, m.getNoteNumber(),
+                                m.getFloatVelocity(), mpe.noteCents (m.getChannel()) });
+        }
         else if (m.isNoteOff())
             events.push_back ({ t, epi::NoteEvent::noteOff, m.getNoteNumber(), 0.0f });
         else if (m.isAllNotesOff() || m.isAllSoundOff())
@@ -127,14 +148,31 @@ void EpiAudioProcessor::collectEvents (juce::MidiBuffer& midi)
         }
         else if (m.isPitchWheel())
         {
-            // Bend is applied at block rate; it does not need a sample-accurate
+            // On an MPE member channel the wheel is that note's TUNING, and a
+            // tuning instruction is answered when the hammer lands -- so it is
+            // filed in the register and read at the next note-on on that
+            // channel, never applied to a string already ringing. Everything
+            // else, master channel included, is the global bend applied at
+            // block rate exactly as before: it does not need a sample-accurate
             // event because nothing about it is transient.
-            const float norm = (m.getPitchWheelValue() - 8192) / 8192.0f;
-            engine.setPitchBend (norm * 2.0f);
+            if (! mpe.pitchWheel (m.getChannel(), m.getPitchWheelValue()))
+            {
+                const float norm = (m.getPitchWheelValue() - 8192) / 8192.0f;
+                engine.setPitchBend (norm * 2.0f);
+            }
         }
         else if (m.isController() && m.getControllerNumber() == 11)
         {
             engine.setExpression (0.25f + 0.75f * m.getControllerValue() / 127.0f);
+        }
+        else if (m.isController())
+        {
+            // Registered parameters: the MPE Configuration Message that opens
+            // a zone, and RPN 0, which tells us how wide a channel's wheel is
+            // so its value can be read as cents. Only those four controllers
+            // are consumed here, and every one the instrument reads has
+            // already been matched above.
+            mpe.controller (m.getChannel(), m.getControllerNumber(), m.getControllerValue());
         }
     }
 }
@@ -223,6 +261,7 @@ juce::ValueTree EpiAudioProcessor::buildModsTree (bool always) const
     if (micMods != kMicDefaults) modded = true;
     if (micStage != kStageDefaults) modded = true;
     if (velMap != std::array<float, 5> { 0.0f, 0.25f, 0.5f, 0.75f, 1.0f }) modded = true;
+    if (getMpeMode() != kMpeModeDefault) modded = true;
     if (! modded && ! always) return {};
 
     juce::StringArray ls, ds, hs, gs, ws, sl, sd, cs;
@@ -270,6 +309,7 @@ juce::ValueTree EpiAudioProcessor::buildModsTree (bool always) const
     juce::StringArray vm;
     for (float v : velMap) vm.add (juce::String (v, 6));
     mods.setProperty ("vmap", vm.joinIntoString (","), nullptr);
+    mods.setProperty ("mpe", getMpeMode(), nullptr);
     return mods;
 }
 
@@ -286,7 +326,12 @@ void EpiAudioProcessor::applyModsTree (const juce::ValueTree& mods)
     resetMicMods();
     resetMicStage();
     resetVelMap();
+    resetMpeMode();
     if (! mods.isValid()) return;
+    // A state saved before this switch existed carries no property, and the
+    // reset above has already left it on Detect -- which is what those
+    // sessions have always done.
+    if (mods.hasProperty ("mpe")) setMpeMode (static_cast<int> (mods["mpe"]));
 
     juce::StringArray ls, ds, hs, gs, ws, sl, sd, cs;
     ls.addTokens (mods["len"].toString(), ",", "");
