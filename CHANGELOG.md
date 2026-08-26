@@ -7,6 +7,25 @@ All notable changes to Epi are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Per-note tuning over MPE, so a host's tuning system can tune the
+  instrument. The offset is a TUNING instruction latched at the strike:
+  a wheel moved while a note rings does nothing to it and reaches the
+  next note struck on that channel instead, which is the tuner moving to
+  the next string. Pinned against the MMA specification, measured out of
+  the rendered audio (within 0.02 cents on four instruments, 0.3 on the
+  grand's three-string unison), and proved inert when unused --
+  byte-identical over 1.44 million samples.
+- A repeating octave in the tuner: an octave selector and a REPEAT
+  button that stamps twelve offsets across the compass, because most
+  tunings are a twelve-note pattern repeated at the octave.
+- Voiced Grand, the concert instrument after the technician has been at
+  it -- the shipped one carries a factory-fresh hammer, which is bright
+  by construction.
+- Demos for the whole instrument rather than the tine piano alone, plus
+  the A/B pairs that show what this plugin is: one physical thing
+  changed, everything else identical.
+- A headless smoke test for the interface, since the suites never load
+  the page.
 - Gigged Clav: the instrument that has been out every weekend for
   thirty years -- notched tangent rubbers that catch on release, a
   rattlier case.
@@ -81,6 +100,27 @@ All notable changes to Epi are documented here. The format follows
   proves the benches (mic stage, pair trims, velocity map) restore
   exactly through host project state, saved user presets, factory
   loads, and legacy states saved before a bench existed.
+
+### Fixed
+- Turning a bench control while notes are ringing no longer clicks. The
+  engine rebuilt SOUNDING voices first, on the reasoning that they are
+  the ones you can hear -- which is exactly why it was audible: a
+  rebuild re-solves the geometry and retunes every mode under a note in
+  the air, and sweeping MATERIAL under a held grand chord measured two
+  hundred times the signal's own worst step. A change now applies at
+  each voice's next strike, because you cannot change the felt on a
+  hammer that has already struck or restring a piano while it rings.
+  The board follows the same rule. Idle voices rebuild immediately and
+  the note-on path rebuilds a stale voice before it sounds, so nothing
+  is heard late.
+- reset() never cleared the reed bank, so a reed caught mid-ring rang
+  through a host's reset into the next render.
+- The trapwork thunk's length was written in samples, so its bandwidth
+  followed the sample rate and its level moved 14 dB across the
+  supported range.
+- Renders now repeat across a reset: the free-running generators and the
+  block-rate smoothers were left where they stood.
+
 
 ### Changed
 - KEY NOISE works on every instrument it is offered on. The panel shows

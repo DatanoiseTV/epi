@@ -771,17 +771,24 @@ void EpiEngine::processActive (float* outL, float* outR, int numSamples,
             return tineCfgVersion[i] != cfgVersion
                 || tineMod[static_cast<std::size_t> (i)].dirty.load (std::memory_order_acquire);
         };
+        // A voice that is SOUNDING is not rebuilt. You cannot change the
+        // felt on a hammer that has already struck, and you cannot restring
+        // a piano while the note is ringing -- so a configuration change
+        // applies to the next strike of each voice, not retroactively to
+        // the ones in the air. This is also the only way to make it
+        // click-free: a rebuild re-solves the geometry and retunes the
+        // modes under a sounding note, and a knob swept across a held
+        // chord used to fire one of those per block. Measured on the grand,
+        // sweeping MATERIAL under a held chord put a second difference of
+        // 3.56 against the chord's own 0.018 -- an audible click, roughly
+        // two hundred times the signal's own worst step. Idle voices
+        // rebuild eagerly, so the change is heard the moment anything new
+        // is played, and the note-on path rebuilds a stale voice before it
+        // strikes.
         for (int i = 0; i < kNumTines && budget > 0; ++i)
         {
             if (! stale (i)) continue;
-            if (! (tines[i].isRinging() || pedalDown || keyDown[i])) continue;
-            rebuildTine (i, cfg);
-            tineCfgVersion[i] = cfgVersion;
-            --budget;
-        }
-        for (int i = 0; i < kNumTines && budget > 0; ++i)
-        {
-            if (! stale (i)) continue;
+            if (tines[i].isRinging() || keyDown[i]) continue;
             rebuildTine (i, cfg);
             tineCfgVersion[i] = cfgVersion;
             --budget;
@@ -1115,27 +1122,59 @@ void EpiEngine::processGrand (float* outL, float* outR, int numSamples,
     // quarter) plus the body bench: what the board is made of and how big
     // it is. The radiator's modal tail stands in for the same board above
     // its band edge, so it follows the same frequency scale and added loss.
-    grandBoard.configure ({ std::pow (4.0, static_cast<double> (std::clamp (p.bodyMix, 0.0f, 1.0f))) * 0.707,
-                            static_cast<double> (p.bodyMat),
-                            static_cast<double> (p.bodySize) });
-    grandRad.setBody (grandBoard.bodyFreqScale(), grandBoard.bodyEtaAdd());
+    // The board itself follows the same rule as the strings on it: a plate
+    // is not re-made while it is ringing. Re-solving 72 modes under a live
+    // board steps every one of them at once, which is louder than any
+    // single string's rebuild -- measured at five times the signal's own
+    // worst step when the body bench was swept under a held chord. The
+    // pending configuration is applied at the first block where nothing on
+    // the grand is sounding, which for a player is the gap between phrases.
+    {
+        const GrandBoard::Config want { std::pow (4.0, static_cast<double> (std::clamp (p.bodyMix, 0.0f, 1.0f))) * 0.707,
+                                        static_cast<double> (p.bodyMat),
+                                        static_cast<double> (p.bodySize) };
+        if (std::memcmp (&want, &lastBoardCfg, sizeof want) != 0)
+        {
+            bool quiet = ! pedalDown;
+            for (int i = 0; i < kNumTines && quiet; ++i)
+                quiet = ! (grand[static_cast<std::size_t> (i)].isRinging() || keyDown[i]);
+            if (quiet)
+            {
+                lastBoardCfg = want;
+                grandBoard.configure (want);
+                grandRad.setBody (grandBoard.bodyFreqScale(), grandBoard.bodyEtaAdd());
+            }
+        }
+    }
 
     // Rebuilds, sounding first, bounded -- a grand voice is the heaviest
     // rebuild in the plugin (up to ~130 modes over three strings).
     {
+        // A voice that is SOUNDING is not rebuilt. You cannot change the
+        // felt on a hammer that has already struck, and you cannot restring
+        // a piano while the note is ringing -- so a configuration change
+        // applies to the next strike of each voice, not retroactively to
+        // the ones in the air. This is also the only way to make it
+        // click-free: a rebuild re-solves the geometry and retunes the
+        // modes under a sounding note, and a knob swept across a held
+        // chord used to fire one of those per block. Measured on the grand,
+        // sweeping MATERIAL under a held chord put a second difference of
+        // 3.56 against the chord's own 0.018 -- an audible click, roughly
+        // two hundred times the signal's own worst step. Idle voices
+        // rebuild eagerly, so the change is heard the moment anything new
+        // is played, and the note-on path rebuilds a stale voice before it
+        // strikes.
         int budget = 6;
-        for (int pass = 0; pass < 2 && budget > 0; ++pass)
-            for (int i = 0; i < kNumTines && budget > 0; ++i)
-            {
-                if (grandCfgVersion[static_cast<std::size_t> (i)] == cfgVersion
-                    && ! grandMod[static_cast<std::size_t> (i)].dirty.load (std::memory_order_acquire))
-                    continue;
-                const bool live = grand[static_cast<std::size_t> (i)].isRinging() || pedalDown || keyDown[i];
-                if (pass == 0 && ! live) continue;
-                rebuildGrandString (i, cfg);
-                grandCfgVersion[static_cast<std::size_t> (i)] = cfgVersion;
-                --budget;
-            }
+        for (int i = 0; i < kNumTines && budget > 0; ++i)
+        {
+            if (grandCfgVersion[static_cast<std::size_t> (i)] == cfgVersion
+                && ! grandMod[static_cast<std::size_t> (i)].dirty.load (std::memory_order_acquire))
+                continue;
+            if (grand[static_cast<std::size_t> (i)].isRinging() || keyDown[i]) continue;
+            rebuildGrandString (i, cfg);
+            grandCfgVersion[static_cast<std::size_t> (i)] = cfgVersion;
+            --budget;
+        }
     }
 
     {
@@ -1357,17 +1396,16 @@ void EpiEngine::processClav (float* outL, float* outR, int numSamples,
         ++cfgVersion;
     }
     {
+        // Sounding voices are left alone; see the note in the tine bank.
         int budget = 8;
-        for (int pass = 0; pass < 2 && budget > 0; ++pass)
-            for (int i = 0; i < kNumTines && budget > 0; ++i)
-            {
-                if (clavCfgVersion[static_cast<std::size_t> (i)] == cfgVersion) continue;
-                const bool live = clav[static_cast<std::size_t> (i)].isRinging() || keyDown[i];
-                if (pass == 0 && ! live) continue;
-                rebuildClav (i, cfg);
-                clavCfgVersion[static_cast<std::size_t> (i)] = cfgVersion;
-                --budget;
-            }
+        for (int i = 0; i < kNumTines && budget > 0; ++i)
+        {
+            if (clavCfgVersion[static_cast<std::size_t> (i)] == cfgVersion) continue;
+            if (clav[static_cast<std::size_t> (i)].isRinging() || keyDown[i]) continue;
+            rebuildClav (i, cfg);
+            clavCfgVersion[static_cast<std::size_t> (i)] = cfgVersion;
+            --budget;
+        }
     }
 
     {
@@ -1542,7 +1580,8 @@ void EpiEngine::processCP70 (float* outL, float* outR, int numSamples,
         ++cfgVersion;
     }
     {
-        // Same priority rebuild as the Rhodes: sounding first, bounded.
+        // Same rule as the Rhodes: sounding strings are left alone and take
+        // the new configuration at their next strike.
         int budget = 12;   // a CP string rebuild is ~40 modes of setMode
         auto stale = [this] (int i)
         {
@@ -1552,14 +1591,7 @@ void EpiEngine::processCP70 (float* outL, float* outR, int numSamples,
         for (int i = 0; i < kNumTines && budget > 0; ++i)
         {
             if (! stale (i)) continue;
-            if (! (cp70[i].isRinging() || pedalDown || keyDown[i])) continue;
-            rebuildString (i, cfg);
-            cp70CfgVersion[i] = cfgVersion;
-            --budget;
-        }
-        for (int i = 0; i < kNumTines && budget > 0; ++i)
-        {
-            if (! stale (i)) continue;
+            if (cp70[i].isRinging() || keyDown[i]) continue;
             rebuildString (i, cfg);
             cp70CfgVersion[i] = cfgVersion;
             --budget;
@@ -1804,18 +1836,12 @@ void EpiEngine::processWurli (float* outL, float* outR, int numSamples,
         // rebuild calibrates its hammer by simulated strikes -- bisection at
         // about a quarter millisecond per voice -- so four per block keeps
         // the worst case near one millisecond.
+        // Sounding reeds are left alone; see the tine bank's note.
         int budget = 4;
         for (int i = 0; i < kNumTines && budget > 0; ++i)
         {
             if (wurliCfgVersion[static_cast<std::size_t> (i)] == cfgVersion) continue;
-            if (! (wurli[static_cast<std::size_t> (i)].isRinging() || pedalDown || keyDown[i])) continue;
-            rebuildWurli (i, cfg);
-            wurliCfgVersion[static_cast<std::size_t> (i)] = cfgVersion;
-            --budget;
-        }
-        for (int i = 0; i < kNumTines && budget > 0; ++i)
-        {
-            if (wurliCfgVersion[static_cast<std::size_t> (i)] == cfgVersion) continue;
+            if (wurli[static_cast<std::size_t> (i)].isRinging() || keyDown[i]) continue;
             rebuildWurli (i, cfg);
             wurliCfgVersion[static_cast<std::size_t> (i)] = cfgVersion;
             --budget;

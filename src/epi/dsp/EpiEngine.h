@@ -685,6 +685,9 @@ private:
     std::array<std::uint32_t, kNumTines> grandCfgVersion {};
     std::vector<GrandVoice> grand;
     GrandBoard    grandBoard;
+    // What the board is currently built to, so a body-bench change can wait
+    // for silence instead of re-solving the plate under a ringing note.
+    GrandBoard::Config lastBoardCfg { -1.0e30 };
     GrandRadiator grandRad;
     GrandMicStage grandMics;
     std::array<double, kNumTines> grandPanL {}, grandPanR {};

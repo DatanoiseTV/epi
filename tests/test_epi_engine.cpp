@@ -954,6 +954,88 @@ static void sectionKnobs()
 // ===========================================================================
 
 // ===========================================================================
+static void sectionRebuildSilence()
+{
+    heading ("6c. the instrument you are playing is the one you struck");
+
+    // A configuration change re-solves a voice: new geometry, new mode
+    // frequencies, a new contact. Doing that to a voice that is SOUNDING
+    // steps every one of its modes at once, and the engine used to do it to
+    // sounding voices FIRST, on the reasoning that they are the ones you can
+    // hear. They are, which is exactly why it was audible: sweeping MATERIAL
+    // under a held grand chord measured a second difference of 3.56 against
+    // the chord's own 0.018 -- two hundred times the signal's worst step,
+    // and a plain click.
+    //
+    // The rule now is the physical one. You cannot change the felt on a
+    // hammer that has already struck, and you cannot restring a piano while
+    // the note is ringing, so a change applies at each voice's NEXT strike.
+    // Idle voices rebuild immediately, and the note-on path rebuilds a stale
+    // voice before it sounds, so nothing is heard late. The board follows
+    // the same rule: a plate is not re-made while it rings.
+    //
+    // The fence: sweep each bench control under a held chord and compare
+    // against the identical render with the control HELD. The sweep must add
+    // nothing -- these are twin renders, so any difference is the rebuild.
+    const double fs = 48000.0;
+    const int block = 128;
+
+    struct Bench { const char* name; std::function<void (EngineParams&, float)> set; };
+    const Bench benches[] = {
+        { "material",   [] (EngineParams& p, float u) { p.material = static_cast<int> (u * 7.99f); } },
+        { "bodyMat",    [] (EngineParams& p, float u) { p.bodyMat  = static_cast<int> (u * 7.99f); } },
+        { "bodySize",   [] (EngineParams& p, float u) { p.bodySize = u; } },
+        { "hammerHard", [] (EngineParams& p, float u) { p.hammerHard = u; } },
+        { "hammerMass", [] (EngineParams& p, float u) { p.hammerMass = u; } },
+    };
+
+    for (int inst = 0; inst < 5; ++inst)
+    {
+        double worst = 0.0;
+        const char* worstName = "";
+        for (const auto& b : benches)
+        {
+            std::vector<float> held, swept;
+            for (int pass = 0; pass < 2; ++pass)
+            {
+                EpiEngine e;
+                e.prepare (fs, block);
+                EngineParams p = measParams (inst);
+                p.spaceMix = 0.0f;
+                std::vector<float> L (block), R (block);
+                std::vector<NoteEvent> on { { 0, NoteEvent::sustainOn, 0, 0 } };
+                for (int n : { 48, 55, 60, 64 }) on.push_back ({ 0, NoteEvent::noteOn, n, 0.7f });
+                e.process (L.data(), R.data(), block, p, on.data(), (int) on.size());
+                auto& dst = pass == 0 ? held : swept;
+                dst.insert (dst.end(), L.begin(), L.end());
+                for (int blk = 0; blk < 400; ++blk)
+                {
+                    const double t = blk * block / fs;
+                    b.set (p, pass == 1 ? 0.5f + 0.5f * static_cast<float> (std::sin (2.0 * an::kPi * 1.5 * t))
+                                        : 0.5f);
+                    e.process (L.data(), R.data(), block, p, nullptr, 0);
+                    dst.insert (dst.end(), L.begin(), L.end());
+                }
+            }
+            double dSwept = 0.0, dHeld = 0.0;
+            for (std::size_t i = 2; i < held.size(); ++i)
+            {
+                dSwept = std::max (dSwept, (double) std::fabs (swept[i] - 2.0f * swept[i - 1] + swept[i - 2]));
+                dHeld  = std::max (dHeld,  (double) std::fabs (held[i]  - 2.0f * held[i - 1]  + held[i - 2]));
+            }
+            const double ratio = dSwept / std::max (1.0e-9, dHeld);
+            if (ratio > worst) { worst = ratio; worstName = b.name; }
+        }
+        char rid[8];
+        std::snprintf (rid, sizeof rid, "6c.%d", inst);
+        row (rid, (std::string (kInstName[inst]) + " benches swept under a held chord").c_str(),
+             "adds nothing (<= 1.3x held)",
+             fmt ("%.2fx", worst) + " (" + worstName + ")",
+             verdict (worst <= 1.3));
+    }
+}
+
+// ===========================================================================
 static void sectionRetune()
 {
     heading ("6b. a single retune while strings ring (workshop, material, body, tune)");
@@ -2752,6 +2834,7 @@ int main()
     sectionMaterials();
     sectionTransducers();
     sectionKnobs();
+    sectionRebuildSilence();
     sectionRetune();
     sectionRail();
     sectionMidi();
