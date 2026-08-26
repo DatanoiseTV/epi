@@ -227,7 +227,11 @@ inline constexpr ParamValue kAlloyTines[] = {
     { "barCouple", 0.70f }, { "resDamp", 0.25f },
     { "bodyMix", 0.35f }, { "cabMix", 0.25f },
     { "spaceMix", 0.18f }, { "spaceSize", 0.50f },
-    { "outGain", 6.0f },
+    // Re-levelled when the contact pickup stopped over-weighting the tine's
+    // overtones: each mode now carries its own generalised mass, which is
+    // 1.3 to 2.3 times the fundamental's for the modes a contact pickup
+    // hears best, and this patch rode the old louder version.
+    { "outGain", 8.5f },
 };
 
 // The instrument that has done two hundred gigs and missed every service:

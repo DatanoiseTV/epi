@@ -54,12 +54,14 @@ Service manual ch. 4 (all figures verified in the on-disk text and scans):
 | 1.1r | Pickup–tine gap | 1.588–3.175 mm; 0.508 mm feasible mid/upper post-Mar-1972 | ch. 4 volume adj. |
 | 1.1s | Tine rest position | slightly above pickup dead center | ch. 4 timbre adj. |
 
-Row 1.1k–o corrects a comment in `src/epi/dsp/RhodesVoice.h` ("the hammers
-are graduated in mass, not in hardness"): the manual graduates the tips in
-**hardness** (Shore A 30 → 90 → wrapped) *and* height. The plastic hammer
-body is one molding across the compass; the mass graduation from tip height
-is a fraction of a gram. Real graduation lives in the **tip stiffness**, not
-the mass — the opposite of what the model currently does.
+Row 1.1k–o corrected a comment in `src/epi/dsp/RhodesVoice.h` that claimed
+the hammers are graduated in mass rather than hardness: the manual graduates
+the tips in **hardness** (Shore A 30 → 90 → wrapped) *and* height. The
+plastic hammer body is one molding across the compass; the mass graduation
+from tip height is a fraction of a gram. Real graduation lives in the **tip
+stiffness**, not the mass. The comment now says so, and says why the model
+still carries a flat stiffness anyway: the tip table gives the graduation's
+shape but nothing on disk gives its scale (§1.4 step 3).
 
 ### 1.2 Strike fraction and effective mass at the manual's line [C]
 
@@ -107,12 +109,98 @@ distance between the two documented endpoints):
 | E7 | 2637.0 | 19 | 3.2 | 0.17 | 5.5 |
 
 The effective mass at the strike point is **nearly constant, 11 g falling
-gently to 5.5 g** — a 2× spread where the current model has a 52× spread
-(checklist, "tine swing" gap). A Rhodes hammer is ~10 g (AAU report: 11 g
+gently to 5.5 g** — a 2× spread. A Rhodes hammer is ~10 g (AAU report: 11 g
 [R]); the rail curve makes the collision mass ratio ≈ 1 across the whole
 compass, so one hammer molding and one velocity law work everywhere, and the
 per-register voicing is done by tip hardness. That is the "sweet spot" the
 manual describes, and it is the anchor the recalibration should sit on.
+
+**Built, and here is where it landed** [M]. The lengths in that table were
+computed from the model's own bare-cantilever solve, which is the error §1.5
+below identifies; with the tuning spring in the solve the lengths and the
+whole column change. Measured on the built model, at the manual's striking
+line and the corrected geometry:
+
+| note | L (mm) | β | eff. mass at strike (g) | hammer (g) | ratio |
+| --- | --- | --- | --- | --- | --- |
+| A0 | 159.1 | 0.359 | 35.6 | 2.67 | 0.075 |
+| E1 | 130.0 | 0.348 | 32.4 | 2.43 | 0.075 |
+| E2 | 91.9 | 0.331 | 27.7 | 2.77 | 0.100 |
+| E3 | 65.0 | 0.314 | 23.7 | 4.15 | 0.175 |
+| E4 | 46.0 | 0.298 | 20.3 | 6.09 | 0.300 |
+| E5 | 32.5 | 0.283 | 17.4 | 5.22 | 0.300 |
+| E6 | 23.0 | 0.268 | 14.9 | 4.48 | 0.300 |
+| C8 | 12.9 | 0.246 | 11.6 | 3.48 | 0.300 |
+
+Three to one, not two to one and not fifteen to one. The residual factor of
+1.5 against the manual's design intent is in the strike-line interpolation
+— exponential in note number between two documented endpoints is the one
+free choice §1.4 flags, and it is the thing that would have to move to make
+the collision mass ratio genuinely constant. Until it does, one moulding is
+not reachable: a constant hammer on a threefold ramp is a mass ratio that
+FALLS across the compass where every calibrated row wants it to rise, and
+measured that way it puts the bottom note 36 to 138 cents sharp (see the
+checklist's "hammer as one moulding").
+
+### 1.2b The tine geometry: the spring belongs in the length solve [M]
+
+The §1.2 table above was computed with the model's own tine solve, and that
+solve was wrong in a way that propagated into everything hanging off it. It
+took the free length of a BARE cantilever at the wanted pitch. A real tine
+carries its tuning spring near the free end, and a mass riding there lowers
+the pitch, so the steel has to be shorter than the bare solve says. Measured
+against Shear the error is large and one-sided:
+
+| note | bare solve (mm) | measured (mm) | source |
+| --- | --- | --- | --- |
+| A0 | 220.9 | 157 | Shear §2.1 [R] |
+| E1 | 180.4 | 128–135 (73-key, spring fitted) | Shear §3 [R] |
+
+A point mass of `mu` beam-masses at `posOverL` multiplies mode 1's
+generalised mass by (1 + 4·mu·φ₁(pos)²) and leaves its stiffness alone, so
+the same note is reached at (1 + 4·mu·φ₁²)^(−1/4) of the bare length [C].
+Calibrated on those two notes: **mu = 0.487 beam-masses at 87% of the free
+length**, a generalised-mass factor of 2.31 and a length factor of 0.811,
+giving A0 = 159.1 mm and E1 = 130.0 mm. Constant in beam-masses rather than in grams, because a
+constant absolute mass puts E1 at 125 mm — below its measured band — where a
+constant fraction puts it inside. In grams the implied spring runs 1.08 g at
+the bottom of the compass to 0.09 g at the top, graduated with the tines.
+
+The wire gauge goes back to one stock at the same time (Shear: plain
+cylindrical 1.5 mm, §2.1 [R]). The 0.95 → 0.65 mm taper the model carried was
+invented to keep the treble lengths plausible and it was paying for this
+error.
+
+One residual, stated rather than hidden: with one gauge and one spring
+fraction the treble cannot be made to match Shear too. A bare 1.5 mm
+cantilever at his top pitch of 4.2 kHz is 15.9 mm before any spring is added
+[C], so his own equation cannot produce his own 18 mm top tine from his own
+gauge; the model lands at 12.9 mm there. The measured set spans 157/18 = 8.7
+in length across 152× in frequency where a single gauge gives √152 = 12.3 —
+so the real set is NOT one gauge at both ends, or one of the three numbers is
+rounded. Nothing on disk resolves it. The bass pair is the tight, twice-stated
+constraint and is what the calibration sits on; the suite's length test bands
+the treble loosely and says why.
+
+What the correction buys, measured through the built model:
+
+| quantity | bare solve | with the spring | target |
+| --- | --- | --- | --- |
+| β at A0 | 0.259 | 0.359 | 0.36 (§1.2) [C] |
+| β at C8 | 0.214 | 0.246 | 0.17–0.20 (§1.2) [C] |
+| eff. mass span | 114 → 7.3 g | 35.6 → 11.6 g | 2× (§1.2) [C] |
+| ff tip swing | 5.5 / 6.1 / 1.1 mm at A0 / E3 / E6, non-monotone | 10.8 / 5.3 / 0.75 mm, monotone | T8 |
+| ff strike-point swing at A0 | 0.57 mm | 2.04 mm | T7: 6.35–9.53 mm |
+| DSP swing span across compass | 4.9× | 13.6× | > 5 (suite bound) |
+| DSP growl gradient bass − mid | −0.5 dB | +9.4 dB | > 3 dB (suite bound) |
+
+Both DSP known gaps closed on the geometry and the hammer law it made
+possible (§1.4 step 2) — not on tuning, and not on the hammer law alone,
+which on the old lengths could not reach either bound without breaking four
+reference rows. The strike-point swing is
+still a factor of three under the manual's escapement band, so the T7/T8
+question §1.3 raises is not settled — but the model now moves the right way
+at every note instead of peaking in the middle of the keyboard.
 
 ### 1.3 Target quantities the recalibrated model must hit
 
@@ -158,24 +246,56 @@ Order matters; each step has a gate before the next.
    the interpolation is the one free choice and it is the one that makes
    eff. mass ≈ constant, §1.2). β then falls 0.32→0.17 on its own. Gate:
    effective-mass-at-strike diag lands in 5–12 g monotone, no clamp pinning.
-2. **Hammer mass second: make it constant.** Replace
-   `0.30·effTineMass clamped [0.6 g, 6 g]` with m_h ≈ 9 g ± the
-   `hammerMassNorm` user trim. The 6 g ceiling pin from note 28–71
-   disappears because the law no longer chases a 52× effective-mass ramp.
-   Gate: mass ratio m_h/m_eff ∈ [0.8, 1.8] across the compass.
-3. **Stiffness third, and it becomes graduated.** Contrary to the current
-   comment, graduate contact stiffness with the tip table: Shore A 30 → 90 →
-   wrapped is roughly a 1 → 50 MPa modulus span; keep the Hunt–Crossley
-   exponent ≈ 2 (cylinder-on-cylinder). Calibrate the scale mid-compass to
-   the **6.42 ms** ISMA contact time (T5), then set the bass/treble ends
-   from the C5 attack times (T6). Gate: contact-time diag 10–15 / 6.4 / ~0.5
-   ms.
+   **Done, and the step above it was the real one**: the strike line alone
+   left β flat at 0.25 because the tine LENGTHS were 40% out. §1.2b puts the
+   tuning spring in the length solve; only then does β fall 0.36→0.25 and the
+   effective mass land at 35.6→11.6 g monotone with no clamp pinning. The gate
+   passes on the shape but not on the absolute band: three to one, not two,
+   and 35 g rather than 11 at the bottom. What is left of the discrepancy is
+   in this interpolation.
+2. **Hammer mass second: make it constant.** *Measured and rejected, twice.*
+   Constant mass was swept from 3.0 to 11 g on both geometries. On the
+   corrected one it fails harder than on the old, and the mechanism is now
+   plain: with the effective mass still falling threefold, a constant hammer
+   is a mass RATIO that falls threefold, where every calibrated row wants it
+   to rise. Measured at 3.7 g the bottom note is 36 cents sharp; at 11 g,
+   138 cents. What survives is one ratio law with one knee —
+   0.075 + 0.225·u² up to 0.30 of the strike-point effective mass over the
+   bottom two-fifths — whose fail=0 window is 0.065 to 0.080 (A3 at E2 above,
+   C2 at E2/E3 below), an order of magnitude wider than the 0.3 g the old
+   geometry left. Constant mass becomes reachable when step 1's interpolation
+   makes the collision ratio genuinely flat, not before.
+3. **Stiffness third, and it becomes graduated.** Graduate contact stiffness
+   with the tip table: Shore A 30 → 90 → wrapped, which through Gent's
+   relation is 1.15 / 2.47 / 5.55 / 20.9 MPa; keep the Hunt–Crossley exponent
+   ≈ 2 (cylinder-on-cylinder). *Measured on the corrected geometry and NOT
+   adopted, on the calibration and not on the physics.* The shape is right and
+   it delivers: contact time stops being flat and falls with pitch, 4.33 ms at
+   E1 through a 5.27 ms peak at C3 to 1.79 ms at E6, against 3.35 → 4.04 ms
+   ungraduated. What has no source is the SCALE — which Shore band keeps the
+   calibrated stiffness. The 6.42 ms ISMA figure is a single unweighted
+   average over unstated notes and velocities and cannot pin it. Swept, the
+   suite is fail=0 only for a reference band of Shore A 58–61 (A4 at E3 above,
+   G4 below), a two-point window on a twenty-point scale, and it costs the
+   swing span (13.6× → 7.7×) and G2 (4.08 → 4.58) to buy a contact-time shape
+   no row measures. Reverted. The next attempt needs a stiffness scale with
+   its own measurement behind it, not the tip table alone.
 4. **Velocity map last.** One global map (the current
    v = 0.18 + 5.6·vel^1.7 shape is fine as a starting family), recalibrated
    against T7/T8 (ff bass strike-point swing approaches but does not exceed
    escapement; tip swing 25–50 mm bass, <1 mm top) and T9 (16–37 dB H2−H1
    swing). Gate: A2/A3/A4 rows plus the swing diagnostics.
-5. **Re-measure the pickup-gap conclusion.** The "growl is not behind the
+5. **Re-measure the pickup-gap conclusion.** *Partly done.* The product
+   transduction was the piece the geometry was expected to unblock, and it
+   half was: A4, the velocity swing, ran past its 37 dB ceiling across the
+   whole physical bobbin range before and now clears it from a 3.2 mm mean
+   turn radius outward, because the geometry handed A4 at E3 nearly two
+   decibels of headroom. The blocker moved to A2, which crosses its +24 dB
+   ceiling between 4.0 and 4.2 mm while B6 crosses its +2.2 dB/s floor going
+   the other way between 3.8 and 3.6 — they miss by about a tenth of a
+   decibel per second. Still not adopted; see the checklist table. The gap
+   sweep itself is unchanged.
+   The original note stands for the gap sweep: the "growl is not behind the
    pickup gap" ruling in the checklist was measured with a bass tip swing of
    3.1 mm. After this recalibration the bass swing is an order of magnitude
    larger; the nine-row sweep that ruled the gap out must be re-run, because
@@ -424,8 +544,11 @@ the honest ceiling of what desk research yields.
 ## Cross-cutting: order of work
 
 1. §1 recalibration (geometry → mass → stiffness → velocity), suite as
-   judge. This is expected to move B6/G2/C5/F1 and *creates* the large bass
-   swing that §2.2's hard-layer rise regime needs.
+   judge. **Geometry and mass are done** (§1.2b, §1.4 steps 1–2): both DSP
+   gaps closed, G2 6.12× → 4.08×, B6 +1.31 → +1.45 dB/s, reference fail=0.
+   Stiffness is measured and parked on its calibration scale. What is left of
+   step 1 is the strike-line interpolation, which is what still holds the
+   collision ratio at three to one instead of the manual's two.
 2. Re-measure the J8 hard-bass rows on the model (render 20 s, full-span
    fit). If the rise appears, B5-hard and B6 close together.
 3. §2.4 threshold damping for the soft/mid knee, after re-windowing the B5
@@ -439,7 +562,13 @@ the honest ceiling of what desk research yields.
   σ(sinh κx − sin κx), σ = (sinh κ − sin κ)/(cosh κ + cos κ); effective
   mass at x: m_eff = m_modal/φ(x)² with φ tip-normalised.
 - Tine length from frequency (Shear eq. 2.1): f = 1.426·πK/(8L²)·√(E/ρ),
-  K = r/2, E = 2.0e11 Pa, ρ = 7850 kg/m³.
+  K = r/2, E = 2.0e11 Pa, ρ = 7850 kg/m³. With a tuning spring of `mu`
+  beam-masses at `posOverL`, the same note is reached at
+  L = L_bare·(1 + 4·mu·φ₁(pos)²)^(−1/4), and mode m's generalised mass is
+  m_beam·(1 + 4·mu·φ_m(pos)²) — per mode, because the modes do not all see the
+  spring alike.
+- Gent's Shore A to Young's modulus:
+  E (MPa) = 0.0981·(56 + 7.62336·S) / (0.137505·(254 − 2.54·S)).
 - Free-free beam: f_n = k_n²/(2πL²)·√(EI/μ), k_n = 4.730, 7.853, 10.996,
   14.137, 17.279, 20.420.
 - Contact time (linearised): τ ≈ π√(m_red/k_eff), 1/m_red = 1/m_h + 1/m_eff.

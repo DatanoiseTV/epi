@@ -98,6 +98,38 @@ not over seconds.
 
 ## Known gaps
 
+- **The tine carries its tuning spring in the length solve, and the set is one
+  gauge.** The beam solve answered a question about a tine with no spring on
+  it, so every tine came out as long as a BARE cantilever of its pitch — 220.9
+  mm at A0 where Shear measured 157, 180.4 mm at E1 where the 73-key tine is
+  128–135 mm with its spring fitted — and a radius tapering 0.95 to 0.65 mm was
+  carried to keep the treble plausible. Shear measured the Mark I set as plain
+  1.5 mm wire, so the taper is now gone and the spring is in: a point mass of
+  mu beam-masses at posOverL multiplies the fundamental's generalised mass by
+  (1 + 4 mu phi_1(pos)^2) and leaves its stiffness alone, so the same note is
+  reached at (1 + 4 mu phi^2)^(-1/4) of the bare length. 0.487 beam-masses at
+  87% of the length gives a factor 0.811 — A0 solves to 159 mm against 157
+  measured and E1 to 130 mm inside its band. Constant in beam-masses rather
+  than grams because both measured notes ask for it: a constant absolute mass
+  puts E1 at 125 mm, below its band. What that fixes is not the lengths, it is
+  everything hanging off them. The strike fraction at the manual's line runs
+  0.36 → 0.26 instead of a flat 0.25, the effective mass at the strike point
+  runs 35.6 g → 11.6 g instead of 114 g → 7.3 g (a threefold spread where the
+  manual's rail is designed for twofold, against a fifteenfold one the
+  geometry error had manufactured), and the ff tip swing becomes MONOTONE
+  across the compass — 10.8 mm at A0 falling to 0.32 mm at C7, where the old
+  geometry peaked in the middle of the keyboard at 6.1 mm. Both known gaps in
+  the DSP suite closed on that: the swing span went 4.9× to 13.6× (bound > 5)
+  and the growl gradient went −0.5 dB to +9.4 dB (bound > 3). The hammer
+  graduation that had been compensating became one number and one shape — the
+  collision mass ratio rises as 0.075 + 0.225·u² to 0.30 of the strike-point
+  effective mass over the bottom two-fifths, with no ceiling in kilograms —
+  and its window is now 0.065 to 0.080 wide at fail=0 (A3 at E2 above, C2 at
+  E2/E3 below) where the old geometry left 0.3 g. Net on the reference rows:
+  fail=0, the same five gaps, G2 from 6.12× to 4.08×, B6 +1.31 to +1.45 dB/s.
+  Two rows tightened and are worth watching: G4 moved 0.928 to 0.937 against a
+  0.94 ceiling, and A3 at E2 sits at −10.3 against −10.
+
 - **The striking line now follows the service manual, and the collision was
   recalibrated around it.** The manual gives the hammer's contact point as
   57.15 mm from the tone generator at the extreme bass and 3.175 mm at the
@@ -135,7 +167,7 @@ Tracked here so they are not rediscovered as surprises. Run
 `ctest -R epi_reference` for the current numbers; this is the standing list of
 what is understood and unfixed.
 
-- **B5, the envelope is a single exponential** (0.53 dB residual against a
+- **B5, the envelope is a single exponential** (0.35 dB residual against a
   measured 1.4–5.1). Two mechanisms were built and measured before this was
   accepted as a gap; both are recorded under "Ruled out" below. The
   conclusion they force: the real instrument's second slope, coexisting as
@@ -143,7 +175,7 @@ what is understood and unfixed.
   at the pickup — it is the transduction gain moving with amplitude, the
   same field hand-back that B6 measures, and it is short for the same
   reason (the field map's far tail, see G2).
-- **C5, the bass attack is fast**: 6.3 ms against a measured 14–21, and it
+- **C5, the bass attack is fast**: 6.25 ms against a measured 14–21, and it
   is NOT contact-limited: softening the bass hammer tip until the contact
   stretched from 3.3 to 12 ms moved this number by nothing. What the row
   measures is the note's own quarter-period rise to the first flux peak.
@@ -153,14 +185,14 @@ what is understood and unfixed.
   tine-side effective mass the current beam-plus-patch collision does not
   produce, not a constant.
 - **B6, a hard bass strike's fundamental rises at a third of the measured
-  rate**: +1.28 dB/s against +2.2 to +3.9, from +0.58 before the striking
-  line moved. The fence is now measured precisely: B6 and A2 read the same
+  rate**: +1.45 dB/s against +2.2 to +3.9, from +0.58 before the striking
+  line moved and +1.31 before the tine geometry did. The fence is now measured precisely: B6 and A2 read the same
   render, A2's H2 dominance sits within 2 dB of its measured +24 dB
   ceiling, and with this field map more swing moves both together. The
   real pole buys its extra rise by pushing energy into H6–H15 instead —
   the same missing far structure as G2.
 - **G2, the bass is not rich enough relative to its own pitch**: the steady
-  centroid rises 6.1× from A1 to E5 where the reference rises about 1.5 while
+  centroid rises 4.1× from A1 to E5 where the reference rises about 1.5 while
   the fundamental rises twelvefold. A hard bass note's spectrum has died by its
   eighth harmonic; the real one carries energy past its thirtieth. The fix is
   a field map with honest far structure — the flat's edge and the wedge that
@@ -169,7 +201,7 @@ what is understood and unfixed.
   recordings carry a fixed recording EQ, and a treble-tilted one inflates the
   bass centroid more than the treble's, so the target may be somewhat high.
   The direction is not in doubt.
-- **C1 at E5 is 2 dB too clean** (−43.9 against a band floor of −42): the
+- **C1 at E5 is 4 dB too clean** (−46.2 against a band floor of −42): the
   wrong kind of perfect — the strike transient the patch-and-dwell weighting
   leaves at E5 is slightly quieter than the reference's quietest sample.
   Tracked with a bound at −52 so it cannot silently get cleaner still.
@@ -195,7 +227,10 @@ what is understood and unfixed.
   notes that the principled fix is to carry the contact's elastic part through
   the quadratised path, which would remove the explicit time-step limit
   entirely. Measured across the compass, the cap never engages, so that work
-  would change nothing. Worth revisiting only if the hammer is re-sized.
+  would change nothing. Re-measured after the tine geometry and the hammer
+  graduation were both re-derived: still not binding at any note, at either
+  end of the compass, with the wanted stiffness at 6.0e6 against a ceiling
+  three orders of magnitude above it.
 - **The growl is not sitting behind the pickup gap.** The argument for closing
   it is good -- the field is smooth far from the pole and nearly a cusp close
   in, and at 0.6 mm the hard bass fundamental rises at 2.8 dB/s, which is
@@ -323,88 +358,127 @@ window of a few parts in a hundred and no headroom to hand anything.
 **Measured and NOT adopted -- the hammer as one moulding.** The manual has
 one plastic hammer body across the compass and graduates the TIPS, and
 `rhodes-mechanics-open-questions.md` computes the effective tine mass at
-the manual's striking line as nearly constant (11 g falling to 5.5 g), so
-one hammer should work everywhere. Replacing the rising ceiling (2.24 g at
-A0 to 6.6 g at the upper-mid knee) with a constant one was measured from
-3.0 to 11 g. It does exactly what that research predicts: at 3.7 g the ff
-tip swing becomes monotone with pitch, which closes BOTH known gaps in the
-DSP suite -- the swing span across the keyboard and the growl gradient --
-and it takes G2 from 6.12 to 4.61 and A4 at E3 from 36.7 to 33.6. It also
-breaks four measured rows, from both sides at once. Below 3.8 g the mid
-register goes flat: G1 at D4 falls to 2.53 against a 2.5 floor, G4 rises
-to 0.98 against a 0.94 ceiling (a soft attack that is no longer duller
-than its own sustain), and C2 at E3 over-cleans to -94.4 dB against a -92
-floor. Above 3.8 g the bass goes hot: A3 at E2 reaches -9.8 and A2 at E2
-+25.4. The window is 0.3 g wide and nothing fits in it.
+the manual's striking line as nearly constant, so one hammer should work
+everywhere. It was measured twice, on both geometries, and it fails on
+both -- for opposite reasons, which is itself the finding.
 
-The reason it cannot be one moulding *here* is worth recording, because it
-names the next piece of work rather than this one. The model's effective
-tine mass at the strike point runs 114 g at A0 down to 7.5 g at C8, a
-fifteenfold spread, where the manual's rail gives twofold. Its strike
-fraction sits near 0.25 across the whole compass instead of falling from
-about 0.36 to 0.17, because the beam solve makes the bass tines some 40%
-longer than Shear measured them -- 220.9 mm at A0 against 157, 180.4 mm at
-E1 against 128-135 -- and a real tine is shorter than the bare cantilever
-because its tuning spring loads the tip. The hammer graduation is
-compensating for that. One moulding needs the tine geometry first.
+On the OLD bare-cantilever geometry, replacing the rising ceiling (2.24 g
+at A0 to 6.6 g at the upper-mid knee) with a constant one was swept from
+3.0 to 11 g. At 3.7 g the ff tip swing became monotone with pitch, closing
+both DSP gaps, and G2 went 6.12 to 4.61. It broke four measured rows from
+both sides: below 3.8 g the mid register went flat (G1 at D4 2.53 against
+a 2.5 floor, G4 0.98 against a 0.94 ceiling, C2 at E3 -94.4 against -92)
+and above 3.8 g the bass went hot (A3 at E2 -9.8, A2 at E2 +25.4). The
+window was 0.3 g wide and nothing fitted in it. The reason it could not be
+one moulding *there* was the geometry: a fifteenfold effective-mass ramp
+where the manual's rail gives twofold.
 
-**Measured and NOT adopted -- the manual's tip-hardness graduation.** The
-tip table (Shore A 30 for hammers 1-30, 50, 70, 90, then wrapped) converts
-through Gent's relation to a modulus span of about 1.1 to 50 MPa, and the
-research file argues correctly that this, not mass, is where the real
-graduation lives. Applied to the contact stiffness it collapses the treble
-contact to 1.0 ms and throws the top two octaves out to 2.5 mm of swing
-where they should move a fraction of a millimetre -- the exact failure the
-code comment beside the stiffness already predicted. It needs the same
-tine-geometry work first.
+On the CORRECTED geometry the ramp is threefold and the constant-mass law
+still fails, harder, and the mechanism is now visible. The bass tine
+presents 35.6 g at the strike point against 11.6 g at the top, so a
+constant hammer is a mass ratio that FALLS threefold across the compass
+where every calibrated row wants it to rise. Measured on the DSP suite:
+3.7 g leaves note 28 36.4 cents out with the bass no growlier hard than
+soft, 5.0 g leaves it 60.6 cents out, 8.0 g 123.5 cents and the bass
+contact past 11 ms, 11 g 138.1 cents. On the reference suite 3.7 g is
+fail=7 (A2/A3 at E2, B2 at D4, B5, F1, G1 at D4, G4). The detuning is the
+tell: a hammer that heavy on a bass tine that light drives the swing far
+enough that the residual axial restraint holds the note sharp for
+seconds. What the manual's one moulding needs is not a constant collision
+mass, it is a rail that equalises the collision -- and the model's
+strike-point effective mass, even corrected, still spans three to one
+where the manual's own numbers give two. That gap is in the strike-line
+interpolation, not in the hammer.
 
-**Measured and still NOT adopted -- the product transduction, re-run on
-the corrected chain.** With the let-off fixed and the floor re-derived,
-and with the tine's own 1.905 mm cross-section averaged into the flux as
-the physics requires:
+**Measured and NOT adopted -- the manual's tip-hardness graduation, re-run
+on the corrected geometry.** The tip table (Shore A 30 for hammers 1-30,
+50, 70, 90, then wrapped) converts through Gent's relation
+E = 0.0981(56 + 7.62336 S) / (0.137505(254 - 2.54 S)) MPa to 1.15 / 2.47 /
+5.55 / 20.9 MPa, an eighteenfold span, and the research file argues
+correctly that this, not mass, is where the real graduation lives. On the
+old geometry it collapsed the treble contact to 1.0 ms and threw the top
+two octaves out to 2.5 mm of swing.
 
-| coil mean radius (mm) | B6 | A2 at E2 | A3 at E2 | A4 at E3 | verdict |
-| --- | --- | --- | --- | --- | --- |
-| linear in B (shipped) | +1.31 | +22.0 | -10.9 | 36.6 | ships |
-| 2.6 | +1.92 | +23.6 | -10.7 | 38.1 | A4 fails |
-| 3.2 | +1.61 | +23.0 | -10.6 | 37.4 | A4 fails |
-| 3.6 | +1.45 | +22.7 | -10.6 | 37.0 | A4 at the ceiling |
-| 4.4 | +1.25 | +22.1 | -10.6 | 36.4 | passes, B6 below the shipped law |
-| 5.5 | +1.16 | +21.8 | -10.6 | 36.1 | passes, B6 below the shipped law |
+On the corrected geometry it no longer does that, and it does the one
+thing it was supposed to: the contact time stops being flat and starts
+falling with pitch, 4.33 ms at E1 through a 5.27 ms peak at C3 down to
+1.79 ms at E6, where the ungraduated model runs 3.35 ms at E1 and 4.04 ms
+at E6 -- the wrong direction for any keyboard instrument. The DSP suite
+passes at every setting tried.
 
-The law's whole effect is a function of how tightly the winding hugs the
-slug, and the two ends of that range are useless in opposite directions:
-inside 3.6 mm it buys real rise and fails A4, and by the radius where A4
-fits it has stopped doing anything -- at 4.4 mm and beyond the fundamental
-rises MORE SLOWLY than under the plain linear law. The documented winding
-puts the mean turn radius in the upper half of that range: 180 ohms of
-fine wire on a bobbin over the 2.38 mm slug is a build of one to three
-millimetres, so the honest radius is around 3.2 to 4 mm, which is either
-just failing or already inert.
+It is still not adoptable, and the reason is the free constant rather
+than the physics. The Gent ratio is a shape; which Shore band keeps the
+calibrated 6.0e6 N/m^2 is a scale, and nothing on disk fixes it -- the
+6.42 ms ISMA contact figure is a single unweighted average over unstated
+notes and velocities, which the suite already refuses to treat as a
+per-note target. Swept, the reference suite is fail=0 only for a
+reference band of Shore A 58-61: at 62 A4 at E3 reaches 37.2 against its
+37 ceiling, at 55 and below G4 reaches 0.95-1.00 against its 0.94
+ceiling. A two-point window on a scale whose documented bands step by
+twenty is the same knife-edge the constant-mass law was rejected for, and
+it is bought at a price: the swing span falls from 13.6x to 7.7x and G2
+goes 4.08 to 4.58. Nothing in the suite measures the contact-time shape
+it buys. Reverted; the shape is recorded here so the next attempt starts
+from a stiffness scale with its own measurement behind it.
 
-So the conclusion after re-deriving the chain is the opposite of a green
-light. The product law is still the right physics and it is still not
-adoptable, and the reason has moved: it is no longer that the velocity
-mapping has not been checked, it is that the mapping is pinned to a few
-percent by A3 and A4 together, the hammer graduation is pinned by four
-more rows, and the transduction's own free parameter has no setting that
-is both physical and useful. What separates B6 from A2 is not in the
-chain and not in the transduction law -- it is the far structure of the
-field itself, which is what G2 has been saying all along.
+**Measured and still NOT adopted -- the product transduction, re-run a
+third time on the corrected geometry, and the blocker has MOVED.**
+Reciprocity says the flux is a product of two fields: the tine is steel the
+magnet magnetises, and what that moment puts through the winding is the
+coil's own field per unit current at the tine's position. Modelled as the
+on-axis loop form a^2 / (a^2 + v^2 + g^2)^(3/2), exact on the axis and a
+dipole far away, with the mean turn radius a as its one free parameter and
+the table renormalised afterwards so the small-signal level is untouched:
 
-One inconsistency surfaced by this work and deliberately left open,
-because it decides how the tine geometry above should be judged and
-cannot be settled from the files on disk. The known-gap entry at the top
-of this document records the model's hard-velocity tip swing as 3.9 mm at
-the bottom against "3.1 measured"; `rhodes-mechanics-open-questions.md`
-records the same quantity as 25-50 mm at the longest tine, attributed to
+| coil mean radius (mm) | B6 | A2 at E2 | A3 at E2 | A4 at E3 | G2 | verdict |
+| --- | --- | --- | --- | --- | --- | --- |
+| linear in B (shipped) | +1.45 | +22.6 | -10.3 | 34.7 | 4.08 | ships |
+| 2.6 | +2.54 | +24.7 | -11.2 | 37.5 | 3.61 | A2 and A4 fail |
+| 3.2 | +2.35 | +24.4 | -11.0 | 36.9 | 3.71 | A2 fails |
+| 3.6 | +2.24 | +24.2 | -10.8 | 36.6 | 3.76 | A2 fails |
+| 3.8 | +2.19 | +24.1 | -10.7 | 36.4 | 3.79 | A2 fails, B6 just under |
+| 4.0 | +2.15 | +24.0 | -10.7 | 36.3 | 3.81 | A2 fails, B6 under |
+| 4.2 | +2.10 | +23.9 | -10.7 | 36.2 | 3.83 | passes, B6 still a gap |
+| 4.4 | +2.06 | +23.8 | -10.7 | 36.1 | 3.85 | passes, B6 still a gap |
+| 5.0 | +1.95 | +23.6 | -10.7 | 35.8 | 3.89 | passes, B6 worse |
+
+The corrected geometry did exactly what it was predicted to do to this
+experiment: A4, the velocity SWING, was the blocker on the old geometry
+and is not the blocker any more. It ran past its 37 dB ceiling across the
+whole physical range of the bobbin before; it now clears it from 3.2 mm
+outward, because the geometry handed A4 at E3 nearly two decibels of
+headroom (36.6 shipped, 34.7 now). What blocks it instead is A2, the hard
+octave dominance, which crosses its +24 dB ceiling between 4.0 and 4.2 mm
+-- and B6 crosses its +2.2 dB/s floor going the other way between 3.8 and
+3.6 mm. The two miss by about a tenth of a decibel per second.
+
+That is a far smaller miss than the previous ruling ("no setting that is
+both physical and useful"): at the A2 boundary the law now delivers +2.10
+dB/s where the shipped law gives +1.45, and it takes G2 from 4.08 to 3.83
+at the same time. It is still a miss, the radius that produces it (4.2 mm)
+sits just outside the 3.2-4 mm the documented winding gives, and adopting
+it would spend A2's remaining margin -- 1.4 dB down to 0.1 -- to close
+nothing. Not adopted. But the conclusion is no longer that the chain is
+not ready for the law; it is that one row, A2, is a tenth of a decibel per
+second away from letting it in, and A2 is the row G2 has been pointing at
+all along: the real pole hands the extra energy to H6-H15 instead of to
+H2, and this field map has no far structure to hand it to.
+
+One inconsistency surfaced by this work stays open, though the geometry
+has moved the model a long way along it. `rhodes-mechanics-open-questions.md`
+records the ff tip swing as 25-50 mm at the longest tine, attributed to
 Shear section 3.1, and derives the strike-point swing independently from
 the manual's escapement (6.35-9.5 mm in the bass, which the tine must not
-exceed or it strikes the resting hammer on the way back down). Those are
-an order of magnitude apart. The model currently sits at the small
-figure, and its strike-point swing at the bottom is 0.9 mm against the
-manual's 6-plus. Whichever is right, the hammer graduation and the tine
-lengths are being judged against it.
+exceed or it strikes the resting hammer on the way back down); the
+reference recordings imply something an order of magnitude smaller. The
+model used to sit at the small figure and, worse, non-monotonically: 5.5
+mm at A0, 6.1 mm at E3, 1.1 mm at E6, with a strike-point swing of 0.57
+mm at the bottom. With the spring in the length solve it runs 10.8 / 5.3 /
+0.75 mm, monotone, and the strike-point swing at A0 is 2.04 mm. Still a
+factor of three under the manual's escapement band and a factor of two to
+five under Shear, but in the right direction at every note and no longer
+inverted in the middle of the keyboard. Whichever figure is right, the
+hammer graduation is being judged against it.
 
 Until then B5, B6 and G2 stay gaps with these tables as their price, and
 the shipped map keeps the honest far field without the transduction

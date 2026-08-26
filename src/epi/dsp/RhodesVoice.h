@@ -927,6 +927,20 @@ private:
     // Rhodes tine; the tip does not change size across the keyboard, so the
     // fraction of the tine it covers grows toward the treble on its own.
     static constexpr double kTipWidth = 0.010;
+
+    // The tuning spring's mass, in tine beam-masses. Calibrated on the two
+    // measured bass lengths (Shear: 157 mm at A0; 128-135 mm at E1 on the
+    // 73-key) through the length solve in configure(): at the default position
+    // it multiplies the fundamental's generalised mass by 2.31 and so shortens
+    // every tine to 0.811 of its bare-cantilever length. Constant in beam-masses rather than in grams
+    // because the two measured notes ask for it -- a constant absolute mass
+    // puts E1 at 125 mm, below its band, where a constant fraction puts it at
+    // 130 mm inside it. The real springs are graduated with the tines.
+    //
+    // The POSITION the control sits in the middle of is not measured; nothing
+    // on disk gives it, and the mass follows from it through the calibration
+    // above.
+    static constexpr double kSpringMassRatio = 0.487;
     static constexpr int kStrike = 0, kTip = 1, kBlock = 2;
 
     double registerPosition() const
@@ -971,14 +985,16 @@ private:
         const double reg = registerPosition();
 
         // ---- tine geometry --------------------------------------------------
-        // Solved from the beam equation for the note wanted, using the real
-        // material and a wire gauge that tapers toward the treble as the later
-        // instruments' swaged tines do. A single gauge across the whole compass
-        // would put the top octave at an impossible few millimetres.
-        // Later Rhodes tines are ground to a taper toward the treble, but not
-        // steeply: taking too much off makes the top octaves so light that the
-        // hammer overwhelms them.
-        const double radius = (0.95 - 0.30 * reg) * 1.0e-3 * geoDia;
+        // One gauge across the whole compass. Shear measured the tines of a
+        // Mark I as plain cylindrical wire 1.5 mm across (thesis 2.1), and the
+        // set is cut from one stock: what changes from note to note is the
+        // length and the spring, not the wire. The taper this model used to
+        // carry -- 1.9 mm at the bottom ground to 1.3 mm at the top -- was
+        // invented to keep the treble lengths plausible, and it was paying for
+        // a different error: the length solve below ignored the tuning
+        // spring's mass entirely, so every tine came out as long as a BARE
+        // cantilever of the same pitch, and the bass came out 40% too long.
+        const double radius = 0.75e-3 * geoDia;
         // The selected material. Index 0 is the stock spring steel exactly
         // (same E and rho; the eta reference below makes its added loss
         // zero), so the calibrated instrument is untouched. Any other metal
@@ -990,16 +1006,68 @@ private:
         const Material& mat = kMaterials[std::clamp (static_cast<int> (cfg.material), 0, kNumMaterials - 1)];
         magCouple = magneticCoupling (mat);
         matCond   = mat.conductive;
-        tineLength = CantileverModes::lengthForFrequency (f0Cut, radius, mat) * geoLen;
-        const double area = kPiD * radius * radius;
-        const double modalMass = std::max (1.0e-8, mat.density * area * tineLength * 0.25);
 
         // Where the tuning spring sits, as a fraction of the free length, and
         // how heavy it is. Toward the tip it mostly transposes; back toward the
         // clamp it starts pulling the overtones about, because it then sits at
         // a different fraction of each mode's shape.
-        const double springPos = 0.55 + 0.42 * std::clamp (cfg.tuningSpring, 0.0, 1.0);
-        const double mu        = 0.05 + 0.30 * (1.0 - std::clamp (cfg.tuningSpring, 0.0, 1.0));
+        //
+        // The spring is ONE piece of hardware, so what the control moves is
+        // where it sits, not what it weighs -- and it sits near the free end,
+        // which is the only part of the tine a coil can be slid along and the
+        // only place the factory tuning procedure ever puts it. Its mass is
+        // fixed by the measured lengths below.
+        const double springPos = 0.81 + 0.12 * std::clamp (cfg.tuningSpring, 0.0, 1.0);
+        const double mu        = kSpringMassRatio;
+
+        // The tine is SHORTER than a bare cantilever of the same pitch,
+        // because the spring's mass is riding near its tip.
+        //
+        // This is the whole geometry, and the model used to leave it out. The
+        // spring already loaded the OVERTONE ratios (`ratio` below divides the
+        // fundamental's own load back out, so the note stayed put) but the
+        // length came from the bare beam equation, which meant the solve was
+        // answering a question about a tine with no spring on it. Measured
+        // against the real set the error is large and one-sided: 220.9 mm at
+        // A0 where Shear measured 157, 180.4 mm at E1 where the 73-key tine is
+        // 128-135 mm with its spring fitted.
+        //
+        // A point mass of mu beam-masses at posOverL multiplies the
+        // fundamental's generalised mass by (1 + 4 mu phi_1(pos)^2) and leaves
+        // its stiffness alone, so the same note is reached at
+        // (1 + 4 mu phi^2)^(-1/4) of the bare length. The mass is calibrated
+        // to land the two measured bass lengths: 0.487 beam-masses at 87% of
+        // the length multiplies the fundamental's generalised mass by 2.31,
+        // which is a factor 0.811 on the length -- A0 solves to 159 mm against
+        // 157 measured, E1 to 130 mm inside its measured band. In grams that is
+        // a spring of 1.08 g at the bottom of the compass falling to 0.09 g at
+        // the top, graduated with the tines the way the real springs are.
+        const double phiSpring  = CantileverModes::shape (0, springPos);
+        const double springLoad = 1.0 + 4.0 * mu * phiSpring * phiSpring;
+        tineLength = CantileverModes::lengthForFrequency (f0Cut, radius, mat)
+                   * std::pow (springLoad, -0.25) * geoLen;
+        const double area = kPiD * radius * radius;
+        // The spring rides on the tine, so the generalised mass carries it --
+        // the same factor that shortened the steel. Leaving it out would make
+        // the shortened tine lighter than the one it replaced AND lighter than
+        // the real thing, which is the collision's scale.
+        //
+        // Per mode, because the load is mu*phi_m(pos)^2 and the modes do not
+        // all see the spring alike: near the tip the fundamental is close to
+        // its own tip value and carries the whole spring, while the fourth and
+        // fifth modes have a node nearby and barely feel it. One shared mass
+        // would put every mode at the fundamental's 2.31x, and the modes that
+        // answer a knock at the clamp are exactly the high ones -- their
+        // shapes at the block are two orders of magnitude larger than the
+        // fundamental's.
+        const double beamMass  = std::max (1.0e-8, mat.density * area * tineLength * 0.25);
+        double modeMass[kTineModes];
+        for (int m = 0; m < kTineModes; ++m)
+        {
+            const double ph = CantileverModes::shape (m, springPos);
+            modeMass[m] = beamMass * (1.0 + 4.0 * mu * ph * ph);
+        }
+        const double modalMass = modeMass[0];
 
         // Shear matters more for the short thick treble tines than the long
         // bass ones, which is the physical reason the top of a Rhodes is less
@@ -1173,7 +1241,7 @@ private:
             const double rk = std::sqrt (ks);
             for (int pass = 0; pass < 8; ++pass)
             {
-                const double got = assembledFundamental (tineFreq, tineT60, modalMass,
+                const double got = assembledFundamental (tineFreq, tineT60, modeMass,
                                                          barF0, barM0, damp, rk, trim);
                 if (! (got > 0.0)) break;
                 trim *= f0 / got;
@@ -1193,7 +1261,7 @@ private:
 
         for (int m = 0; m < kTineModes; ++m)
         {
-            sys.setMode (kV0 + m, tineFreq[m] * trim, tineT60[m], modalMass);
+            sys.setMode (kV0 + m, tineFreq[m] * trim, tineT60[m], modeMass[m]);
             // The tine is round but not perfectly so, and it is clamped in a
             // block that is stiffer one way than the other. A few cents of
             // split between the polarisations is what makes the tip orbit
@@ -1204,7 +1272,7 @@ private:
             // them left the two polarisations nearly a semitone apart, which a
             // listener hears as the note beating against itself rather than as
             // the slow ellipse it should be.
-            sys.setMode (kH0 + m, tineFreq[m] * trim * 1.004, tineT60[m] * 0.85, modalMass);
+            sys.setMode (kH0 + m, tineFreq[m] * trim * 1.004, tineT60[m] * 0.85, modeMass[m]);
         }
 
         // ---- tonebar --------------------------------------------------------
@@ -1327,8 +1395,7 @@ private:
         // A Rhodes hammer is a small moulded arm with a neoprene tip, and what
         // matters is its effective mass at the tip after the pivot reduction.
         //
-        // Graduated against the tine rather than against the note number. The
-        // instrument's hammers are graduated too, and for the same reason: a
+        // Graduated against the tine rather than against the note number: a
         // treble tine is a stub of wire weighing a fraction of a gram, and a
         // hammer that outweighs it by twenty to one does not excite it, it
         // simply knocks it out of the way -- contact collapses to a few tenths
@@ -1339,33 +1406,60 @@ private:
         // to the other.
         const double phiStrike = shapeMode[0][kStrike];
         const double effTineMass = modalMass / std::max (1.0e-6, phiStrike * phiStrike);
-        // The ceiling is graduated, and the service manual's striking line is
-        // why it now RISES out of the bass. Under the old straight-rail
-        // geometry the bass strike point sat so close to the clamp that its
-        // effective mass ran to a kilogram, and the bottom octaves needed
-        // nine-gram arms just to be heard. With the manual's line the bass is
-        // struck a third of the way out, where the same tine meets the hammer
-        // at a twentieth of that mass -- the leverage that used to starve the
-        // bottom now overdrives it, and a nine-gram arm throws the tine
-        // fifteen millimetres where the instrument moves three. What the cap
-        // carries is the effective mass of the collision, not the weight of
-        // the moulded arm, and the reference rows pin it from every side: the
-        // octave-dominance ceiling (A2) and the settled tuning (F1/F2) cap
-        // the bottom near a third of the mid value, the mid plateau is fenced
-        // by E3's velocity swing above and D4's attack time below, and the
-        // knee lands where the two constraints hand over.
-        const double capKg = 0.0066 * (0.34 + 0.66 * std::min (1.0, reg / 0.60));
-        hammerCfg.mass = std::clamp (0.30 * effTineMass, 0.00060, capKg)
+        // What is graduated is the MASS RATIO of the collision, and it is one
+        // number and one shape: it rises across the bottom two-fifths of the
+        // compass to 0.30 of whatever the tine presents at the strike point,
+        // and stays there.
+        //
+        // With the tine geometry carrying its tuning spring the effective mass
+        // itself only spans 35.6 g to 11.6 g -- close to the twofold the
+        // service manual's rail curve is designed to produce -- so the ratio
+        // is now the whole of the graduation, where under the old
+        // bare-cantilever lengths it was a ceiling in kilograms fighting a
+        // fifteenfold ramp (114 g down to 7.3 g) that the geometry error had
+        // manufactured.
+        //
+        // It is a calibration and not a claim about the moulding: a real
+        // Rhodes hammer is one part across the compass and the manual
+        // graduates the TIPS. What the reference rows pin is the collision,
+        // and with the geometry corrected they pin it from both sides with
+        // room to spare -- the bass ratio holds fail=0 anywhere in 0.065 to
+        // 0.080, where the old geometry left a window 0.3 g wide. Above that
+        // E2's soft octave dominance (A3) crosses its -10 dB ceiling; below
+        // it E2 and E3 settle too clean for the inharmonic floor (C2). The
+        // value sits near the top of the window because the bass rise (B6)
+        // grows monotonically with it -- +1.15 dB/s at 0.065 against
+        // +1.59 at 0.080 -- and A3 still keeps 0.3 dB of margin here.
+        //
+        // The rise is quadratic in register rather than linear because a
+        // straight ramp steep enough to reach the mid from a bass light
+        // enough for A3 makes the third and fourth notes of the compass swing
+        // further than the first.
+        const double u     = std::min (1.0, reg / 0.60);
+        const double ratio = 0.075 + 0.225 * u * u;
+        hammerCfg.mass = std::max (0.00060, ratio * effTineMass)
                        * (0.6 + 0.8 * cfg.hammerMassNorm);
         hammerCfg.alpha     = 1.85 + 0.5 * cfg.hammerHardness;
-        // Deliberately NOT graduated across the keyboard. A Rhodes hammer tip
-        // is the same neoprene at every note -- the hammers are graduated in
-        // mass, not in hardness -- and making the treble tips stiffer as well
-        // collapsed the contact to a third of a millisecond up there. A
-        // contact that short is a broadband impulse: it excites every mode the
-        // beam has, and the top two octaves came out with erratic
-        // multi-millimetre swings instead of the fraction of a millimetre they
-        // should have.
+        // Not graduated across the keyboard, and this is the one place the
+        // model knowingly departs from the service manual rather than from a
+        // guess. The manual's tip table graduates the TIPS -- Shore A 30 for
+        // hammers 1 to 30, then 50, 70, 90, then wrapped -- which through
+        // Gent's relation is an eighteenfold modulus span, and that, not the
+        // moulding's weight, is where the real per-register voicing lives.
+        //
+        // It was measured here on the corrected geometry, and the shape it
+        // buys is right: contact time stops being flat and falls with pitch,
+        // 4.3 ms at E1 to 1.8 ms at E6, where this flat law runs 3.4 ms at E1
+        // and 4.0 ms at E6 -- the wrong direction for any keyboard. What has
+        // no source is the SCALE. The Gent ratio is a shape; which Shore band
+        // keeps the calibrated stiffness below is a free constant, the 6.42 ms
+        // contact figure is a single unweighted average over unstated notes
+        // and cannot pin it, and swept against the suite only Shore A 58 to 61
+        // holds fail=0 -- A4 at E3 above it, G4 below. A two-point window on a
+        // twenty-point scale is not a calibration, and it costs the swing span
+        // and G2 to buy a contact-time shape no row measures. Left flat until
+        // the stiffness scale has its own measurement behind it; the numbers
+        // are in docs/acoustic-checklist.md.
         hammerCfg.stiffness = 6.0e6 * std::pow (12.0, cfg.hammerHardness - 0.5);
         hammerCfg.lambda    = 2.4 - 1.6 * cfg.hammerHardness;
         {
@@ -1541,7 +1635,15 @@ private:
         for (int m = 0; m < kTineModes; ++m)
         {
             const double w = 2.0 * kPiD * tineFreq[m];
-            shapeContact[kV0 + m] = shapeClamp[kV0 + m] * w * w * modalMass;
+            // Mode m's OWN generalised mass, not the fundamental's. The
+            // spring loads each mode by its own shape at the spring, so the
+            // masses differ by up to 2.3x across the set, and using the
+            // fundamental's for all of them over-weighted the overtones
+            // against it -- which a contact pickup hears directly, since the
+            // high modes are what answer a knock at the clamp. Invisible to
+            // every suite until the transducer is switched to contact, which
+            // three shipped presets do.
+            shapeContact[kV0 + m] = shapeClamp[kV0 + m] * w * w * modeMass[m];
         }
 
         configured = true;
@@ -1590,7 +1692,7 @@ private:
     //   root matches the rendered pitch to a thousandth of a cent at the
     //   note this was worst at.
     double assembledFundamental (const double* freq, const double* t60,
-                                 double modalMass, double barF0, double barMass,
+                                 const double* tineMass, double barF0, double barMass,
                                  double damp, double rootKs, double trim) const
     {
         constexpr int kAll = kTineModes + kBarModes;
@@ -1614,7 +1716,7 @@ private:
             ++n;
         };
         for (int m = 0; m < kTineModes; ++m)
-            addRow (freq[m] * trim, t60[m], modalMass, rootKs * shapeMode[m][kBlock]);
+            addRow (freq[m] * trim, t60[m], tineMass[m], rootKs * shapeMode[m][kBlock]);
         // The bar's own modes, at the same frequencies, dampings and coupling
         // weights configure() gives them. The trim does not apply: the bar is
         // not being retuned when the tine is cut.

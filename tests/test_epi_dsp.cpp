@@ -250,26 +250,57 @@ static void testTuningSpringPositionChangesTheOvertones()
            partWay, atTip);
 }
 
-// Solved from the beam equation with real spring steel and a real wire gauge,
-// the lengths should be the ones Rhodes actually cut: around 18 cm at the
-// bottom of the compass down to a couple of centimetres at the top.
+// The tines the model cuts have to be the ones Shear measured, and this asks
+// the VOICE for them rather than re-deriving them here -- the previous version
+// of this test carried its own copy of the gauge law, which meant it went on
+// passing while the voice's own geometry was 40% out at the bottom of the
+// compass.
+//
+// Shear (thesis 2.1) measured the Mark I set as plain 1.5 mm wire running 18
+// to 157 mm, and gives the 73-key's bottom tine as 128-135 mm with its tuning
+// spring fitted. Those two bass figures are the tight ones and they are what
+// the spring's mass in the length solve is calibrated on. The treble is loose
+// on purpose: a bare 1.5 mm cantilever ringing at 4.2 kHz is 15.9 mm before
+// any spring is added to it, so Shear's own equation cannot produce his 18 mm
+// top tine from his own gauge, and nothing on disk resolves which of the three
+// numbers is the rounded one.
 static void testTineLengthsAreRealistic()
 {
-    struct Case { int note; double lo, hi; };
+    MagneticPickup pu; pu.prepare ({});
+    RhodesVoice::Config cfg;
+
+    struct Case { int note; double lo, hi; const char* what; };
     static const Case cases[] = {
-        { 28, 0.140, 0.220 },   // E1
-        { 52, 0.060, 0.110 },
-        { 88, 0.015, 0.040 },   // E6, the top of a 73-key instrument
+        { 21, 0.150, 0.168, "A0, Shear 157 mm" },
+        { 28, 0.124, 0.140, "E1, Shear 128-135 mm with spring" },
+        { 52, 0.050, 0.085, "G#3" },
+        { 88, 0.015, 0.035, "E6, the top of a 73-key instrument" },
     };
     for (const auto& c : cases)
     {
-        const double f0 = noteHz (c.note);
-        const double reg = std::clamp ((c.note - 28.0) / 60.0, 0.0, 1.0);
-        const double radius = (0.95 - 0.30 * reg) * 1.0e-3;
-        const double L = CantileverModes::lengthForFrequency (f0, radius, kSpringSteel);
+        RhodesVoice v;
+        v.prepare (kFs, &pu);
+        v.setNote (c.note, cfg);
+        v.noteOn (c.note, 0.7, cfg, 0x31u);
+        const double L = v.collision().tineLength;
         CHECK (L > c.lo && L < c.hi,
-               "note %d (%.1f Hz): tine length %.1f mm, outside the real range %.0f-%.0f mm",
-               c.note, f0, L * 1.0e3, c.lo * 1.0e3, c.hi * 1.0e3);
+               "note %d (%.1f Hz): tine length %.1f mm, outside %.0f-%.0f mm (%s)",
+               c.note, noteHz (c.note), L * 1.0e3, c.lo * 1.0e3, c.hi * 1.0e3, c.what);
+    }
+
+    // And the strike point that geometry hands the hammer. The service manual
+    // gives the striking line as a distance -- 57.15 mm at the extreme bass --
+    // so on the measured lengths the bass hammer lands a bit over a third of
+    // the way out, which is the number every collision quantity hangs off.
+    {
+        RhodesVoice v;
+        v.prepare (kFs, &pu);
+        v.setNote (21, cfg);
+        v.noteOn (21, 0.7, cfg, 0x32u);
+        const double beta = 57.15e-3 / v.collision().tineLength;
+        CHECK (beta > 0.32 && beta < 0.42,
+               "A0 strike fraction %.3f, outside the 0.32-0.42 the manual's line and "
+               "the measured lengths give together", beta);
     }
 }
 
