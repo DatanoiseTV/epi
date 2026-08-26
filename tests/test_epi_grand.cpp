@@ -2120,6 +2120,96 @@ static double maxSecondDiff (const std::vector<double>& x, double fromS, double 
     return d;
 }
 
+// ===========================================================================
+// Cost (informational): what a pedal-down wash costs
+// ===========================================================================
+//
+// The grand is the expensive instrument in this plugin and the pedal is why:
+// with the dampers up, every string in the compass is coupled to the board
+// and exchanges with it every sample, whether or not anything struck it. The
+// three cases below are the ones players actually complain about, measured on
+// the same rig the physics rows use -- voices plus board, no radiator, no mic
+// stage, no engine -- so the number moves only when the string/board block
+// moves.
+//
+// Informational, because the figure is a property of the machine as much as
+// of the code. What the rows are FOR is the ratio between them and the way
+// they move between builds: the block is quadratic in nothing, so the wash
+// should stay near eighty-eight times the four-note figure divided by four,
+// and doubling the sample rate should double the cost and no more.
+static void sectionCost()
+{
+    heading ("Cost (informational)");
+
+    struct Case { const char* name; int struck; bool pedal; double seconds; };
+    const Case cases[3] = {
+        { "10-note chord, pedal down", 10, true,  1.0 },
+        { "88-note wash, pedal down",  88, true,  0.6 },
+        { "4 notes, dampers down",      4, false, 1.0 },
+    };
+
+    for (double fs : { 48000.0, 96000.0 })
+    {
+        for (const Case& c : cases)
+        {
+            const GrandVoice::Config cfg;
+            // Heap, not stack: a GrandVoice carries three modal banks and is
+            // tens of kilobytes, and this suite has to run on a main thread
+            // with a one-megabyte stack.
+            auto board = std::make_unique<GrandBoard>();
+            board->prepare (fs);
+            std::vector<std::unique_ptr<GrandVoice>> vs;
+
+            // The struck notes, spread over the compass the way a player's
+            // hands are, and -- with the pedal down -- every other string in
+            // the compass opened sympathetically, which is what the engine
+            // does on CC64.
+            for (int i = 0; i < c.struck; ++i)
+            {
+                const int note = (c.struck >= 88) ? (21 + i)
+                                                  : (36 + (i * 61) / (c.struck - 1));
+                vs.push_back (std::make_unique<GrandVoice>());
+                vs.back()->prepare (fs);
+                vs.back()->setPedal (c.pedal ? 1.0 : 0.0);
+                vs.back()->noteOn (note, 0.9, cfg, *board, 0);
+            }
+            if (c.pedal)
+                for (int note = 21; note <= 108; ++note)
+                {
+                    bool struck = false;
+                    for (const auto& v : vs) struck |= (v->noteNumber() == note);
+                    if (struck) continue;
+                    vs.push_back (std::make_unique<GrandVoice>());
+                    vs.back()->prepare (fs);
+                    vs.back()->setPedal (1.0);
+                    vs.back()->openSympathetic (note, cfg, *board);
+                }
+
+            const int N = static_cast<int> (fs * c.seconds);
+            volatile double sink = 0.0;
+            const auto t0 = std::chrono::steady_clock::now();
+            for (int i = 0; i < N; ++i)
+            {
+                double f = 0.0;
+                for (auto& v : vs)
+                {
+                    f += v->process (cfg, *board) + v->knockOut();
+                    v->applyDamperIfDue();
+                }
+                board->tick();
+                sink = sink + f + board->outputL();
+            }
+            const auto t1 = std::chrono::steady_clock::now();
+            const double pct = std::chrono::duration<double> (t1 - t0).count()
+                             / c.seconds * 100.0;
+            char id[8];
+            std::snprintf (id, sizeof id, "%s", fs > 60000.0 ? "C96" : "C48");
+            row (id, c.name, fmt ("%.0f voices", static_cast<double> (vs.size())),
+                 fmt ("%.1f%% of a core", pct), Verdict::info);
+        }
+    }
+}
+
 static void sectionMicStage()
 {
     heading ("S. Grand: multi-mic stage (GrandMicStage.h -- Classic pair vs positioned Stage)");
@@ -2357,6 +2447,7 @@ int main()
     sectionPedals();
     sectionCalibration();
     sectionMicStage();
+    sectionCost();
 
     std::printf ("\n");
     if (gaps > 0)

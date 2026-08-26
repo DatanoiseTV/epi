@@ -264,9 +264,28 @@ public:
         // and was the grand's largest remaining line). Deterministic -- the
         // association is fixed by hand, no fast-math involved.
         const double* q = sys.displacementData();
+        static_assert (kModes % 8 == 0);
+#if EPI_HAVE_F64X2
+        // The eight chains as four lane pairs (see the note on association in
+        // ModalCore.h): chain 2j and 2j+1 want elements m+2j and m+2j+1,
+        // which are adjacent, so each pair is one ordinary contiguous load and
+        // one fused multiply-add. Every lane keeps its own chain in its own
+        // order and the combining tree below is written with the same
+        // parenthesisation as the scalar form, so this is the same arithmetic.
+        simd::f64x2 a0 = simd::zero(), a1 = simd::zero();
+        simd::f64x2 a2 = simd::zero(), a3 = simd::zero();
+        for (int m = 0; m < kModes; m += 8)
+        {
+            a0 = simd::fma (a0, simd::load (phi + m),     simd::load (q + m));
+            a1 = simd::fma (a1, simd::load (phi + m + 2), simd::load (q + m + 2));
+            a2 = simd::fma (a2, simd::load (phi + m + 4), simd::load (q + m + 4));
+            a3 = simd::fma (a3, simd::load (phi + m + 6), simd::load (q + m + 6));
+        }
+        return (simd::pairSum (a0) + simd::pairSum (a1))
+             + (simd::pairSum (a2) + simd::pairSum (a3));
+#else
         double u0 = 0.0, u1 = 0.0, u2 = 0.0, u3 = 0.0;
         double u4 = 0.0, u5 = 0.0, u6 = 0.0, u7 = 0.0;
-        static_assert (kModes % 8 == 0);
         for (int m = 0; m < kModes; m += 8)
         {
             u0 += phi[m]     * q[m];
@@ -279,10 +298,33 @@ public:
             u7 += phi[m + 7] * q[m + 7];
         }
         return ((u0 + u1) + (u2 + u3)) + ((u4 + u5) + (u6 + u7));
+#endif
     }
 
     void addBridgeForce (const double* phi, double force)
     {
+        // Scalar, and applied where the call happens. Both were tried the
+        // other way and both cost time:
+        //
+        //   - Hand-written lane pairs, as the dot above uses, measured 5%
+        //     SLOWER than this loop (2.76% of a core against 2.62%, eighty-
+        //     eight shapes a sample at 48 kHz). There is no reduction here
+        //     and no stride, so the vectoriser has nothing to fight and picks
+        //     a better unroll than the hand form fixes. The dot is the
+        //     opposite case -- eight strided chains -- which is why that one
+        //     is written out and this one is not.
+        //
+        //   - Queuing the (shape, force) pairs and sweeping them in one pass
+        //     at the head of tick() -- the obvious "walk the board's modes
+        //     once, carrying every voice's weight" restructuring -- cost 2
+        //     to 5% across the pedal-down cases at both rates. The premise
+        //     does not hold on this layout: what a sweep would keep resident
+        //     is the drive vector, 576 bytes that never leave the first-level
+        //     cache anyway, while what it gives up is the shape, which the
+        //     bridge dot pulled in for THIS voice a few hundred cycles
+        //     earlier and which a deferred sweep has to fetch again from a
+        //     voice array megabytes wide. Writing while the shape is still
+        //     warm beats touching the board once.
         double* d = sys.driveData();
         for (int m = 0; m < kModes; ++m) d[m] += phi[m] * force;
     }

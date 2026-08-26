@@ -22,10 +22,72 @@
 //
 // This file is where the instrument's stability lives, so the reasoning is
 // written out rather than assumed.
+// The platform's vector header, at global scope where a system header has to
+// be. Inside a namespace its include guard is consumed there too, so every
+// NEON type lands in epi:: and is unavailable to anything that includes this
+// header and then needs vectors itself -- which the plugin does, because JUCE
+// pulls <arm_neon.h> in through juce_dsp. That combination does not compile,
+// and the only reason the tree built at all was that no translation unit had
+// yet needed both.
+#if defined (__aarch64__) && ! defined (EPI_SCALAR_DOTS)
+ #include <arm_neon.h>
+#endif
+
 namespace epi
 {
 
 inline constexpr double kPiD = 3.14159265358979323846;
+
+// ---------------------------------------------------------------------------
+// Two doubles at a time, with the association unchanged.
+//
+// One hot loop earns this: the board's bridge dot in GrandBoard.h, which
+// runs once per sounding voice per sample and is a reduction. This project's
+// rule is that the order of a floating-point sum is fixed in the source, so
+// it is written with eight independent accumulators and a hand-written
+// combining tree -- the split is what keeps the reduction off the FMA latency
+// chain, and the tree says exactly which partial sums are added to which.
+//
+// What that costs is codegen. Clang sees N scalar chains striding by N and
+// vectorises them by DE-INTERLEAVING: the 72-mode bridge dot came out of
+// Apple clang 21 on aarch64 as a fully unrolled run of ld2.2d pairs with a
+// 336-byte frame and a dozen register spills, because eight strided chains do
+// not fit the register file. It ran at about 1.3 fused multiply-adds per
+// cycle where the core will retire four.
+//
+// The fix is to notice that the split is already the right shape. Accumulator
+// u_j takes the indices congruent to j, so the PAIR (u_0, u_1) wants elements
+// (m, m+1) -- adjacent -- and (u_2, u_3) wants (m+2, m+3). Each accumulator
+// pair is one 128-bit lane pair fed by one ordinary contiguous load. Every
+// lane keeps its own chain in its own order, so the arithmetic is the same
+// arithmetic, and the combining tree at the end is written with the same
+// parenthesisation as before.
+//
+// Only aarch64 is vectorised here. It is the target this was measured on, and
+// the equivalence argument depends on the compiler contracting the scalar
+// `acc += a * b` into a fused multiply-add, which aarch64 does (verified in
+// the emitted assembly: 36 fmla.2d for the 72-mode dot, one per element) and
+// a baseline x86-64 without FMA does not. Everywhere else takes the scalar
+// loop, which is the same numbers it always produced. Defining
+// EPI_SCALAR_DOTS forces the scalar form back on aarch64 too, which is how
+// the equality is checked: the rendered grand digests must not move.
+// ---------------------------------------------------------------------------
+#if defined (__aarch64__) && ! defined (EPI_SCALAR_DOTS)
+ #define EPI_HAVE_F64X2 1
+
+namespace simd
+{
+    using f64x2 = float64x2_t;
+
+    inline f64x2 zero()                 { return vdupq_n_f64 (0.0); }
+    inline f64x2 load (const double* p) { return vld1q_f64 (p); }
+    // acc + a*b, fused: the same single rounding the scalar form gets from
+    // the compiler's own contraction.
+    inline f64x2 fma (f64x2 acc, f64x2 a, f64x2 b) { return vfmaq_f64 (acc, a, b); }
+    // lane0 + lane1, in that order: the leaf of the combining tree.
+    inline double pairSum (f64x2 v) { return vgetq_lane_f64 (v, 0) + vgetq_lane_f64 (v, 1); }
+}
+#endif
 
 // ---------------------------------------------------------------------------
 // Why this is not a bank of biquads, and not a bank of complex rotators.
@@ -171,15 +233,14 @@ public:
         // deposit energy into modes the scheme cannot carry.
         if (! (freqHz > 0.0) || freqHz >= kModeBudget * fs || ! (modalMass > 0.0))
         {
-            stiff[i] = 0.0; invM[i] = 0.0; damp[i] = 0.0;
+            stiff[i] = 0.0;
             q[i] = qPrev[i] = 0.0;
             live[i] = false;
-            cacheStep (i);
+            cacheStep (i, 0.0, 0.0);
             return;
         }
 
         live[i] = true;
-        invM[i] = 1.0 / modalMass;
         mass[i] = modalMass;
 
         const double w     = 2.0 * kPiD * freqHz;
@@ -194,12 +255,11 @@ public:
         const double inner = 2.0 - 2.0 * std::cos (w * k) / ch;
         const double wEff2 = std::max (0.0, inner) / (k * k);
 
-        damp[i]  = a;
         stiff[i] = modalMass * wEff2;
         freq[i]  = freqHz;
         baseFreq[i] = freqHz;
         t60[i]   = t60Sec;
-        cacheStep (i);
+        cacheStep (i, a, 1.0 / modalMass);
     }
 
     // Retune without touching stored energy. Used by the geometric
@@ -272,6 +332,22 @@ public:
     {
         // Two-way split accumulators for the same reason as the board's
         // bridge dot: keep the reduction off the FMA latency chain.
+        // Deliberately NOT hand-vectorised, and the reason is not the usual
+        // one. The two split accumulators are what this file's own rule calls
+        // a fixed association -- and in the shipped binary they are not.
+        // Clang's loop vectoriser rewrites the pair loop below into ONE
+        // accumulator fed lane by lane, with the w*q and readShape*b products
+        // rounded separately rather than fused; the same source built with
+        // -fno-vectorize renders a different stream, byte for byte. So the
+        // arithmetic that ships here is the vectoriser's choice, not this
+        // text's, and any hand-written form that is actually fast -- two
+        // independent lane chains, fused products -- is a DIFFERENT sum from
+        // what the instrument sounds like today. Measured, that form bought
+        // 1.8% of the ten-note pedal figure and moved the render, which is
+        // the wrong side of the trade. The board's bridge dot in GrandBoard.h
+        // is the opposite case: there the vectoriser keeps the association
+        // and only picks a poor instruction sequence, so writing the sequence
+        // out by hand costs nothing.
         double F0 = 0.0, F1 = 0.0, o0 = 0.0, o1 = 0.0;
         int i = 0;
         for (; i + 1 < n; i += 2)
@@ -313,51 +389,63 @@ public:
         // as the leapfrog's (1-a)/(1+a) on the qPrev term, which is what makes
         // the poles exact.
         //
-        // Written as fused single passes: the earlier form materialised
-        // alpha[][] and beta[][] scratch arrays each tick and re-read them
-        // four times, and at ninety-six kilohertz that memory traffic was the
-        // single largest line in the profile. Every use of alpha and beta is
-        // a dot product with g, so the scalars are folded in and the arrays
-        // never exist. The Woodbury matrix is symmetric -- beta_r . alpha_c
-        // is the cAl-weighted product of two gradients, indifferent to their
-        // order -- so only its upper triangle is computed.
-        // A dormant voice is one mode and no terms, and there are often
-        // eighty of them a sample: worth its own three lines ahead of the
-        // scratch array and the term scan.
-        bool anyTerm = false;
-        for (int p = 0; p < MaxP; ++p) anyTerm |= termActive[p];
-        if (n == 1 && ! anyTerm)
-        {
-            const double b0 = cAK[0] * q[0] - cB[0] * qPrev[0] + cD[0] * drive[0];
-            qPrev[0] = q[0];
-            q[0] = b0;
-            drive[0] = 0.0;
-            return;
-        }
-
-        double b[MaxN];
-
-        // Branch-free: a dead mode has zero coefficients, so it contributes
-        // nothing and does not need testing for. cAK is (cA - cK), folded at
-        // coefficient time.
-        for (int i = 0; i < n; ++i)
-            b[i] = cAK[i] * q[i] - cB[i] * qPrev[i] + cD[i] * drive[i];
-
-        // Collect the active terms.
+        // The active terms are collected FIRST, so that a bank with none of
+        // them -- every grand string between contacts, every dormant voice,
+        // and the great majority of ticks in any instrument -- never touches
+        // the solver's scratch at all. That path is written as one fused
+        // pass below; the quadratised one lives in tickWithTerms.
         int act[MaxP], na = 0;
         for (int p = 0; p < MaxP; ++p) if (termActive[p]) act[na++] = p;
 
         if (na == 0)
         {
-            // One pass: swap the history, place the step, clear the drive.
+            // One pass: read the state, place the step, clear the drive. The
+            // earlier form staged the step in a b[MaxN] scratch and copied it
+            // back, which is a second write and a second read of the whole
+            // bank -- and at MaxN 220 that scratch put the frame over a page,
+            // so every call paid a stack probe (___chkstk_darwin, visible in
+            // the profile) whether it needed the scratch or not. Nothing
+            // about the arithmetic changes: same three terms, same order,
+            // same association, and the step for mode i reads nothing but
+            // mode i.
+            //
+            // Branch-free: a dead mode has zero coefficients, so it
+            // contributes nothing and does not need testing for. cAK is
+            // (cA - cK), folded at coefficient time.
             for (int i = 0; i < n; ++i)
             {
+                const double bi = cAK[i] * q[i] - cB[i] * qPrev[i] + cD[i] * drive[i];
                 qPrev[i] = q[i];
-                q[i] = b[i];
+                q[i] = bi;
                 drive[i] = 0.0;
             }
             return;
         }
+
+        tickWithTerms (act, na);
+    }
+
+private:
+    // The quadratised path, kept out of line so that the linear step above
+    // keeps a frame small enough to skip the stack probe: this one owns the
+    // b[] and alpha[][] scratch.
+    //
+    // Written as fused single passes: an earlier form materialised alpha[][]
+    // and beta[][] scratch arrays each tick and re-read them four times, and
+    // at ninety-six kilohertz that memory traffic was the single largest line
+    // in the profile. Every use of beta is a dot product with g, so its
+    // scalar is folded in and that array never exists. The Woodbury matrix is
+    // symmetric -- beta_r . alpha_c is the cAl-weighted product of two
+    // gradients, indifferent to their order -- so only its upper triangle is
+    // computed.
+#if defined (__GNUC__)
+    __attribute__ ((noinline))
+#endif
+    void tickWithTerms (const int* act, int na)
+    {
+        double b[MaxN];
+        for (int i = 0; i < n; ++i)
+            b[i] = cAK[i] * q[i] - cB[i] * qPrev[i] + cD[i] * drive[i];
 
         const double hk = 0.5 * k;
 
@@ -452,6 +540,7 @@ public:
         for (int i = 0; i < n; ++i) { qPrev[i] = q[i]; q[i] = b[i]; drive[i] = 0.0; }
     }
 
+public:
     // ---- readout ---------------------------------------------------------
     double displacement (int i) const { return (i >= 0 && i < MaxN) ? q[i] : 0.0; }
 
@@ -536,17 +625,23 @@ private:
     // eighty-eight tines of twenty-two modes, for numbers that change only when
     // a mode is retuned. Hoisting them also removes the live[] branch from the
     // inner loop, which is what was stopping it vectorising.
-    void cacheStep (int i)
+    // `a` is the mode's tanh(sigma/fs) and `invMass` its 1/M. Both used to be
+    // kept as arrays, and neither was read anywhere else: every call site has
+    // them in hand immediately before calling, so storing them only widened
+    // the object the hot loops reach across. cA and cK went the same way --
+    // only their difference cAK is ever stepped with. Four arrays of MaxN
+    // doubles each, which for the grand's two hundred and sixty-four string
+    // banks is 1.9 MB that no sample ever touched.
+    void cacheStep (int i, double a, double invMass)
     {
-        if (! live[i]) { cA[i] = cB[i] = cK[i] = cD[i] = cAl[i] = cAK[i] = 0.0; return; }
-        const double a  = damp[i];
+        if (! live[i]) { cB[i] = cD[i] = cAl[i] = cAK[i] = 0.0; return; }
         const double r  = 1.0 / (1.0 + a);
-        cA[i]  = 2.0 * r;
+        const double cA = 2.0 * r;
+        const double cK = k * k * invMass * stiff[i] * r;
         cB[i]  = (1.0 - a) * r;
-        cK[i]  = k * k * invM[i] * stiff[i] * r;
-        cD[i]  = k * k * invM[i] * r;
-        cAl[i] = 0.5 * k * invM[i] * r;
-        cAK[i] = cA[i] - cK[i];
+        cD[i]  = k * k * invMass * r;
+        cAl[i] = 0.5 * k * invMass * r;
+        cAK[i] = cA - cK;
     }
 
     void setModeKeepingState (int i, double freqHz, double t60Sec)
@@ -555,9 +650,9 @@ private:
         const double sigma = (t60Sec > 1.0e-5) ? (3.0 * std::log (10.0) / t60Sec) : 1.0e6;
         const double sT = sigma * k;
         const double inner = 2.0 - 2.0 * std::cos (w * k) / std::cosh (sT);
-        damp[i]  = std::tanh (sT);
+        const double a = std::tanh (sT);
         stiff[i] = mass[i] * std::max (0.0, inner) / (k * k);
-        cacheStep (i);
+        cacheStep (i, a, 1.0 / mass[i]);
         freq[i]  = freqHz;
     }
 
@@ -565,8 +660,8 @@ private:
     int    n  = 0;
 
     double q[MaxN] {}, qPrev[MaxN] {}, drive[MaxN] {};
-    double cA[MaxN] {}, cB[MaxN] {}, cK[MaxN] {}, cD[MaxN] {}, cAl[MaxN] {}, cAK[MaxN] {};
-    double invM[MaxN] {}, mass[MaxN] {}, stiff[MaxN] {}, damp[MaxN] {};
+    double cB[MaxN] {}, cD[MaxN] {}, cAl[MaxN] {}, cAK[MaxN] {};
+    double mass[MaxN] {}, stiff[MaxN] {};
     double freq[MaxN] {}, baseFreq[MaxN] {}, t60[MaxN] {};
     bool   live[MaxN] {};
 
