@@ -147,3 +147,15 @@ target_include_directories(epi_tuning_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_features(epi_tuning_tests PRIVATE cxx_std_20)
 add_test(NAME epi_tuning COMMAND epi_tuning_tests)
 set_tests_properties(epi_tuning PROPERTIES TIMEOUT 900)
+
+
+# ---------------------------------------------------------------------------
+# Radiation: the near field a close microphone sits inside, and what the mic
+# stage does with it. Framework-free -- it drives the radiator and the stage
+# directly, so it fences the acoustics rather than the engine around them.
+# ---------------------------------------------------------------------------
+add_executable(epi_radiation_tests test_epi_radiation.cpp)
+target_include_directories(epi_radiation_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_features(epi_radiation_tests PRIVATE cxx_std_20)
+add_test(NAME epi_radiation COMMAND epi_radiation_tests)
+set_tests_properties(epi_radiation PROPERTIES TIMEOUT 600)

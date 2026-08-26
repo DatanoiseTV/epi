@@ -74,6 +74,68 @@ namespace epi
 // ensemble, not one per section: the lid is large against the section
 // spacing, so all the images sit within centimetres of each other.
 //
+// Near field. The dipole above is only its FAR field. The complete dipole
+// pressure at radius r is
+//
+//     p(r) = (A cos(theta) / r) (1 + 1/(j k r)) e^{-j k r},   k = 2 pi f / c
+//
+// and the bracket -- the term every far-field treatment drops -- is what a
+// close microphone lives inside. Read against frequency rather than against
+// distance, the bracket IS a first-order filter, exactly:
+//
+//     N(s) = (s + c/r) / s
+//
+// with one zero at the near-field corner f_nf = c / (2 pi r) (the frequency
+// where k r = 1) and one pole at DC. Unity above the corner; below it, a
+// rise of 6 dB/octave as the frequency falls, and a phase that runs from 0
+// to -90 degrees, both of them exact, not fitted. The corner is a pure
+// reading of distance -- 273 Hz at the closest mic the stage allows
+// (kMinR = 0.2 m), 40.7 Hz at the calibrated seat's 1.34 m, 18.2 Hz at 3 m
+// -- so a mic hears the near field of exactly those notes whose wavelengths
+// dwarf its own distance, and of nothing else.
+//
+// What that does to THIS instrument follows from the board's own radiation
+// collapse. Below GrandBoard::kRadFcHz = 200 Hz the model rolls the
+// radiated amplitude off at 12 dB/octave, which is the far-field law of a
+// source small against the wavelength -- for the dipole the board is below
+// coincidence, the same f^2 rise. Multiply the two: below BOTH corners the
+// pressure at a close mic falls at 12 - 6 = 6 dB/octave, not 12. And the
+// distance law steepens with it, because 1/r times 1/(k r) is 1/r^2: deep
+// in the near field a halved distance is worth 12 dB, not 6.
+//
+// A0's fundamental at 27.5 Hz sits 2.9 octaves under the collapse and, at
+// the seat, 0.57 of an octave under the near-field corner. The Classic pair
+// carries none of this, because the Classic pair has no distance in it at
+// all -- it is a fixed gain law, and a near field is a function of k r.
+// That is the named half of the grand suite's row S1 (an A0 fundamental
+// 35 dB under its strongest partial where the close-mic'd reference reads
+// -20 .. -30): not a tuning error, a missing mechanism, and one that only a
+// path with real geometry can hold.
+//
+// Three things the near-field term does NOT touch, each for a reason:
+//   - the monopole leak (kMonoLeak). A monopole's pressure is A/r at EVERY
+//     k r -- its near field is entirely in the phase, and the propagation
+//     phase is already the delay bus. So the low path splits at the source:
+//     the cos(theta) dipole share goes through N, the leak share does not.
+//     A mic in the board plane (h = 0), where the dipole share is
+//     identically zero, therefore measures the same pure 1/r it measured
+//     before any of this -- which is the geometry rows MS2 and MS3 stand on.
+//   - the section and lid buses. Above coincidence the radiation is
+//     monopole-ish off the open face, and in any case k r >= 4.8 at the
+//     1.3 kHz band edge for the closest permitted mic: |N| is +0.18 dB
+//     there and falls as 1/f.
+//   - the far field itself. |N| -> 1 as k r -> infinity exactly, so nothing
+//     above a mic's own corner moves: at 3 m the whole band above 100 Hz is
+//     within 0.15 dB of the pure 1/r it had before.
+//
+// The DC pole is honest physics -- a dipole's near field is an
+// incompressible flow field, which does not vanish at zero frequency -- but
+// a bad digital filter, so it is placed at kNfFloorHz instead of at zero.
+// The gauge does not move: seatR / r is still the level reference, so the
+// seat mic still reads the calibrated chain wherever N is unity, which is
+// everything above ~100 Hz. What it now additionally reads, below that, is
+// the seat's own near field.
+//
 // Air: ISO 9613-1 absorption at 20 C, 50% RH is ~0.11 dB/m at 10 kHz,
 // growing ~f^2 below the relaxation peak. One one-pole per mic, cutoff
 // placed where the accumulated loss over that mic's distance reaches 3 dB:
@@ -238,6 +300,16 @@ private:
     static constexpr double kLidX     = 0.3;   // the image ensemble's centre:
     static constexpr double kLidH     = 1.1;   // above the board, toward the
                                                // open (treble) side
+    // The near-field shelf's DC pole, standing in for the dipole term's true
+    // pole at zero (see the header). Derived from the lowest frequency this
+    // instrument radiates -- A0's fundamental at 27.5 Hz: the floor costs
+    // 20 log10 sqrt(1 + (kNfFloorHz / f)^2) of the closed form there, which
+    // at 4 Hz is 0.09 dB, and it is the SAME error at every distance
+    // (the zero cancels), so one number bounds the whole stage. It also
+    // bounds the shelf: its DC gain is f_nf / kNfFloorHz <= 68 (+37 dB) at
+    // the closest permitted mic, against a low bus that is already 68 dB
+    // down at 4 Hz behind the board's 200 Hz second-order collapse.
+    static constexpr double kNfFloorHz = 4.0;
     static constexpr double kAirDbPerM10k = 0.11; // ISO 9613-1, 20 C, 50% RH
     static constexpr double kMaxDelayS = 0.040;
     static constexpr double kFadeS     = 0.010;
@@ -275,6 +347,11 @@ private:
         double panL = 0.0, panR = 0.0;      // equal-power pan times gain
         double gain[kBuses] {};
         double del[kBuses] {};              // samples
+        // The low bus's dipole share and its near-field shelf N(s), applied
+        // ONLY to that share (the monopole leak stays in gain[kBusLow]).
+        double nfGain = 0.0;
+        double nfB0 = 1.0, nfB1 = 0.0, nfA1 = 0.0;
+        double nfX1 = 0.0, nfY1 = 0.0;
         double airA = 1.0;                  // one-pole coefficient
         double airY = 0.0;                  // one-pole state
     };
@@ -282,7 +359,10 @@ private:
     void buildTaps (Taps& t, const Mic& m) const
     {
         t.on = m.on;
-        if (! m.on) return;
+        // An off mic keeps its shelf at rest: the pole is at 4 Hz, so a
+        // state left over from the last time it was on would take a quarter
+        // of a second to die and the mic would fade in on top of it.
+        if (! m.on) { t.nfX1 = t.nfY1 = 0.0; return; }
         const double g = std::pow (10.0, m.gainDb / 20.0);
         const double a = (m.pan + 1.0) * kPiD / 4.0;
         t.panL = g * std::cos (a);
@@ -302,9 +382,28 @@ private:
         // dipole sign, cos(theta) = h/r about the board plane (see header).
         const double r0 = std::max (kMinR,
             std::sqrt (m.x * m.x + m.z * m.z + m.h * m.h));
-        const double dip = (1.0 - kMonoLeak) * (m.h / r0) + kMonoLeak;
-        t.gain[kBusLow] = (seatR() / r0) * dip / dipRef();
+        const double gauge = (seatR() / r0) / dipRef();
+        // The leak is a monopole: A/r at every k r, no near-field term.
+        t.gain[kBusLow] = gauge * kMonoLeak;
+        // The dipole share, which carries the near field. At h = 0 this is
+        // identically zero and the whole shelf drops out of the arithmetic.
+        t.nfGain        = gauge * (1.0 - kMonoLeak) * (m.h / r0);
         t.del[kBusLow]  = r0 / kSpeedOfSound * fs;
+
+        // N(s) = (s + c/r) / (s + 2 pi kNfFloorHz), bilinear at s = 2 fs
+        // (1 - z^-1)/(1 + z^-1). No prewarping: both critical frequencies
+        // are below 300 Hz against a >= 44.1 kHz rate, where the warp is
+        // about 0.01%, and the untapered map is exactly unity at Nyquist --
+        // which is the property the far field depends on.
+        {
+            const double wz = kSpeedOfSound / r0;             // = 2 pi f_nf
+            const double wp = 2.0 * kPiD * kNfFloorHz;
+            const double k2 = 2.0 * fs;
+            const double d  = 1.0 / (k2 + wp);
+            t.nfB0 = (k2 + wz) * d;
+            t.nfB1 = (wz - k2) * d;
+            t.nfA1 = (wp - k2) * d;
+        }
 
         // The lid image: reflected high band, gated by how much of the
         // reflector's exit cone the mic sits in (open side +x), and by line
@@ -454,7 +553,18 @@ private:
             double acc = 0.0;
             for (int b = 0; b < kBuses; ++b)
             {
-                double v = t.gain[b] * readTap (b, t.del[b]);
+                const double s0 = readTap (b, t.del[b]);
+                double v = t.gain[b] * s0;
+                if (b == kBusLow)
+                {
+                    // The dipole share through the near-field shelf. Ticked
+                    // unconditionally on this bus so its state stays in step
+                    // with the delay line even where nfGain is zero.
+                    const double y = t.nfB0 * s0 + t.nfB1 * t.nfX1 - t.nfA1 * t.nfY1;
+                    t.nfX1 = s0;
+                    t.nfY1 = y;
+                    v += t.nfGain * y;
+                }
                 if (age < t.del[b] + fadeLen)
                 {
                     const double u = std::clamp ((age - t.del[b]) / fadeLen, 0.0, 1.0);

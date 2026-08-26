@@ -730,3 +730,171 @@ coupled prefix only and above the ladder's first mode. Whoever runs it next
 should instrument the factor's own distribution first: median, geometric
 mean and range in dB per note. The two rebuilds above differ in nothing but
 that number, and they disagree about whether the hypothesis works.
+
+---
+
+## 9. Near-field capture, and the phantom set that stays deferred
+
+Row S1 of the grand suite — an A0 fundamental 35.1 dB under its strongest
+partial, where the [R] figure for a piano recording is −20 .. −30 — has
+carried a note naming two absent mechanisms since it was written. This
+section closes the first, prices the second, and records why the second
+cannot be closed anywhere but in the string.
+
+### 9.1 The near field is a filter, and the model already had its corner
+
+Section 6 above treats radiation entirely in the far field: 1/r amplitude,
+r/c delay, and (from GrandBoard) a second-order collapse below 200 Hz for a
+source small against the wavelength. That collapse is the dipole's far-field
+law and nothing else. The complete dipole field is [R, any acoustics text;
+Kinsler & Frey §7.3, Beranek §4]
+
+    p(r, θ, f) = (A cos θ / r) · (1 + 1/(j k r)) · e^{−j k r},   k = 2π f / c
+
+and the bracket is the part every far-field treatment drops. Read against
+frequency rather than distance it is exactly a first-order filter,
+
+    N(s) = (s + c/r) / s,
+
+one zero at f_nf = c / (2π r) — the frequency where k r = 1 — and one pole
+at DC. That is not an approximation of the bracket; substituting s = jω
+returns it identically, magnitude and phase. Three consequences follow with
+no free parameters:
+
+- **Magnitude.** |N| = 1 above f_nf, and below it rises 6 dB/octave as the
+  frequency falls. The model's own collapse is 12 dB/octave below 200 Hz, so
+  the pressure a mic *inside* its own near field records falls at 6 dB/octave
+  below both corners, not 12.
+- **Distance.** 1/r × 1/(k r) is 1/r², so deep in the near field halving the
+  distance is worth 12 dB rather than 6. The distance law is not a constant
+  exponent; it depends on frequency.
+- **Phase.** arg N runs from 0 to −90°, and the minimum-phase realisation of
+  the magnitude *is* the exact bracket, so nothing has to be added for it.
+
+The corner is a pure reading of distance: 273 Hz at 0.2 m, 187 Hz at 0.29 m,
+40.7 Hz at the calibrated pair's notional seat (1.34 m), 18.2 Hz at 3 m. A
+close microphone is therefore inside the near field of exactly the notes
+whose wavelengths dwarf its distance, and of nothing else — which is why
+every close-mic'd piano recording carries a bass fundamental that a
+far-field model does not, and why the effect vanishes by the time the mic is
+in the room.
+
+The mechanism is implemented in `GrandMicStage.h` and measured in
+`tests/test_epi_radiation.cpp`. Three details are worth recording because
+each of them is a decision that could have gone wrong:
+
+1. **Only the dipole share gets it.** The low path is `(1 − leak)·cos θ`
+   dipole plus `leak` monopole (the case volume and rim gap that keep a real
+   grand from having a perfect null in the board plane). A monopole's
+   pressure is A/r at *every* k r — its near field lives entirely in the
+   phase, which the delay bus already carries — so the leak share must not
+   go through N. The consequence is checkable and was checked: a mic lying
+   in the board plane (cos θ = 0) measures pure 1/r at every frequency,
+   6.0114 dB per doubling at 27.5 Hz, so the geometry rows MS2 and MS3 of the
+   grand suite are untouched not by tolerance but by construction.
+2. **Only the low bus gets it.** Above coincidence the radiation is
+   monopole-ish off the open face, and in any case k r ≥ 4.8 at the 1.3 kHz
+   band edge for the closest permitted mic, where |N| is +0.18 dB and falling
+   as 1/f. The section and lid buses are left alone.
+3. **The DC pole becomes a 4 Hz pole.** The pole at zero is honest physics —
+   a dipole's near field is an incompressible flow field, which does not
+   vanish at DC — and a bad digital filter. Moving it to 4 Hz costs
+   20 log₁₀ √(1 + (4/f)²) of the closed form, which is 0.09 dB at A0's
+   fundamental and is the *same* error at every distance because the zero
+   cancels. It also bounds the shelf's DC gain at f_nf/4 ≤ 68 (+37 dB), set
+   against a bus that is already 68 dB down at 4 Hz behind the 200 Hz
+   collapse.
+
+Measured against the closed form, at four radii from 0.22 to 3 m and from
+27.5 Hz to 5 kHz, the largest error anywhere is 0.104 dB, and it is the
+4 Hz floor. At k r = 1 the model reads 2.998, 2.998, 2.990 and 2.979 dB
+against the bracket's exact 3.0103 — the residual growing with radius
+exactly as the floor predicts, since a larger r puts f_nf closer to 4 Hz.
+
+### 9.2 What it does to row S1, and what row S1 turns out to be
+
+The Classic pair cannot carry any of this, and the reason is structural
+rather than a matter of calibration: the pair is a fixed gain law with no
+distance in it at all, and a near field is a function of k r. Mode 0
+therefore stays bit-exact — verified against the shipped chain, max |diff| =
+0, which is also the grand suite's MS1.
+
+Read through a mic that *has* a position, S1's own metric (A0's fundamental
+against its strongest partial under 3 kHz, at 0.5 s) becomes:
+
+| capture | S1 metric |
+|---|---|
+| Classic pair (no distance) | −35.1 dB |
+| Stage mic at the calibrated seat, 1.34 m | −33.6 dB |
+| Stage mic close, 0.25 m out and 0.15 m up (r = 0.29 m) | **−24.7 dB** |
+
+The close position lands inside the [R] band, and it is an ordinary
+placement — inside the lid of a real grand, and still well outside the 0.2 m
+the stage floors the radius at. The seat gains only 1.5 dB because 1.34 m
+puts A0's fundamental barely half an octave under its own corner.
+
+The right reading of that table is not that the model got 10 dB louder. It
+is that **S1 was never a property of the instrument alone.** The −20 .. −30
+figure describes a close-mic'd recording; the model previously had no way to
+be one, and now the metric moves with the microphone the way the physics
+says it must. Which position the row should be judged at is a question for
+whoever owns the row, and it has an answer with a source: the reference
+figure's own recordings.
+
+### 9.3 The phantom / longitudinal set: priced, and left in the string
+
+The second mechanism S1's note names is the phantom-partial set. A struck
+string's transverse motion modulates its own tension quadratically; that
+modulation drives the string's *longitudinal* modes, whose speed is
+c_L = √(E/ρ) ≈ 5100 m/s against a transverse c_T of order 110 m/s for A0, and
+the result is energy at sums and differences of transverse partial
+frequencies [R, Conklin JASA 1996/1999; Bank & Sujbert 2005]. It is real, it
+is the metallic ring of a hard bass note, and it is not in this model.
+
+It cannot be made honestly in the radiator, and the reason is worth writing
+down so it is not attempted again. The radiator receives **one summed
+termination force**: every voice pushes into the same accumulator before the
+per-sample tick. A quadratic term applied there would generate sums and
+differences *across notes* — a chord would grow partials belonging to no
+string in it — which is not a rough version of the mechanism but a different
+and false one. The coupling is per-string and the nonlinearity is in the
+string's own strain, so it belongs in the string.
+
+And on row S1's own metric it would not help. The dominant, audible
+component is the sum set, f_i + f_j, every member of which lies above the
+fundamental, while S1 divides the fundamental *by* the strongest partial
+under 3 kHz. On a slightly inharmonic string the sum set is very nearly
+harmonic, so its members land in or beside the transverse partials' own
+bins. Taking Conklin's upper figure of −20 dB relative to the generating
+partials and landing it on the strongest partial — the worst case for this
+row — costs S1 0.83 dB. The phantom set can move S1 in one direction only,
+and it is the wrong one.
+
+That leaves the difference set, f_i − f_j, which does reach the fundamental
+at i − j = 1 and is the only part of the mechanism that could help S1 at
+all. It is also the weaker part, and modelling it requires the longitudinal
+resonances and the bridge's longitudinal admittance — neither of which this
+model has, and neither of which is cheap to guess. The recommendation stands
+as the plan wrote it: the phantom set belongs in `GrandVoice.h`, as an
+explicit longitudinal mode set driven by the transverse tension modulation,
+and it should be adopted for its own sake (the ff bass timbre) rather than
+as a route to S1.
+
+### 9.4 What remains open
+
+- The near field is a **point-dipole** term applied to a source the model
+  itself describes as extended over the 1.4 m bridge. For r below the
+  bridge's half-length the point form overstates the proximity lift; the
+  same extension would reduce the far-field term too, and that term is
+  calibrated at the seat and fenced by MS2, so softening only one of the two
+  would be the asymmetry that has bitten this project before. The point form
+  is therefore an upper bound below ~0.7 m, stated rather than fudged. The
+  closing measurement is a pressure map at 0.2, 0.4 and 0.8 m over a real
+  board driven at the bridge — the same rig section 8.4 already asks for,
+  with the mic moved rather than the note.
+- The **near-field lift is not in the Classic pair**, by construction, so
+  the default capture still reads S1 at −35.1 dB. Giving Classic a nominal
+  distance would be inventing a geometry it does not have; the honest route
+  if the default should carry it is to make the calibrated pair a Stage
+  position, which is a decision about the instrument's default preset and
+  not about physics.
