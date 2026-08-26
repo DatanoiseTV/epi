@@ -15,7 +15,7 @@
 
 #include "EpiAnalysis.h"
 #include "epi/PluginProcessor.h"
-#include "epi/ui/WebEditor.h"
+#include "epi/ui/BoundParameterIds.h"
 
 #include <EpiUIData.h>
 
@@ -159,7 +159,7 @@ int main()
         const juce::String js (juce::CharPointer_UTF8 (EpiUIData::jucebridge_jsx),
                                (size_t) EpiUIData::jucebridge_jsxSize);
         juce::StringArray missing;
-        for (const auto& id : epi::WebEditor::boundParameterIds())
+        for (const auto& id : epi::ui::boundParameterIds())
         {
             const auto* p = a.getValueTreeState().getParameter (id);
             const bool isChoice = dynamic_cast<const juce::AudioParameterChoice*> (p) != nullptr;

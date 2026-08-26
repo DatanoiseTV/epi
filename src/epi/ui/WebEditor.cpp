@@ -11,6 +11,7 @@
 */
 
 #include "WebEditor.h"
+#include "epi/ui/BoundParameterIds.h"
 #include "epi/PluginProcessor.h"
 #include "epi/ParameterIDs.h"
 
@@ -25,20 +26,10 @@ namespace
     // Must match the IDs in src/epi/ParameterIDs.h and the PARAMS ids used by
     // the JS side (ui/epi). A typo here would become a dead control at runtime,
     // so testEditorBindsEveryParameter checks this list against the layout.
-    constexpr const char* kFloatIds[] = {
-        "tune",
-        "velCurve", "hammerHard", "hammerMass", "escapement", "strikeNoise", "damperGrip",
-        "tipMass", "resDamp", "barCouple", "barTune", "bodyMix", "nonlinAmt",
-        "pickupPos", "pickupDist", "coilFreq", "coilQ", "coilSat",
-        "preampDrive", "bass", "treble", "tremRate", "tremDepth", "tremStereo", "cabMix",
-        "phaserMix", "phaserRate", "phaserDepth", "phaserFb",
-        "spaceMix", "spaceSize", "outGain", "clarity",
-        "clavBrill", "clavTreb", "clavMed", "clavSoft",
-        "bodySize", "wearAmount",
-    };
-    // No bool parameters exist; an empty constexpr array is a compiler
-    // extension GCC and MSVC both reject, so there is simply no list.
-    constexpr const char* kChoiceIds[] = { "pickupSel", "instrument", "material", "clavSwitch", "bodyMat", "damperFelt", "keyBed", "hammerMat", "roomProfile", "softMode" };
+    // The bound-parameter lists live in BoundParameterIds.h, which the state
+    // suite also reads -- one statement of what the interface reaches.
+    using epi::ui::kFloatIds;
+    using epi::ui::kChoiceIds;
 
     constexpr int kDesignW = 1224;
     constexpr int kDesignH = 860;
@@ -56,13 +47,7 @@ namespace
     }
 }
 
-juce::StringArray WebEditor::boundParameterIds()
-{
-    juce::StringArray ids;
-    for (auto id : kFloatIds)  ids.add (id);
-    for (auto id : kChoiceIds) ids.add (id);
-    return ids;
-}
+juce::StringArray WebEditor::boundParameterIds() { return epi::ui::boundParameterIds(); }
 
 // ============================================================================
 WebEditor::WebEditor (::EpiAudioProcessor& proc)

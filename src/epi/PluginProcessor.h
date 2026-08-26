@@ -34,7 +34,13 @@ public:
     void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
 
     juce::AudioProcessorEditor* createEditor() override;
+    // False in a headless build (the state suite), where createEditor
+    // returns nullptr and the browser module is not linked at all.
+  #if EPI_HEADLESS
+    bool hasEditor() const override { return false; }
+  #else
     bool hasEditor() const override { return true; }
+  #endif
 
     const juce::String getName() const override { return "Epi"; }
     bool acceptsMidi() const override  { return true; }

@@ -102,19 +102,21 @@ set_tests_properties(epi_engine PROPERTIES TIMEOUT 2400)
 # Compiled from the plugin's own sources so it tests the artifact, not a
 # replica.
 # ---------------------------------------------------------------------------
+# Built HEADLESS: no editor, so no browser module, so no GTK headers on
+# Linux and no WebView2 package on Windows -- both of which broke the whole
+# build for a suite that only asks what a saved project restores.
 juce_add_console_app(epi_state_tests PRODUCT_NAME "epi_state_tests")
 target_sources(epi_state_tests PRIVATE
     test_epi_state.cpp
     ${CMAKE_SOURCE_DIR}/src/epi/PluginProcessor.cpp
     ${CMAKE_SOURCE_DIR}/src/epi/dsp/EpiEngine.cpp
     ${CMAKE_SOURCE_DIR}/src/epi/presets/FactoryPresets.cpp
-    ${CMAKE_SOURCE_DIR}/src/epi/ui/WebEditor.cpp
-    ${CMAKE_SOURCE_DIR}/src/common/PresetManager.cpp
-    ${CMAKE_SOURCE_DIR}/src/common/WebViewSupport.cpp)
+    ${CMAKE_SOURCE_DIR}/src/common/PresetManager.cpp)
 target_include_directories(epi_state_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_features(epi_state_tests PRIVATE cxx_std_20)
 target_compile_definitions(epi_state_tests PRIVATE
-    JUCE_WEB_BROWSER=1
+    EPI_HEADLESS=1
+    JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
     JUCE_VST3_CAN_REPLACE_VST2=0
     JUCE_REPORT_APP_USAGE=0
@@ -126,7 +128,6 @@ target_link_libraries(epi_state_tests PRIVATE
     EpiUI
     juce::juce_audio_utils
     juce::juce_dsp
-    juce::juce_gui_extra
     juce::juce_recommended_config_flags
     juce::juce_recommended_lto_flags)
 add_test(NAME epi_state COMMAND epi_state_tests)

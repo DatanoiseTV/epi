@@ -14,7 +14,9 @@
 #include "epi/EngineParamMap.h"
 #include "epi/ParameterIDs.h"
 #include "epi/presets/FactoryPresets.h"
-#include "epi/ui/WebEditor.h"
+#if ! EPI_HEADLESS
+ #include "epi/ui/WebEditor.h"
+#endif
 
 #ifndef EPI_VERSION
  #define EPI_VERSION "dev"
@@ -206,10 +208,20 @@ void EpiAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     }
 }
 
+// A headless build (the state suite) has no editor and must not drag in
+// JUCE's browser module with it: that module needs a platform SDK only a
+// plugin target arranges -- GTK headers on Linux, the WebView2 package on
+// Windows -- and a test about what a saved project restores should not have
+// to satisfy either. It did, and the Linux and Windows builds each failed
+// over it in turn.
+#if EPI_HEADLESS
+juce::AudioProcessorEditor* EpiAudioProcessor::createEditor() { return nullptr; }
+#else
 juce::AudioProcessorEditor* EpiAudioProcessor::createEditor()
 {
     return new epi::WebEditor (*this);
 }
+#endif
 
 void EpiAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
