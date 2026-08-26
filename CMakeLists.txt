@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(Epi VERSION 0.7.0 LANGUAGES C CXX)
+project(Epi VERSION 0.8.0 LANGUAGES C CXX)
 
 # -----------------------------------------------------------------------------
 # Project-wide settings

@@ -4,7 +4,7 @@ All notable changes to Epi are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [semver](https://semver.org/) (pre-1.0: minor bumps may break).
 
-## [Unreleased]
+## [0.8.0] - 2026-08-26
 
 ### Added
 - Per-note tuning over MPE, so a host's tuning system can tune the
