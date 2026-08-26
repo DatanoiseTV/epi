@@ -27,9 +27,23 @@ namespace
 {
 int failures = 0;
 
+// Flushed on every line, deliberately. stdout is block-buffered when a CI
+// runner redirects it, so a crash discards everything the suite has already
+// printed -- which is how this suite first failed on Windows with 0.22
+// seconds of runtime and not one line of output to say where. A test that
+// loses its own diagnostics at the moment they matter is not much of a test.
+void say (const char* text)
+{
+    std::fputs (text, stdout);
+    std::fflush (stdout);
+}
+
 void row (const char* id, const char* what, bool pass, const char* detail = "")
 {
-    std::printf ("%-4s %-58s %s %s\n", id, what, pass ? "PASS" : "FAIL", detail);
+    char line[256];
+    std::snprintf (line, sizeof line, "%-4s %-58s %s %s\n",
+                   id, what, pass ? "PASS" : "FAIL", detail);
+    say (line);
     if (! pass) ++failures;
 }
 
@@ -58,7 +72,16 @@ int main()
 {
     juce::ScopedJuceInitialiser_GUI juceRuntime;
 
-    std::printf ("Epi state round-trip suite\n\n");
+    say ("Epi state round-trip suite: starting\n");
+    {
+        // Construction is announced on its own, because that is where a
+        // platform-specific failure lands and the rows after it say nothing
+        // if nobody knows whether it got that far.
+        EpiAudioProcessor probe;
+        say ("processor constructed\n");
+        (void) probe.getValueTreeState().getParameter ("tune");
+        say ("parameters reachable\n\n");
+    }
 
     // S1 -- a fresh processor sits on the calibrated defaults.
     {
@@ -332,6 +355,8 @@ int main()
              std::abs (got - asked) < 1.0, detail);
     }
 
-    std::printf ("\nSUMMARY fail=%d\n", failures);
+    char tail[64];
+    std::snprintf (tail, sizeof tail, "\nSUMMARY fail=%d\n", failures);
+    say (tail);
     return failures;
 }
