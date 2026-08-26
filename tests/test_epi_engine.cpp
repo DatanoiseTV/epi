@@ -1564,7 +1564,7 @@ static void sectionGrabNoise()
         for (int k = 0; k < 60; ++k)
         {
             const double f = 2000.0 * std::pow (4.0, k / 59.0);
-            const double w = 2.0 * M_PI * f / 48000.0, cw = 2.0 * std::cos (w);
+            const double w = 2.0 * an::kPi * f / 48000.0, cw = 2.0 * std::cos (w);
             double s1 = 0.0, s2 = 0.0;
             for (int i = a; i < b; ++i)
             {
