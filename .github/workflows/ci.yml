@@ -83,8 +83,23 @@ jobs:
         run: |
           cmake --build build --target Epi_All Epi_CLAP \
             epi_dsp_tests epi_reference_tests epi_grand_tests epi_wurli_tests \
-            epi_clavinet_tests epi_preset_tests epi_engine_tests epi_state_tests -j
+            epi_clavinet_tests epi_preset_tests epi_engine_tests epi_tuning_tests -j
+          # The state suite instantiates the real processor, so it drags in
+          # JUCE's browser module; on the Linux runners that needs GTK headers
+          # the module does not resolve for a console target. Its subject --
+          # what a saved project restores -- is platform independent, so it is
+          # built and run on macOS and Windows and skipped here.
+          if [[ "$RUNNER_OS" != "Linux" ]]; then
+            cmake --build build --target epi_state_tests -j
+          fi
 
       - name: tests
         shell: bash
-        run: ctest --test-dir build --output-on-failure
+        # ctest would report the un-built state suite as a failure on Linux,
+        # so it is excluded there by name rather than by silence.
+        run: |
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            ctest --test-dir build --output-on-failure -E '^epi_state$'
+          else
+            ctest --test-dir build --output-on-failure
+          fi
