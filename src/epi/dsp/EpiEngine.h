@@ -233,10 +233,24 @@ public:
         const int c = idx (channel);
         switch (cc)
         {
-            case 101: rpnMsb[c] = value; return true;    // RPN MSB
-            case 100: rpnLsb[c] = value; return true;    // RPN LSB
-            case 6:   dataMsb[c] = value; applyData (channel); return true;
-            case 38:  dataLsb[c] = value; applyData (channel); return true;
+            // RPN and NRPN share one data-entry pair, and a data byte
+            // belongs to whichever of them was selected LAST. Tracking only
+            // the RPN half means a host's ordinary NRPN traffic -- which has
+            // nothing to do with tuning -- walks straight into the pitch
+            // bend range and the zone layout. Measured before this guard: a
+            // plain NRPN exchange cut the member range from 48 semitones to
+            // 5 and the zone from 15 members to 3.
+            case 99:  nrpnActive[c] = true;  return false;   // NRPN MSB
+            case 98:  nrpnActive[c] = true;  return false;   // NRPN LSB
+            case 101: nrpnActive[c] = false; rpnMsb[c] = value; return true;
+            case 100: nrpnActive[c] = false; rpnLsb[c] = value; return true;
+            // 127/127 is RPN NULL: the selector deliberately points at
+            // nothing so that stray data entry reaches nothing, which is
+            // the entire purpose of sending it.
+            case 6:   if (nrpnActive[c] || isNull (c)) return false;
+                      dataMsb[c] = value; applyData (channel); return true;
+            case 38:  if (nrpnActive[c] || isNull (c)) return false;
+                      dataLsb[c] = value; applyData (channel); return true;
             default:  return false;
         }
     }
@@ -255,6 +269,9 @@ public:
 
 private:
     static int idx (int channel) { return std::clamp (channel, 1, kNumChannels) - 1; }
+
+    // RPN NULL (127, 127): the selector points at nothing on purpose.
+    bool isNull (int c) const { return rpnMsb[c] == 127 && rpnLsb[c] == 127; }
 
     void closeZones()
     {
@@ -324,6 +341,9 @@ private:
     int  bend14[kNumChannels] {};
     float rangeSemis[kNumChannels] {};
     int  rpnMsb[kNumChannels] {}, rpnLsb[kNumChannels] {};
+    // Whether an NRPN was selected more recently than an RPN on this
+    // channel; data entry belongs to whichever came last.
+    bool nrpnActive[kNumChannels] {};
     int  dataMsb[kNumChannels] {}, dataLsb[kNumChannels] {};
 
 public:

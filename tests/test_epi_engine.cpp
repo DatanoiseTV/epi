@@ -2819,6 +2819,637 @@ static void sectionPassivity()
 }
 
 // ===========================================================================
+// 19. The post-release audit of 0.8.0.
+//
+// Six features and four fixes shipped in 0.8.0 with less adversarial
+// attention than the older code has had: per-note tuning over MPE, the
+// rebuild-at-next-strike rule that stopped the bench controls clicking, the
+// grand's damper grab, the pedal thunk, key noise on all five instruments,
+// and the left pedal's second mechanism. This section is what that audit
+// confirmed -- five defects it found and four properties it could not
+// break, each with the measurement that decided it.
+//
+// The five defects are held as known gaps rather than fixed here: three of
+// them live in EpiEngine (two reset paths that forget a cache, and one
+// version counter shared by banks that do not share a configuration), one in
+// GrandVoice and one in the tuning register. A row that pins a defect where
+// it was measured is worth more than a fix written blind. Each carries a
+// holding bound, so the defect cannot quietly widen and a partial fix cannot
+// pass unnoticed.
+// ===========================================================================
+
+// Like renderEngine above, with two additions the audit needed: a setup hook
+// that reaches the engine before the first block (the workshop benches are
+// engine calls, not parameters) and a per-block hook that can move the
+// instrument. Everything else is the same loop.
+using BenchSetup = std::function<void (EpiEngine&)>;
+
+static Stereo renderBench (double fs, EngineParams p, double seconds,
+                           std::vector<TimedEvent> evs,
+                           const BenchSetup& setup = {},
+                           const Tweak& tweak = {}, int block = 256)
+{
+    const int N = static_cast<int> (fs * seconds);
+    Stereo out;
+    out.fs = fs;
+    out.L.assign (static_cast<std::size_t> (N), 0.0f);
+    out.R.assign (static_cast<std::size_t> (N), 0.0f);
+
+    std::stable_sort (evs.begin(), evs.end(),
+                      [] (const TimedEvent& a, const TimedEvent& b) { return a.sample < b.sample; });
+
+    // Heap, not stack: an engine carries the whole instrument, and Windows
+    // grants a main thread about a megabyte where macOS grants eight.
+    auto e = std::make_unique<EpiEngine>();
+    e->prepare (fs, block);
+    if (setup) setup (*e);
+
+    std::vector<NoteEvent> blockEvs;
+    std::size_t k = 0;
+    for (int i = 0; i < N; i += block)
+    {
+        const int n = std::min (block, N - i);
+        if (tweak) tweak (i, p);
+        blockEvs.clear();
+        while (k < evs.size() && evs[k].sample < i + n)
+        {
+            NoteEvent ev = evs[k].ev;
+            ev.offset = std::max (0, evs[k].sample - i);
+            blockEvs.push_back (ev);
+            ++k;
+        }
+        e->process (out.L.data() + i, out.R.data() + i, n, p,
+                    blockEvs.empty() ? nullptr : blockEvs.data(),
+                    static_cast<int> (blockEvs.size()));
+    }
+    return out;
+}
+
+// How much of one take is not in the other, over a window, as a level
+// against the first take's own energy. Zero decibels means the difference
+// is as big as the signal; a very negative number means the two takes are
+// the same rendering. The rows below use it to ask whether a setting is
+// still doing anything, which is a question about difference, not level.
+static double changeDb (const Stereo& a, const Stereo& b, double ta, double tb)
+{
+    const std::size_t i0 = static_cast<std::size_t> (ta * a.fs);
+    const std::size_t i1 = std::min (a.L.size(), static_cast<std::size_t> (tb * a.fs));
+    double dn = 0.0, sn = 0.0;
+    for (std::size_t i = i0; i < i1; ++i)
+    {
+        double d = static_cast<double> (a.L[i]) - static_cast<double> (b.L[i]);
+        dn += d * d;
+        sn += static_cast<double> (a.L[i]) * static_cast<double> (a.L[i]);
+        d = static_cast<double> (a.R[i]) - static_cast<double> (b.R[i]);
+        dn += d * d;
+        sn += static_cast<double> (a.R[i]) * static_cast<double> (a.R[i]);
+    }
+    return 10.0 * std::log10 (std::max (1.0e-300, dn) / std::max (1.0e-300, sn));
+}
+
+// The pitch of a struck note, read the way the tuning suite reads it: locate
+// the partial, then take the power-weighted centroid of the cluster around
+// it. A grand unison is three coupled strings about ten cents wide with two
+// near-equal maxima, so its pitch is the group and not its loudest member;
+// reading the peak alone jumps between maxima and reports cents that are
+// purely the analysis. The search band is +/-70 cents -- wide enough for the
+// 45-cent offset these rows ask for and narrow enough to exclude the
+// sympathetic wash from the held cluster, which is placed a tritone away so
+// its nearest partial sits 98 cents off.
+static double centroidCents (const Stereo& s, int note, double ta, double tb)
+{
+    const std::size_t a = static_cast<std::size_t> (ta * s.fs);
+    const std::size_t b = std::min (s.L.size(), static_cast<std::size_t> (tb * s.fs));
+    if (b <= a + 1024) return 0.0;
+    std::vector<double> w (b - a);
+    const double n = static_cast<double> (w.size());
+    for (std::size_t i = 0; i < w.size(); ++i)
+        w[i] = 0.5 * (static_cast<double> (s.L[a + i]) + static_cast<double> (s.R[a + i]))
+             * (0.5 - 0.5 * std::cos (2.0 * an::kPi * static_cast<double> (i) / n));
+
+    const double nom = noteHz (note);
+    auto mag = [&] (double cents)
+    {
+        const double f = nom * std::pow (2.0, cents / 1200.0);
+        const double c = 2.0 * std::cos (2.0 * an::kPi * f / s.fs);
+        double s1 = 0.0, s2 = 0.0;
+        for (double v : w) { const double s0 = v + c * s1 - s2; s2 = s1; s1 = s0; }
+        return std::sqrt (std::max (0.0, s1 * s1 + s2 * s2 - c * s1 * s2));
+    };
+
+    double peakCents = 0.0, peakMag = -1.0;
+    for (int i = 0; i < 141; ++i)
+    {
+        const double c = -70.0 + 140.0 * i / 140.0;
+        const double m = mag (c);
+        if (m > peakMag) { peakMag = m; peakCents = c; }
+    }
+    double m101[101], top = 0.0;
+    for (int i = 0; i < 101; ++i)
+    {
+        m101[i] = mag (peakCents - 25.0 + 50.0 * i / 100.0);
+        top = std::max (top, m101[i]);
+    }
+    const double floor = top * std::pow (10.0, -25.0 / 20.0);
+    double sumP = 0.0, sumPC = 0.0;
+    for (int i = 0; i < 101; ++i)
+    {
+        const double c = peakCents - 25.0 + 50.0 * i / 100.0;
+        const double v = m101[i] < floor ? 0.0 : m101[i];
+        sumP += v * v;
+        sumPC += v * v * c;
+    }
+    return sumP > 0.0 ? sumPC / sumP : peakCents;
+}
+
+// The MPE side of the register, driven exactly as the plugin drives it.
+static void sendMcm (MpeTuning& m, int masterChannel, int members)
+{
+    m.controller (masterChannel, 101, 0);
+    m.controller (masterChannel, 100, 6);
+    m.controller (masterChannel, 6, members);
+}
+
+static void sendBendRange (MpeTuning& m, int channel, int semis, int cents)
+{
+    m.controller (channel, 101, 0);
+    m.controller (channel, 100, 0);
+    m.controller (channel, 6, semis);
+    m.controller (channel, 38, cents);
+}
+
+static void sectionPostRelease()
+{
+    heading ("19. the 0.8.0 audit: five defects and four properties that held");
+
+    const double fs = 48000.0;
+
+    // The two round-trip rows share a sequence: strike a note, let it go, take
+    // the instrument away and bring it back, strike again. What is measured is
+    // the second strike, and the question is whether a bench set before the
+    // trip is still doing anything after it.
+    auto roundTrip = [&] (bool doSwitch, const BenchSetup& setup, float bodySize)
+    {
+        EngineParams p = measParams (3);
+        p.bodySize = bodySize;
+        const std::vector<TimedEvent> evs {
+            { 0,                                { 0, NoteEvent::noteOn,  48, 0.8f } },
+            { static_cast<int> (0.5 * fs),       { 0, NoteEvent::noteOff, 48, 0.0f } },
+            { static_cast<int> (1.4 * fs),       { 0, NoteEvent::noteOn,  48, 0.8f } } };
+        return renderBench (fs, p, 2.6, evs, setup,
+            [=] (int blockStart, EngineParams& q)
+            {
+                if (! doSwitch) return;
+                q.instrument = (blockStart >= static_cast<int> (1.0 * fs)
+                             && blockStart <  static_cast<int> (1.2 * fs)) ? 0 : 3;
+            });
+    };
+
+    // 18.0 -- the grand's body bench does not survive a round trip.
+    //
+    // The click fix gave the board the same rule as the strings on it: a
+    // plate is not re-made while it is ringing, so a body-bench change waits
+    // for the bank to go quiet and a cache (lastBoardCfg) remembers what the
+    // board is currently built to. Four paths re-prepare the board without
+    // clearing that cache -- EpiEngine::reset(), EpiEngine::prepare(), the
+    // instrument-switch drain, and the not-finite recovery inside the grand
+    // path -- and GrandBoard::prepare() ends in configure(Config{}), which is
+    // the stock board. So the plate goes back to spruce at stock size, the
+    // cache still says otherwise, the memcmp finds no change, and the bench
+    // is gone until the player happens to move one of those three controls.
+    //
+    // Measured here on BODY SIZE at its largest against stock: held, the two
+    // renders differ by an eighth of the signal's own energy; after the round
+    // trip they are the same rendering to the last bit. The header comment on
+    // prepare() already says that everything which exists to avoid redundant
+    // re-application must forget what it knew; this cache was added after it
+    // and not added to that list.
+    {
+        const double held = changeDb (roundTrip (false, {}, 1.0f), roundTrip (false, {}, 0.5f), 1.4, 2.6);
+        const double trip = changeDb (roundTrip (true,  {}, 1.0f), roundTrip (true,  {}, 0.5f), 1.4, 2.6);
+        // Passing means the trip keeps what the bench was doing; the holding
+        // bound is the defect exactly as measured -- the bench doing nothing
+        // at all -- so a partial fix cannot slip through as a known gap.
+        const bool pass = trip >= held - 3.0;
+        row ("19.0", "grand body bench survives a round trip", "trip within 3 dB of held",
+             fmt2 ("held %.1f, trip %.1f dB", held, trip),
+             gapIf (pass, held > -20.0 && trip < -200.0));
+    }
+
+    // 18.1 -- the grand's mic spread does not survive it either, and comes
+    // back half applied.
+    //
+    // MIC SPREAD does two things: it scales the calibrated interchannel level
+    // line (grandPanL/R, plain engine members) and it lowers the base of the
+    // pair's allpass decorrelation cascade (GrandMicPair::setSpread). The
+    // engine applies both once, behind micDirty, which is an exchange -- read
+    // and cleared. GrandMicStage::prepare() calls pair.prepare(), which
+    // rebuilds the cascade at the calibrated spread, and every path that
+    // re-prepares the stage runs it: the same four as 18.0. The pan line
+    // survives because nothing resets it, the cascade does not, and the stage
+    // comes back as a pair that is wide in level and narrow in phase, which
+    // is not a microphone position anybody chose.
+    {
+        auto wide = [] (float spread) { return [spread] (EpiEngine& e)
+            { e.setMicMod (spread, 0.0f, 0.0f, 1.0f, 1.0f); }; };
+        const double held = changeDb (roundTrip (false, wide (2.0f), 0.5f),
+                                      roundTrip (false, wide (1.0f), 0.5f), 1.4, 2.6);
+        const double trip = changeDb (roundTrip (true,  wide (2.0f), 0.5f),
+                                      roundTrip (true,  wide (1.0f), 0.5f), 1.4, 2.6);
+        const bool pass = trip >= held - 3.0;
+        row ("19.1", "grand mic spread survives a round trip", "trip within 3 dB of held",
+             fmt2 ("held %.1f, trip %.1f dB", held, trip),
+             gapIf (pass, held > -6.0 && trip > -46.0 && trip < -40.0));
+    }
+
+    // 18.2 -- the left pedal's shift mechanism makes the top register LOUDER.
+    //
+    // Section 13 fences the rail. The shift is the other mechanism the same
+    // release shipped, and nothing fenced it. What it does is drop one string
+    // of the choir: numStruck goes 3 -> 2 on a trichord and 2 -> 1 on a
+    // bichord, the hammer meets the average of the struck strings and its
+    // force is split between them, and nothing else about the blow changes.
+    // In the top register that trade goes the wrong way. Meeting two strings
+    // instead of three lowers the impedance the hammer works against, and
+    // each struck string then takes half the force instead of a third; above
+    // about F5 the extra per-string drive beats the string that was dropped
+    // and the note comes out louder. A soft pedal that gets louder is not a
+    // soft pedal.
+    //
+    // Swept over the compass at two mezzo-forte velocities, against the same
+    // strike with the pedal up. Below the break the shift behaves: the
+    // monochords lose about half a decibel to the softer felt and the
+    // bichords three to six decibels for the string they stop meeting.
+    {
+        auto strike = [&] (int note, float vel, bool pressed, double& pk, double& rmsDb)
+        {
+            EngineParams p = measParams (3);
+            p.softMode    = 0;          // shift, not rail
+            p.strikeNoise = 0.0f;       // the mechanism thump is its own signal
+            p.outGainLin  = 0.5f;
+            std::vector<TimedEvent> evs;
+            if (pressed) evs.push_back ({ 0, { 0, NoteEvent::soft, 0, 1.0f } });
+            evs.push_back ({ 256, { 0, NoteEvent::noteOn, note, vel } });
+            const Stereo s = renderBench (fs, p, 0.55, evs);
+            pk = peakAbs (s);
+            double acc = 0.0;
+            for (std::size_t i = 256; i < s.L.size(); ++i)
+                acc += static_cast<double> (s.L[i]) * static_cast<double> (s.L[i]);
+            rmsDb = 10.0 * std::log10 (std::max (1.0e-300, acc / static_cast<double> (s.L.size() - 256)));
+        };
+        double worstPk = -99.0, worstRms = -99.0;
+        int worstNote = 0;
+        for (int note = 40; note <= 94; note += 3)
+            for (float vel : { 0.6f, 0.8f })
+            {
+                double p0 = 0, r0 = 0, p1 = 0, r1 = 0;
+                strike (note, vel, false, p0, r0);
+                strike (note, vel, true,  p1, r1);
+                const double dPk = 20.0 * std::log10 (p1 / std::max (1.0e-30, p0));
+                if (dPk > worstPk) { worstPk = dPk; worstNote = note; }
+                worstRms = std::max (worstRms, r1 - r0);
+            }
+        row ("19.2", "SOFT MODE shift never raises a note", "<= 0 dB at every note",
+             fmt2 ("worst peak %+.1f dB (note %.0f)", worstPk, static_cast<double> (worstNote))
+                 + fmt (", rms %+.1f", worstRms),
+             gapIf (worstPk <= 0.0, worstPk <= 9.0 && worstRms <= 26.0));
+    }
+
+    // 18.3 -- per-note tuning cannot be driven out of bounds.
+    //
+    // The register hands the engine a cents offset and the engine folds it
+    // into the configuration a voice is built to. Both ends of that are
+    // reachable from a host: a member channel's wheel at either rail is
+    // +/-4800 cents at the RP-053 default sensitivity, and RPN 0 with both
+    // data bytes at 127 declares a range of 128.27 semitones, which puts the
+    // rails at +/-12827 cents -- ten and a half octaves, far outside anything
+    // a tuner would ask for and exactly the sort of thing a badly behaved
+    // controller sends. The modal cores answer it the way they answer any
+    // impossible frequency: a mode above fs/pi or at zero is not made live,
+    // so the note thins toward silence instead of blowing up. The last case
+    // is the whole compass struck across fifteen member channels at fifteen
+    // different offsets with the pedal down, which is what an MPE controller
+    // with a glissando under the pedal actually produces.
+    {
+        bool finite = true;
+        double worstPeak = 0.0, widestAsk = 0.0;
+        for (int inst = 0; inst < 5; ++inst)
+        {
+            for (int wide = 0; wide < 2; ++wide)
+                for (int wheel : { 0, 16383 })
+                    for (int note : { 21, 108 })
+                    {
+                        MpeTuning m;
+                        m.setMode (MpeTuning::Mode::detect);
+                        sendMcm (m, 1, 15);
+                        if (wide) sendBendRange (m, 2, 127, 127);
+                        m.pitchWheel (2, wheel);
+                        widestAsk = std::max (widestAsk, std::fabs (static_cast<double> (m.noteCents (2))));
+                        const Stereo s = renderBench (fs, measParams (inst), 0.8,
+                            { { 0, { 0, NoteEvent::noteOn, note, 0.9f, m.noteCents (2) } } });
+                        finite = finite && allFinite (s);
+                        worstPeak = std::max (worstPeak, peakAbs (s));
+                    }
+
+            MpeTuning m;
+            m.setMode (MpeTuning::Mode::detect);
+            sendMcm (m, 1, 15);
+            for (int ch = 2; ch <= 16; ++ch) m.pitchWheel (ch, 8192 + (ch - 9) * 200);
+            std::vector<TimedEvent> evs { { 0, { 0, NoteEvent::sustain, 0, 1.0f } } };
+            for (int n = EpiEngine::kLoNote; n <= EpiEngine::kHiNote; ++n)
+                evs.push_back ({ (n - EpiEngine::kLoNote) * 32,
+                                 { 0, NoteEvent::noteOn, n, 0.85f,
+                                   m.noteCents (2 + (n - EpiEngine::kLoNote) % 15) } });
+            const Stereo s = renderBench (fs, measParams (inst), 2.0, evs);
+            finite = finite && allFinite (s);
+            worstPeak = std::max (worstPeak, peakAbs (s));
+        }
+        row ("19.3", "MPE rails and 88 notes on 15 channels", "finite, pk <= 1 (rail asymptote)",
+             fmt2 ("pk %.4f, widest ask %.0f ct", worstPeak, widestAsk),
+             verdict (finite && worstPeak <= 1.0));
+    }
+
+    // 18.4 -- an open zone that is not asked for changes nothing, and a zone
+    // reconfigured under a ringing note leaves it alone.
+    //
+    // Two claims the feature rests on. The first is that a host which opens a
+    // zone but never moves a wheel renders exactly what it always rendered:
+    // the offset is zero, withNoteTune returns the configuration untouched,
+    // and the two takes must be the same samples, not merely the same pitch.
+    // The second is that the register is read at the strike and at nothing
+    // else -- so re-sending the configuration message mid-note, which resets
+    // every member channel to centre, and slamming the wheel to both rails
+    // afterwards, cannot reach a string that is already ringing.
+    {
+        bool identical = true, immune = true;
+        for (int inst = 0; inst < 5; ++inst)
+        {
+            MpeTuning m;
+            m.setMode (MpeTuning::Mode::detect);
+            sendMcm (m, 1, 15);
+            const Stereo a = renderBench (fs, measParams (inst), 0.8,
+                { { 0, { 0, NoteEvent::noteOn, 60, 0.8f, m.noteCents (2) } } });
+            const Stereo b = renderBench (fs, measParams (inst), 0.8,
+                { { 0, { 0, NoteEvent::noteOn, 60, 0.8f, 0.0f } } });
+            identical = identical
+                && std::memcmp (a.L.data(), b.L.data(), a.L.size() * sizeof (float)) == 0
+                && std::memcmp (a.R.data(), b.R.data(), a.R.size() * sizeof (float)) == 0;
+
+            MpeTuning m2;
+            m2.setMode (MpeTuning::Mode::detect);
+            sendMcm (m2, 1, 15);
+            m2.pitchWheel (2, 8192 + 800);
+            const std::vector<TimedEvent> evs {
+                { 0, { 0, NoteEvent::noteOn, 60, 0.8f, m2.noteCents (2) } } };
+            const Stereo c = renderBench (fs, measParams (inst), 1.2, evs, {},
+                [&] (int blockStart, EngineParams&)
+                {
+                    if (blockStart != static_cast<int> (0.5 * fs)) return;
+                    sendMcm (m2, 1, 4);
+                    m2.pitchWheel (2, 0);
+                    m2.pitchWheel (2, 16383);
+                });
+            const Stereo d = renderBench (fs, measParams (inst), 1.2, evs);
+            immune = immune
+                && std::memcmp (c.L.data(), d.L.data(), c.L.size() * sizeof (float)) == 0
+                && std::memcmp (c.R.data(), d.R.data(), c.R.size() * sizeof (float)) == 0;
+        }
+        row ("19.4", "MPE: silent when unused, deaf while ringing", "bit-identical, both",
+             std::string (identical ? "identical" : "CHANGED")
+                 + (immune ? ", immune" : ", REACHED THE NOTE"),
+             verdict (identical && immune));
+    }
+
+    // 18.5 -- a bench swept under a held pedal is there at the next strike.
+    //
+    // The rule the click fix installed is that a configuration change reaches
+    // each voice at its next strike and never retroactively; with the pedal
+    // down and the bank ringing, every voice is excluded from the background
+    // rebuild and the only path left is the note-on. The failure this row
+    // exists to catch is the change going missing on that path -- swept while
+    // nothing could take it, and then not taken.
+    //
+    // Driven on master tuning because its arrival is measurable in cents
+    // rather than in timbre. Five notes ring under the pedal from the first
+    // block, spaced a tritone and an octave apart so their sympathetic wash
+    // has no partial within 98 cents of the note being read; the sweep runs
+    // from nothing to 45 cents between half a second and a second and a half;
+    // the note is struck at 2.2 seconds with the pedal still down. It must
+    // land where the same bench held from the beginning lands, and a change
+    // that went missing would read zero.
+    {
+        double worstGap = 0.0, nearestNominal = 1.0e9;
+        int worstInst = 0;
+        for (int inst = 0; inst < 5; ++inst)
+        {
+            auto go = [&] (bool sweep)
+            {
+                EngineParams p = measParams (inst);
+                p.tuneCents = sweep ? 0.0f : 45.0f;
+                std::vector<TimedEvent> evs { { 0, { 0, NoteEvent::sustain, 0, 1.0f } } };
+                for (int n : { 42, 48, 54, 60, 66 })
+                    evs.push_back ({ 0, { 0, NoteEvent::noteOn, n, 0.8f } });
+                evs.push_back ({ static_cast<int> (2.2 * fs), { 0, NoteEvent::noteOn, 72, 0.85f } });
+                return renderBench (fs, p, 3.0, evs, {},
+                    [=] (int blockStart, EngineParams& q)
+                    {
+                        if (! sweep) return;
+                        const double t = blockStart / fs;
+                        q.tuneCents = static_cast<float> (45.0 * std::clamp ((t - 0.5) / 1.0, 0.0, 1.0));
+                    });
+            };
+            const double swept = centroidCents (go (true),  72, 2.35, 2.95);
+            const double fixed = centroidCents (go (false), 72, 2.35, 2.95);
+            if (std::fabs (swept - fixed) > worstGap)
+            { worstGap = std::fabs (swept - fixed); worstInst = inst; }
+            nearestNominal = std::min (nearestNominal, std::fabs (swept));
+        }
+        // Four cents is under half the width of a grand unison group, which
+        // is what the centroid is reading through the pedalled wash; forty is
+        // the discrimination against a change that never arrived, which would
+        // read zero against the forty-five that was asked for.
+        row ("19.5", "bench swept under a held pedal reaches the strike",
+             "within 4 ct of held, >= 40 ct moved",
+             fmt2 ("%.2f ct apart, moved %.1f ct", worstGap, nearestNominal)
+                 + " (" + kInstName[worstInst] + ")",
+             verdict (worstGap <= 4.0 && nearestNominal >= 40.0));
+    }
+
+    // 18.6 -- the pedal fluttered across its own stops stays bounded.
+    //
+    // The trapwork thumps at the ends of its travel, and the thump is
+    // retriggered by every crossing of the hysteresis pair. A host that
+    // automates CC64 as a square wave at the block rate crosses both stops
+    // 188 times a second, which restarts the thunk long before it has
+    // settled, and does it while a chord is ringing and the damper term is
+    // being driven from seated to free and back at the same rate. Row 12.3
+    // fences the flutter that stays BETWEEN the stops, which is silent by
+    // design; this is the one that crosses them.
+    {
+        bool finite = true;
+        double worstPeak = 0.0;
+        for (int inst = 0; inst < 5; ++inst)
+            for (int periodBlocks : { 1, 4 })
+            {
+                EngineParams p = measParams (inst);
+                std::vector<TimedEvent> evs;
+                for (int n : { 48, 52, 55, 60 })
+                    evs.push_back ({ 0, { 0, NoteEvent::noteOn, n, 0.8f } });
+                for (int b = 0; b < static_cast<int> (1.5 * fs / 256); ++b)
+                    evs.push_back ({ (b + 1) * 256,
+                                     { 0, NoteEvent::sustain, 0,
+                                       ((b / periodBlocks) % 2) ? 1.0f : 0.0f } });
+                const Stereo s = renderBench (fs, p, 1.6, evs);
+                finite = finite && allFinite (s);
+                worstPeak = std::max (worstPeak, peakAbs (s));
+            }
+        row ("19.6", "CC64 square-waved across the stops at 188 Hz",
+             "finite, pk <= 1 (rail asymptote)",
+             fmt ("pk %.4f", worstPeak), verdict (finite && worstPeak <= 1.0));
+    }
+
+    // 18.7 -- the tuning register answers to controllers that are not RPN.
+    //
+    // MpeTuning::controller watches CC101 and CC100 (the RPN select) and takes
+    // CC6 and CC38 as data entry for whatever is latched. It does not watch
+    // CC99 and CC98, which are the NRPN select, so a controller that sends an
+    // NRPN -- a very ordinary thing for a controller to send -- has its data
+    // entry read as registered-parameter traffic. Two consequences, both
+    // measured here. On a member channel it overwrites the declared bend
+    // range, so every per-note tuning that channel asks for afterwards is
+    // scaled by the wrong number. On the zone's master channel, where the
+    // configuration message has just left RPN 6 latched, it re-opens the zone
+    // with the NRPN's value as the member count, and every channel above that
+    // count silently stops being tuned at all.
+    //
+    // The register also starts latched at (0, 0), which IS RPN 0, so even a
+    // bare data entry with no select at all is taken as bend sensitivity;
+    // MIDI 1.0 defines no default selection. A host that follows the RPN Null
+    // convention (CC101 = CC100 = 127 after each sequence, RP-018) is not
+    // affected, which is what the third measurement shows -- but that is a
+    // convention the sender is asked to follow, not a guarantee the receiver
+    // may assume. The fix is in MpeTuning: watch 99 and 98, and let an NRPN
+    // select mean "no RPN is selected".
+    {
+        MpeTuning hit;
+        hit.setMode (MpeTuning::Mode::detect);
+        sendMcm (hit, 1, 15);
+        const float rangeBefore = hit.channelRangeSemis (2);
+        hit.controller (2, 99, 1);        // NRPN MSB -- not watched
+        hit.controller (2, 98, 20);       // NRPN LSB -- not watched
+        hit.controller (2, 6, 5);         // data entry, meant for the NRPN
+        const float rangeAfter = hit.channelRangeSemis (2);
+
+        MpeTuning zone;
+        zone.setMode (MpeTuning::Mode::detect);
+        sendMcm (zone, 1, 15);
+        const int membersBefore = zone.memberCount (true);
+        zone.controller (1, 99, 1);
+        zone.controller (1, 98, 20);
+        zone.controller (1, 6, 3);
+        const int membersAfter = zone.memberCount (true);
+
+        MpeTuning safe;
+        safe.setMode (MpeTuning::Mode::detect);
+        sendMcm (safe, 1, 15);
+        safe.controller (2, 101, 127);    // RPN Null, as RP-018 asks
+        safe.controller (2, 100, 127);
+        safe.controller (2, 99, 1);
+        safe.controller (2, 98, 20);
+        safe.controller (2, 6, 5);
+        const bool nullProtects = safe.channelRangeSemis (2) == rangeBefore;
+
+        const bool pass = rangeAfter == rangeBefore && membersAfter == membersBefore;
+        row ("19.7", "NRPN traffic cannot reach the tuning register",
+             "range and zone unchanged",
+             fmt2 ("range %.0f -> %.0f st, ", rangeBefore, rangeAfter)
+                 + fmt2 ("zone %.0f -> %.0f members",
+                         static_cast<double> (membersBefore),
+                         static_cast<double> (membersAfter)),
+             gapIf (pass, nullProtects && rangeAfter == 5.0f && membersAfter == 3));
+    }
+
+    // 18.8 -- one tine can end up permanently cut to a configuration the
+    // panel does not show.
+    //
+    // The version counter is shared by all five banks; each bank keeps its own
+    // record of the configuration it was last compared against. The note-on
+    // path rebuilds the TINE bank whatever instrument is being played -- it
+    // sits above the instrument dispatch -- using the parameters of that
+    // moment. So a tine that is stale for a reason the tine path did not
+    // cause (a workshop edit, or a per-note tuning change, both of which mark
+    // a single voice) is re-cut, on a note struck on another instrument, to
+    // whatever the tine-only controls happen to say right then, and marked
+    // current at the shared version.
+    //
+    // If those controls are then put back, nothing notices. The tine path's
+    // own record still holds the original value, so when the player returns
+    // to the tine piano the whole-struct comparison finds no change, the
+    // version does not advance, and that one voice compares up to date. It is
+    // never re-cut. Measured: after moving PICKUP POS away, editing one tine
+    // in the workshop, striking that note on the grand and putting the
+    // control back, the tine renders BIT-IDENTICALLY to an instrument whose
+    // pickup was left at the away value -- and a full signal away from the
+    // one the panel is showing.
+    //
+    // The per-note tuning path reaches the same state and then usually heals
+    // itself, because the next strike that carries a different offset marks
+    // the voice stale again; the workshop path has nothing to heal it.
+    {
+        auto trip = [&] (bool moveAway, bool comeBack, float startPos)
+        {
+            auto e = std::make_unique<EpiEngine>();
+            e->prepare (fs, 256);
+            EngineParams p = measParams (0);
+            p.pickupPos = startPos;
+            std::vector<float> L (256), R (256), y;
+            auto block = [&] (std::vector<NoteEvent> evs)
+            {
+                e->process (L.data(), R.data(), 256, p,
+                            evs.empty() ? nullptr : evs.data(), static_cast<int> (evs.size()));
+            };
+            // Play the tine piano first, so its record of the configuration is
+            // a real one and not the sentinel prepare() leaves behind.
+            for (int b = 0; b < 20; ++b) block ({});
+            block ({ { 0, NoteEvent::noteOn, 55, 0.7f } });
+            for (int b = 0; b < 40; ++b) block ({});
+            block ({ { 0, NoteEvent::noteOff, 55, 0.0f } });
+            for (int b = 0; b < 60; ++b) block ({});
+            // Over to the grand, move the tine-only control, edit one tine,
+            // strike that note, and put the control back.
+            p.instrument = 3;
+            for (int b = 0; b < 60; ++b) block ({});
+            if (moveAway) p.pickupPos = 0.6f;
+            e->setTineMod (60 - EpiEngine::kLoNote, 0.97f, 1.0f);
+            block ({ { 0, NoteEvent::noteOn, 60, 0.8f } });
+            for (int b = 0; b < 40; ++b) block ({});
+            block ({ { 0, NoteEvent::noteOff, 60, 0.0f } });
+            for (int b = 0; b < 40; ++b) block ({});
+            if (moveAway && comeBack) p.pickupPos = startPos;
+            // Back to the tine piano, and hear the tine the panel describes.
+            p.instrument = 0;
+            for (int b = 0; b < 80; ++b) block ({});
+            for (int b = 0; b < 120; ++b)
+            {
+                block (b == 0 ? std::vector<NoteEvent> { { 0, NoteEvent::noteOn, 60, 0.8f } }
+                              : std::vector<NoteEvent> {});
+                y.insert (y.end(), L.begin(), L.end());
+            }
+            Stereo s; s.fs = fs; s.L = y; s.R = y;
+            return s;
+        };
+        const Stereo panel   = trip (false, true,  -0.35f);   // control never moved
+        const Stereo suspect = trip (true,  true,  -0.35f);   // moved and put back
+        const Stereo away    = trip (false, true,   0.6f);    // left at the away value
+        const double vsPanel = changeDb (suspect, panel, 0.0, 0.6);
+        const double vsAway  = changeDb (suspect, away,  0.0, 0.6);
+        row ("19.8", "a tine is cut to what the panel shows", "matches the panel, not the trip",
+             fmt2 ("vs panel %.1f, vs away value %.1f dB", vsPanel, vsAway),
+             gapIf (vsPanel < -40.0, vsPanel > -6.0 && vsAway < -200.0));
+    }
+}
+
+// ===========================================================================
 
 int main()
 {
@@ -2849,6 +3480,7 @@ int main()
     sectionDeterminism();
     sectionEdges();
     sectionPassivity();
+    sectionPostRelease();
 
     const double wall = std::chrono::duration<double> (std::chrono::steady_clock::now() - t0).count();
     std::printf ("\nsuite wall time %.1f s\n", wall);

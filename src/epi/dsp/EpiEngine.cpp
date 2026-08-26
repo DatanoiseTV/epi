@@ -106,6 +106,14 @@ void EpiEngine::prepare (double sampleRate, int)
     if (grand.size() != static_cast<std::size_t> (kNumTines))
         grand.resize (static_cast<std::size_t> (kNumTines));
     grandBoard.prepare (sampleRate);
+    // prepare() leaves the plate at stock, so the cache that decides
+    // whether the body bench needs re-applying has to forget what it
+    // thought was current -- otherwise the next block compares the
+    // player's setting against itself, finds no change, and the bench
+    // is silently lost. Same for the mic stage, whose allpass cascade
+    // prepare() rebuilds at unity spread while the level line survives.
+    lastBoardCfg = GrandBoard::Config { -1.0e30 };
+    micDirty.store (true, std::memory_order_release);
     for (int i = 0; i < kNumTines; ++i)
     {
         grand[i].prepare (sampleRate);
@@ -189,6 +197,14 @@ void EpiEngine::reset()
     wurliFrame.reset();
     for (auto& v : grand) v.reset();
     grandBoard.prepare (fs);
+    // prepare() leaves the plate at stock, so the cache that decides
+    // whether the body bench needs re-applying has to forget what it
+    // thought was current -- otherwise the next block compares the
+    // player's setting against itself, finds no change, and the bench
+    // is silently lost. Same for the mic stage, whose allpass cascade
+    // prepare() rebuilds at unity spread while the level line survives.
+    lastBoardCfg = GrandBoard::Config { -1.0e30 };
+    micDirty.store (true, std::memory_order_release);
     grandRad.prepare (fs);
     grandMics.prepare (fs);
     for (auto& v : clav) v.reset();
@@ -636,6 +652,14 @@ void EpiEngine::process (float* outL, float* outR, int numSamples,
         {
             for (auto& v : grand) v.reset();
             grandBoard.prepare (fs);
+            // prepare() leaves the plate at stock, so the cache that decides
+            // whether the body bench needs re-applying has to forget what it
+            // thought was current -- otherwise the next block compares the
+            // player's setting against itself, finds no change, and the bench
+            // is silently lost. Same for the mic stage, whose allpass cascade
+            // prepare() rebuilds at unity spread while the level line survives.
+            lastBoardCfg = GrandBoard::Config { -1.0e30 };
+            micDirty.store (true, std::memory_order_release);
             grandRad.prepare (fs);
             grandMics.prepare (fs);
         }
@@ -1339,6 +1363,14 @@ void EpiEngine::processGrand (float* outL, float* outR, int numSamples,
         {
             for (auto& v : grand) v.reset();
             grandBoard.prepare (fs);
+            // prepare() leaves the plate at stock, so the cache that decides
+            // whether the body bench needs re-applying has to forget what it
+            // thought was current -- otherwise the next block compares the
+            // player's setting against itself, finds no change, and the bench
+            // is silently lost. Same for the mic stage, whose allpass cascade
+            // prepare() rebuilds at unity spread while the level line survives.
+            lastBoardCfg = GrandBoard::Config { -1.0e30 };
+            micDirty.store (true, std::memory_order_release);
             grandRad.prepare (fs);
             grandMics.prepare (fs);
             room.reset();
