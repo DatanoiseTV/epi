@@ -21,8 +21,16 @@
 
 #include <cmath>
 #include <cstdio>
+#include <memory>
 #include <vector>
 
+// Every processor in this suite is heap-allocated, which is how a host
+// creates one and, more to the point, the only way this suite survives a
+// small stack: an EpiAudioProcessor carries the whole instrument, and
+// Windows gives a main thread about a megabyte where macOS and Linux give
+// eight. Built on the stack it fitted on two platforms and blew the third,
+// with a segfault that named nothing. Reproduced on macOS under
+// `ulimit -s 1024`, which is the honest way to test that claim.
 namespace
 {
 int failures = 0;
@@ -77,7 +85,8 @@ int main()
         // Construction is announced on its own, because that is where a
         // platform-specific failure lands and the rows after it say nothing
         // if nobody knows whether it got that far.
-        EpiAudioProcessor probe;
+        auto probeOwned = std::make_unique<EpiAudioProcessor>();
+        auto& probe = *probeOwned;
         say ("processor constructed\n");
         (void) probe.getValueTreeState().getParameter ("tune");
         say ("parameters reachable\n\n");
@@ -85,7 +94,8 @@ int main()
 
     // S1 -- a fresh processor sits on the calibrated defaults.
     {
-        EpiAudioProcessor a;
+        auto aOwned = std::make_unique<EpiAudioProcessor>();
+        auto& a = *aOwned;
         row ("S1", "fresh processor: stage at defaults, classic pair mode",
              near (a.getMicStage(), EpiAudioProcessor::kStageDefaults)
                  && a.getMicStage()[0] < 0.5f);
@@ -93,13 +103,16 @@ int main()
 
     // S2 -- host project state: getState/setState across two processors.
     {
-        EpiAudioProcessor a;
+        auto aOwned = std::make_unique<EpiAudioProcessor>();
+        auto& a = *aOwned;
         a.setMicStage (kProbeStage);
         a.setMicMod (kProbePair);
         juce::MemoryBlock blob;
         a.getStateInformation (blob);
 
-        EpiAudioProcessor b;
+        auto bOwned = std::make_unique<EpiAudioProcessor>();
+
+        auto& b = *bOwned;
         b.setStateInformation (blob.getData(), static_cast<int> (blob.getSize()));
         row ("S2", "project state: mic stage and pair trims survive the trip",
              near (b.getMicStage(), kProbeStage) && near (b.getMicMods(), kProbePair));
@@ -108,7 +121,8 @@ int main()
     // S3 -- a saved user preset is a complete snapshot: save, scribble over
     // the live stage, load the preset back, and the saved placement wins.
     {
-        EpiAudioProcessor a;
+        auto aOwned = std::make_unique<EpiAudioProcessor>();
+        auto& a = *aOwned;
         a.setMicStage (kProbeStage);
         const juce::String name { "ZZ-STATE-RT-PROBE" };
         a.getPresetManager().saveUser (name);
@@ -128,7 +142,8 @@ int main()
     // S4 -- factory presets leave the player's benches alone unless they
     // carry their own table; the stage is a bench like any other.
     {
-        EpiAudioProcessor a;
+        auto aOwned = std::make_unique<EpiAudioProcessor>();
+        auto& a = *aOwned;
         a.setMicStage (kProbeStage);
         a.getPresetManager().loadFactory (0);
         row ("S4", "factory preset load: the player's stage placement stays",
@@ -139,11 +154,14 @@ int main()
     // no 'mstage' entry, and loading it must mean 'stock stage', never
     // 'whatever happened to be set'.
     {
-        EpiAudioProcessor pristine;
+        auto pristineOwned = std::make_unique<EpiAudioProcessor>();
+        auto& pristine = *pristineOwned;
         juce::MemoryBlock legacy;
         pristine.getStateInformation (legacy);
 
-        EpiAudioProcessor b;
+        auto bOwned = std::make_unique<EpiAudioProcessor>();
+
+        auto& b = *bOwned;
         b.setMicStage (kProbeStage);
         b.setStateInformation (legacy.getData(), static_cast<int> (legacy.getSize()));
         row ("S5", "legacy state without a stage entry resets to defaults",
@@ -153,7 +171,8 @@ int main()
     // S6 -- a factory preset that ships a stage placement applies it, and
     // the next plain factory load still leaves it alone (the bench rule).
     {
-        EpiAudioProcessor a;
+        auto aOwned = std::make_unique<EpiAudioProcessor>();
+        auto& a = *aOwned;
         a.getPresetManager().loadByName ("Jazz Club");
         const auto st = a.getMicStage();   // copy: the kept-check below must not compare the live array with itself
         const bool applied = st[0] >= 0.5f            // Stage mode
@@ -178,7 +197,8 @@ int main()
     // the UI is verified headlessly). The bundle is compiled in, so this
     // reads the resource the plugin actually serves.
     {
-        EpiAudioProcessor a;
+        auto aOwned = std::make_unique<EpiAudioProcessor>();
+        auto& a = *aOwned;
         const juce::String js (juce::CharPointer_UTF8 (EpiUIData::jucebridge_jsx),
                                (size_t) EpiUIData::jucebridge_jsxSize);
         juce::StringArray missing;
@@ -203,7 +223,8 @@ int main()
     // the check that catches a parameter added to the layout but forgotten
     // in whatever the host actually persists.
     {
-        EpiAudioProcessor a;
+        auto aOwned = std::make_unique<EpiAudioProcessor>();
+        auto& a = *aOwned;
         auto& sa = a.getValueTreeState();
         std::vector<std::pair<juce::String, float>> set;
         for (auto* p : a.getParameters())
@@ -227,7 +248,8 @@ int main()
 
         juce::MemoryBlock blob;
         a.getStateInformation (blob);
-        EpiAudioProcessor b;
+        auto bOwned = std::make_unique<EpiAudioProcessor>();
+        auto& b = *bOwned;
         b.setStateInformation (blob.getData(), static_cast<int> (blob.getSize()));
 
         juce::StringArray bad;
@@ -251,23 +273,30 @@ int main()
     // written before it existed meaning Detect rather than whatever the
     // receiving processor happened to be set to.
     {
-        EpiAudioProcessor fresh;
+        auto freshOwned = std::make_unique<EpiAudioProcessor>();
+        auto& fresh = *freshOwned;
         row ("S9a", "fresh processor: MPE on Detect",
              fresh.getMpeMode() == EpiAudioProcessor::kMpeModeDefault);
 
-        EpiAudioProcessor a;
+        auto aOwned = std::make_unique<EpiAudioProcessor>();
+
+        auto& a = *aOwned;
         a.setMpeMode (2);                       // forced on
         juce::MemoryBlock blob;
         a.getStateInformation (blob);
-        EpiAudioProcessor b;
+        auto bOwned = std::make_unique<EpiAudioProcessor>();
+        auto& b = *bOwned;
         b.setStateInformation (blob.getData(), static_cast<int> (blob.getSize()));
         row ("S9b", "project state: MPE mode survives the trip",
              b.getMpeMode() == 2);
 
-        EpiAudioProcessor pristine;
+        auto pristineOwned = std::make_unique<EpiAudioProcessor>();
+
+        auto& pristine = *pristineOwned;
         juce::MemoryBlock legacy;
         pristine.getStateInformation (legacy);
-        EpiAudioProcessor c;
+        auto cOwned = std::make_unique<EpiAudioProcessor>();
+        auto& c = *cOwned;
         c.setMpeMode (0);                       // forced off, then handed an old project
         c.setStateInformation (legacy.getData(), static_cast<int> (legacy.getSize()));
         row ("S9c", "legacy state without an MPE entry means Detect",
@@ -279,7 +308,8 @@ int main()
     // A note-on carries a per-note tuning offset now, and on anything that is
     // not an open MPE zone that offset has to be zero -- not small, zero.
     {
-        EpiAudioProcessor a;
+        auto aOwned = std::make_unique<EpiAudioProcessor>();
+        auto& a = *aOwned;
         a.prepareToPlay (48000.0, 64);
         juce::AudioBuffer<float> buf (2, 64);
         juce::MidiBuffer midi;
@@ -316,7 +346,8 @@ int main()
 
         auto renderMidi = [&] (bool mpe)
         {
-            EpiAudioProcessor a;
+            auto aOwned = std::make_unique<EpiAudioProcessor>();
+            auto& a = *aOwned;
             a.prepareToPlay (fs, block);
             juce::AudioBuffer<float> buf (2, block);
             std::vector<double> mono;
