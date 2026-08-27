@@ -44,3 +44,6 @@ ds-bundle/
 # Private working notes, never published
 COMPARISON-NOTES.local.md
 RELEASE_OPINION.md
+
+# Python bytecode from the developer tools in tools/
+__pycache__/
