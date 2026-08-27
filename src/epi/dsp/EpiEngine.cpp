@@ -274,7 +274,6 @@ void EpiEngine::reset()
     clavCfgVersion.fill (0);
     pedalDown = false;
     pedalAmount = 0.0;
-    unaCorda = false;
     softAmount = 0.0;
     sostenutoDown = false;
     coil.reset();
@@ -394,7 +393,17 @@ GrandVoice::Config EpiEngine::grandConfig (const EngineParams& p) const
     c.material       = static_cast<double> (p.material);
     c.damperFelt     = static_cast<double> (p.damperFelt);
     c.hammerMat      = static_cast<double> (p.hammerMat);
-    c.unaCorda       = unaCorda;
+    // One pedal, one state, and the MODE decides which mechanism it drives
+    // -- read here, every block, for both of them. The shift used to be
+    // latched at the CC67 event instead, against whatever SOFT MODE said at
+    // that instant, and the two then disagreed for as long as the pedal
+    // stayed down: switching rail -> shift under a held pedal left NEITHER
+    // engaged and the left pedal did nothing at all (measured identical to
+    // no pedal, peak 0.407 against the 0.267 the shift owes), while shift
+    // -> rail left BOTH engaged at once and took the note 2 dB below either
+    // mechanism alone. A pedal that is down is down; the switch above it
+    // chooses what it is connected to.
+    c.unaCorda       = p.softMode == 0 && softAmount > 0.5;
     c.halfBlow       = p.softMode == 1 ? softAmount : 0.0;
     return c;
 }
@@ -626,7 +635,6 @@ void EpiEngine::handleEvent (const NoteEvent& e, const EngineParams& p)
             // (near-binary, as the real shift is); the rail tilts the
             // hammers closer -- continuous, an upright's half-blow.
             softAmount = std::clamp (static_cast<double> (e.velocity), 0.0, 1.0);
-            unaCorda = p.softMode == 0 && e.velocity > 0.5f;
             break;
     }
 }

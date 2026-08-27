@@ -45,6 +45,14 @@ All notable changes to Epi are documented here. The format follows
   hanging until the player releases a pedal they are already holding. The
   catch now happens on the pedal's edge, not on every message that says
   "down".
+- The left pedal stopped working, or worked twice, if SOFT MODE moved while
+  it was held. The shift was latched at the CC67 event against whatever the
+  mode said at that instant, while the rail was recomputed every block, so
+  the two disagreed for as long as the pedal stayed down: switching rail to
+  shift left NEITHER mechanism engaged and the pedal did nothing at all
+  (measured identical to no pedal), and switching shift to rail left BOTH
+  engaged and took the note 2 dB below either on its own. One pedal, one
+  state, and the mode decides what it is connected to.
 - One tine could be cut permanently to a voicing the panel does not show.
   The tine bank was rebuilt on note-on whatever instrument was playing --
   alone among the five -- so a voice marked stale by a workshop edit or a
@@ -70,12 +78,14 @@ All notable changes to Epi are documented here. The format follows
   35 and resized it on the way.
 
 ### Added
-- Eighteen rows for the pedals as a player works them, rather than for what
+- Twenty rows for the pedals as a player works them, rather than for what
   each pedal is: half-pedal never damping harder on any of the five, the
   sostenuto rule from both sides including the re-sent message, the left
-  pedal sparing a note already sounding, the grand's two pedals arriving at
-  instruments that do not have them, and a note damped to silence staying
-  dead when the pedal comes back down.
+  pedal sparing a note already sounding, SOFT MODE moved under a held pedal
+  engaging exactly the mechanism it selects, the grand's two pedals arriving
+  at instruments that do not have them, and a note damped to silence staying
+  dead when the pedal comes back down. Each was checked against the defect
+  it fences: reinstating the old behaviour fails them.
 
 ### Changed
 - Close Pop, Parlor and Harp Grand re-trimmed: the new attack moved them off

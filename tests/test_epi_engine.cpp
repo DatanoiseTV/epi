@@ -3217,6 +3217,50 @@ static void sectionPedalPlaying()
             row (id, what, "<= -80 dB", fmt ("%.1f dB", back), verdict (back <= -80.0));
         }
     }
+
+    // 20.6 -- SOFT MODE moved while the pedal is down.
+    //
+    // The left pedal is one pedal; the mode switch above it decides which
+    // mechanism it is connected to. So a pedal held across a mode change has
+    // to end up driving the newly selected mechanism, exactly as if it had
+    // been set that way all along -- and the next strike is when that
+    // becomes audible, since neither the shift nor the rail can reach a
+    // hammer already in flight.
+    //
+    // It did not. The shift was latched at the CC67 event against whatever
+    // the mode said at that instant while the rail was recomputed every
+    // block, so the two disagreed for as long as the pedal stayed down:
+    // rail -> shift left NEITHER engaged, and the left pedal did nothing at
+    // all; shift -> rail left BOTH engaged and took the note 2 dB below
+    // either mechanism on its own.
+    {
+        auto strikeAfterSwitch = [&] (int pressMode, int finalMode)
+        {
+            EngineParams p = measParams (3);
+            p.softMode = pressMode < 0 ? finalMode : pressMode;
+            std::vector<TimedEvent> e;
+            if (pressMode >= 0) e.push_back ({ 0, ev (NoteEvent::soft, 0, 1.0f) });
+            e.push_back ({ at (0.11), ev (NoteEvent::noteOn, 60, 0.9f) });
+            const Stereo s = renderBench (fs, p, 2.0, e, {},
+                [finalMode, fs] (int blockStart, EngineParams& q)
+                {
+                    if (blockStart >= static_cast<int> (0.05 * fs)) q.softMode = finalMode;
+                });
+            return rmsDbMono (s, 0.15, 1.9);
+        };
+        const double shiftAll = strikeAfterSwitch (0, 0);
+        const double railAll  = strikeAfterSwitch (1, 1);
+        const double toShift  = strikeAfterSwitch (1, 0);
+        const double toRail   = strikeAfterSwitch (0, 1);
+        row ("20.6", "rail -> shift under a held pedal engages the shift",
+             "within 0.5 dB of shift throughout",
+             fmt2 ("%.2f vs %.2f dB", toShift, shiftAll),
+             verdict (std::fabs (toShift - shiftAll) <= 0.5));
+        row ("20.6b", "shift -> rail under a held pedal engages only the rail",
+             "within 0.5 dB of rail throughout",
+             fmt2 ("%.2f vs %.2f dB", toRail, railAll),
+             verdict (std::fabs (toRail - railAll) <= 0.5));
+    }
 }
 
 static void sectionPostRelease()

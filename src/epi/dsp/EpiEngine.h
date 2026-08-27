@@ -614,7 +614,6 @@ private:
     Room room;
     float lastSpaceSize = -1.0f;
 
-    bool   unaCorda    = false;   // CC67 in shift mode, grand only
     double softAmount  = 0.0;     // CC67 continuous, for the rail (half-blow) mode
     std::atomic<float> velMapY[5] { 0.0f, 0.25f, 0.5f, 0.75f, 1.0f };
     std::atomic<bool> velMapIdentity { true };
