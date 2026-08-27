@@ -629,7 +629,7 @@ inline constexpr ParamValue kVoicedGrand[] = {
 // Close-lid pop: the pair pulled tight, harder hammers, presence up, the
 // room nearly shut. The mic bench narrows the pair (table below).
 inline constexpr ParamValue kClosePop[] = {
-    { "instrument", 3.0f },
+    { "instrument", 3.0f }, { "outGain", -0.5f },
     { "hammerHard", 0.62f }, { "clarity", 2.0f },
     { "cabMix", 0.0f }, { "spaceMix", 0.10f }, { "spaceSize", 0.35f },
 };
@@ -691,7 +691,7 @@ inline constexpr ParamValue kCathedral[] = {
 // piano's bottom octave thins, by geometry, not EQ. The board row measures
 // the low band against this preset's own stock-board twin.
 inline constexpr ParamValue kParlor[] = {
-    { "instrument", 3.0f },
+    { "instrument", 3.0f }, { "outGain", -1.0f },
     { "bodyMat", 2.0f }, { "bodySize", 0.05f },
     { "cabMix", 0.0f }, { "spaceMix", 0.12f }, { "spaceSize", 0.35f },
 };
@@ -709,12 +709,14 @@ inline constexpr ParamValue kNineFoot[] = {
 
 // Polymer strings on the grand -- legal because the mics hear everything.
 // Nylon's bending stiffness is nothing against its tension, so the partials
-// sit almost exactly harmonic -- and, measured, the top SPEAKS: material
-// loss enters strings through the bending share only, which for nylon is
-// nearly zero, so the light courses ring clear and glassy where wire's
-// stretched partials crowd. A harp with a keyboard, not a muffled piano.
+// sit almost exactly harmonic -- that part is real, and it is what the
+// preset is for: no stretch, no beating against the tempered scale, a
+// plain harmonic series under the hammer. What it is NOT is bright. The
+// bending share carries the material's loss factor, and nylon's is 133x
+// the stock wire's, so the top goes an order of magnitude faster and what
+// is left is fundamental. A harp with a keyboard: short, clean, dark.
 inline constexpr ParamValue kHarpGrand[] = {
-    { "instrument", 3.0f }, { "material", 7.0f },
+    { "instrument", 3.0f }, { "material", 7.0f }, { "outGain", 8.0f },
     { "hammerHard", 0.35f },
     { "cabMix", 0.0f }, { "spaceMix", 0.20f }, { "spaceSize", 0.55f },
 };

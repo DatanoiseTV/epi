@@ -395,16 +395,29 @@ Reuse `HuntCrossleyHammer`; parameters move to the felt world. Three zones,
 log-interpolated between anchors (Hall/Askenfelt via Chaigne–Askenfelt,
 `hammer_table.jpg` [R]):
 
-| anchor | K (N/m^alpha) | alpha | mass [R] | contact target [R] |
-| --- | --- | --- | --- | --- |
-| C2 | 4e8 | 2.3 | ~11.5 g | ≈4 ms |
-| C4 | 4.5e9 | 2.5 | ~9 g | ≈2 ms (≈T/2, max efficiency) |
-| C7 | 1e12 | 3.0 | ~6 g | ≈1 ms |
+| anchor | K published [R] | K fitted | alpha | mass [R] | contact target [R] | measured |
+| --- | --- | --- | --- | --- | --- | --- |
+| C2 | 4e8 | 5e8 | 2.3 | ~11.5 g | ≈4 ms | 3.69 ms |
+| C4 | 4.5e9 | 8e9 | 2.5 | ~9 g | ≈2 ms (≈T/2, max efficiency) | 2.06 ms |
+| C7 | 1e12 | 1.5e11 | 3.0 | ~6 g | ≈1 ms | 1.17 ms |
+
+The fitted column used to read 4e8 / 4.5e9 / 1e10, and the gap at C7 —
+two orders of magnitude under the published figure — was written up as the
+published values being inconsistent with the measured contact times. They
+were not. The hysteretic term was being integrated explicitly at 1.5–30x
+past the `c dt / m < 2` a damper allows, so the contact chattered, ended
+early, and the fit read that as a soft felt. Solving that term implicitly
+and putting `lambda` at its restitution value moves the fit an order of
+magnitude back toward the literature, and the same measured contact
+graduation now falls out of a harder hammer.
 
 - Mass graduation 12 g (C1) → 5 g (C8) (Broadwood/Stulov agree [R]); the
   full mass strikes the mean patch of the whole choir and the force splits
-  equally — the CP-70 bichord contact generalised to three. `lambda` ≈ 1.0
-  s/m as the felt hysteresis stand-in [D].
+  equally — the CP-70 bichord contact generalised to three. `lambda` is
+  **0.15 s/m**, which is not a stand-in but Hunt–Crossley's own
+  `3 (1 - e) / (2 v)` for a felt restitution near 0.6 at an ff 4 m/s
+  arrival. The 1.0 that stood here put `lambda * d(delta)/dt` past -1 on
+  every note of the compass, where the loss term stops being a loss.
 - **Stulov escalation, named**: if the 16-velocity-layer A/B shows the
   spectrum-vs-dynamics slope wrong (felt's signature), replace the H-C loss
   term with Stulov's hereditary form — F = F0[u^p − (ε/τ0)∫u^p e^((ξ−t)/τ0)dξ],

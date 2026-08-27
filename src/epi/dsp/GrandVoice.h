@@ -853,7 +853,7 @@ private:
         }
 
         // ---- hammer: felt, Hall/Askenfelt anchors ---------------------------
-        // K log-interpolated C2 4e8 -> C4 4.5e9 -> C7 1e10-effective (below),
+        // K log-interpolated C2 5e8 -> C4 8e9 -> C7 1.5e11-effective (below),
         // alpha 2.3 -> 2.5 -> 3.0, mass 12 g (C1) -> 5 g (C8). Contact
         // targets ~4 ms at C2, ~2 ms at C4 (T/2, max efficiency), ~1 ms at
         // C7 -- and the CONTACT TIMES are the calibration authority, because
@@ -864,7 +864,18 @@ private:
         // (that 1 ms is the string riding with the hammer through several
         // reflections, a compliance the quoted K never sees). Measured on
         // this model, the treble anchor that reproduces the measured contact
-        // graduation is 1e10. Below C2 the graduation continues at the
+        // graduation is 1.5e11, and the reason it is no longer the 1e10 that
+        // stood here is that the anchors were fitted against a contact that
+        // chattered. The hysteretic term was integrated far past the
+        // c dt / m < 2 an explicit damper allows -- 1.5 to 30x across the
+        // compass at ff -- so the force half-rectified against the guard in
+        // the contact and broke the contact off early. A contact that ends
+        // early is what a HARDER felt looks like, so the fit cancelled it by
+        // softening K, and it had to keep softening toward the treble
+        // because that is where the overshoot was worst. Solve the term
+        // implicitly, put lambda at its restitution value, and the same
+        // measured contact times ask for the hard hammer the published K
+        // always described. Below C2 the graduation continues at the
         // C2->C4 log slope rather than clamping: a clamped K left A0's
         // contact SHORTER than C2's (3.4 vs 4 ms, backwards), and with it a
         // bass spectrum bright enough to put A0's strongest radiated partial
@@ -881,10 +892,18 @@ private:
             hammerCfg.alpha     = lerp3 (2.3, 2.5, 3.0, false);
             const HammerCover hcov = hammerCover (std::clamp (static_cast<int> (cfg.hammerMat + 0.5), 0, 5));
             hammerCfg.alpha     = std::clamp (hammerCfg.alpha + hcov.alphaAdd, 1.2, 3.5);
-            hammerCfg.stiffness = hcov.stiff * lerp3 (4.0e8, 4.5e9, 1.0e10, true)
+            hammerCfg.stiffness = hcov.stiff * lerp3 (5.0e8, 8.0e9, 1.5e11, true)
                                 * std::pow (12.0, cfg.hammerHardness - 0.5)
                                 * (unaCordaActive && numStrings == 1 ? 0.7 : 1.0);
-            hammerCfg.lambda    = 1.0 * hcov.lambda;   // felt hysteresis stand-in
+            // Hunt-Crossley's hysteretic coefficient is not free: it is
+            // 3 (1 - e) / (2 v), the restitution the felt actually has at
+            // the speed it arrives. A piano hammer's e sits around 0.6 at
+            // an ff 4 m/s arrival, which puts the base at 0.15 s/m. The
+            // 1.0 that stood here is what a felt with e = -0.2 would need,
+            // and it put lambda * ddot(delta) past -1 on every note of the
+            // compass: the term stopped being a loss and became a switch,
+            // half-rectified by the max(0,.) guard below it.
+            hammerCfg.lambda    = 0.15 * hcov.lambda;
             hammerCfg.mass      = 0.012 * std::pow (5.0 / 12.0, (m - 24.0) / 84.0)
                                 * (0.6 + 0.8 * cfg.hammerMassNorm);
         }
@@ -911,6 +930,21 @@ private:
                               * std::pow (0.5 * (al + 1.0) * mRed * vMax * vMax,
                                           -0.5 * (al - 1.0));
             if (hammerCfg.stiffness > kMax) hammerCfg.stiffness = kMax;
+        }
+
+        // The surface the felt actually meets: the mean of the struck
+        // members, each carrying 1/numStruck of the force. One force step
+        // moves that mean by dt * sum(phi^2) / (numStruck^2 * M), and the
+        // contact solves its hysteretic term against exactly this. The
+        // strike shapes already carry the struck/unstruck factor, so the
+        // sum runs over the whole choir and counts only what is struck.
+        {
+            double sumPhi2 = 0.0;
+            for (int s = 0; s < numStrings; ++s)
+                for (int k = 0; k < str[s].sys.numModes(); ++k)
+                    sumPhi2 += str[s].strikeShape[k] * str[s].strikeShape[k];
+            const double n2 = static_cast<double> (numStruck) * static_cast<double> (numStruck);
+            hammerCfg.surfaceAdmit = sumPhi2 / (n2 * modalMass * fs);
         }
 
         const double grip = std::clamp (cfg.damperGrip, 0.0, 1.0);

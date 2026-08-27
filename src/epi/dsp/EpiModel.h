@@ -348,6 +348,13 @@ public:
         double stiffness  = 2.0e6;    // N/m^alpha
         double alpha      = 2.0;
         double lambda     = 1.2;      // hysteretic loss, s/m
+
+        // Per-sample velocity response of the struck surface to a unit
+        // contact force, dt * sum_m phi_m^2 / M_m, in (m/s)/N. It is what
+        // makes the hysteretic term solvable implicitly below; a voice that
+        // leaves it at zero gets the old explicit force, which is correct
+        // only while the term is far from its stability limit.
+        double surfaceAdmit = 0.0;
     };
 
     void prepare (double sampleRate) { fs = sampleRate; reset(); }
@@ -404,6 +411,37 @@ public:
             const double rate = velocity - surfaceVelocity;
             const double dAlpha = std::pow (compression, cfg.alpha);
             force = cfg.stiffness * dAlpha * (1.0 + cfg.lambda * rate);
+
+            // The hysteretic term is a velocity-proportional force, and
+            // integrating one explicitly is stable only while c*dt/m stays
+            // below 2. It does not: at ff the contact's own damping rate
+            // runs 1.5-30x past that across the compass, and what comes out
+            // is not a contact but a chatter -- the force half-rectifies
+            // against the max(0,.) below, pumps the string's top modes to
+            // metres per second, and the next sample's rate throws it back.
+            // Solving the same term implicitly costs one divide and no
+            // physics. Let both bodies answer the force inside the step,
+            //   v_rel' = rate - F (dt/m_hammer + surfaceAdmit),
+            // substitute, and the force falls out in closed form. The
+            // denominator is 1 wherever the explicit form was already
+            // valid, so this changes nothing that was working and bounds
+            // what was not, at every sample rate and every dynamic.
+            //
+            // Opt-in per voice, and deliberately so: a voice joins by
+            // declaring the admittance of the surface it strikes, and the
+            // hammer parameters it was fitted with have to be re-fitted
+            // when it does, because whatever they are now was fitted
+            // against the chatter. Only the grand has been through that.
+            // The tine, the e-grand and the reed measure the same defect
+            // at ff -- the hysteretic factor reaches -1.6, -0.5 and -2.5
+            // and their contact force half-rectifies for a sixth to a half
+            // of its samples -- and each needs its own re-fit against its
+            // own measured contact times before it can be switched over.
+            if (cfg.surfaceAdmit > 0.0)
+            {
+                const double relAdmit = dt / cfg.mass + cfg.surfaceAdmit;
+                force /= 1.0 + cfg.stiffness * dAlpha * cfg.lambda * relAdmit;
+            }
 
             // The hysteretic term can drive the total negative during
             // separation, which would mean the surface pulling the hammer

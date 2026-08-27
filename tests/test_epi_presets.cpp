@@ -793,16 +793,25 @@ int main()
              fmt ("%.0f Hz", mm["Brass Reeds"].centroid),
              mm["Brass Reeds"].centroid > steel.centroid);
     }
-    // Nylon takes its material loss only on the bending share -- nearly zero
-    // for nylon -- so the light courses ring the top clear where wire
-    // crowds it: measurably brighter than its own wire twin.
+    // Nylon against its own wire twin, and the direction is the material
+    // table's to dictate: the bending loss carries matDEta, which is the
+    // material's loss factor MINUS the stock wire's. Music wire is the
+    // reference, so its term is identically zero and it takes no bending
+    // loss at all, while nylon's is 2.0e-2. Nylon's lower stiffness shrinks
+    // B by about 7x, but 133x the loss factor swamps that, so its upper
+    // partials go roughly an order of magnitude faster than the wire's.
+    // Nylon here is the SHORT, dark course, not the clear one -- which is
+    // also what a gut-strung instrument does next to a steel-strung one.
+    // This row read the other way until the hammer contact was integrated
+    // properly: the chatter's broadband attack noise dominated the
+    // centroid and buried the material underneath it.
     {
         const Measured steel = renderPreset (presetNamed ("Harp Grand"),
                                              { { "material", 0.0f } });
-        row ("Harp Grand", "clearer top than its wire twin",
-             fmt ("> %.0f Hz", steel.centroid),
+        row ("Harp Grand", "top decays faster than its wire twin",
+             fmt ("< %.0f Hz", steel.centroid),
              fmt ("%.0f Hz", mm["Harp Grand"].centroid),
-             mm["Harp Grand"].centroid > steel.centroid);
+             mm["Harp Grand"].centroid < steel.centroid);
     }
 
     // ---- the Clav, and the benches the practitioner report added -----------
