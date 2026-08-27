@@ -167,6 +167,12 @@ struct Measured
 {
     bool   finite     = true;
     double peak       = 0.0;
+    // What fraction of samples sits above the output rail's transparent
+    // threshold. The rail is a safety net for the extremes, not a mix bus
+    // compressor: a preset that leans on it is being soft-clipped every
+    // time it is played, which is audible as a dulled attack long before
+    // it looks like distortion on a meter.
+    double railedPct  = 0.0;
     double rmsDb      = -300.0;
     double dcAbs      = 0.0;    // mean of the whole render, worst channel
     double tailDcAbs  = 0.0;    // mean of the last half second, worst channel
@@ -288,6 +294,11 @@ static Measured renderResolved (std::map<std::string, float> vals, const char* n
     }
 
     Measured m;
+    // The output rail is transparent below this and soft-clips above it
+    // (see EpiEngine's rail lambda). Whatever a preset puts above it is
+    // being limited on every play.
+    constexpr double kRailKnee = 0.76;
+    long railedSamples = 0, totalSamples = 0;
     double sumSq = 0.0, meanL = 0.0, meanR = 0.0, tailL = 0.0, tailR = 0.0;
     double sumMid = 0.0, sumSide = 0.0;
     const int tail0 = kLen - static_cast<int> (0.5 * kFs);
@@ -295,6 +306,9 @@ static Measured renderResolved (std::map<std::string, float> vals, const char* n
     {
         if (! std::isfinite (l[i]) || ! std::isfinite (r[i])) { m.finite = false; break; }
         m.peak = std::max (m.peak, std::max (std::abs ((double) l[i]), std::abs ((double) r[i])));
+        if (std::abs ((double) l[i]) > kRailKnee || std::abs ((double) r[i]) > kRailKnee)
+            ++railedSamples;
+        totalSamples += 2;
         sumSq += (double) l[i] * l[i] + (double) r[i] * r[i];
         meanL += l[i]; meanR += r[i];
         if (i >= tail0) { tailL += l[i]; tailR += r[i]; }
@@ -303,6 +317,7 @@ static Measured renderResolved (std::map<std::string, float> vals, const char* n
     }
     if (! m.finite) return m;
 
+    m.railedPct  = totalSamples > 0 ? 100.0 * railedSamples / totalSamples : 0.0;
     m.rmsDb      = 10.0 * std::log10 (std::max (1.0e-30, sumSq / (2.0 * kLen)));
     m.dcAbs      = std::max (std::abs (meanL), std::abs (meanR)) / kLen;
     m.tailDcAbs  = std::max (std::abs (tailL), std::abs (tailR)) / (0.5 * kFs);
@@ -526,6 +541,16 @@ int main()
 
     // ---- render rows ------------------------------------------------------
     heading ("Render: 4 s phrase per preset (E2 + C4-E4-G4 + C6, pedal worked)");
+
+    // The RMS window's floor is -32, not the -28 it was when the bank was
+    // benched on RMS. The bench is on PEAKS now, because these instruments
+    // do not share a crest factor -- the reed and the grand run 22 to 24.5
+    // dB where the tine and the clav run 15 -- and matching their RMS put
+    // the high-crest pair into the output rail on every note. Trimmed to
+    // equal peak headroom instead, a soft-hammer grand legitimately sits
+    // near -30 dBFS RMS, and that is the instrument being honest rather
+    // than a preset being broken. The floor still catches a preset that
+    // renders silent, which is what it is for.
     std::printf ("  %-15s %-4s %10s %10s %10s %10s %10s %10s\n",
                  "preset", "inst", "peak", "RMS dBFS", "DC", "centroid", "hi-ratio", "verdict");
 
@@ -547,11 +572,19 @@ int main()
         // not clipping.
         const bool ok = m.finite
                      && m.peak <= 1.0
-                     && m.rmsDb >= -28.0 && m.rmsDb <= -8.0
-                     && m.dcAbs < 8.0e-3 && m.tailDcAbs < 1.0e-3;
+                     && m.rmsDb >= -32.0 && m.rmsDb <= -8.0
+                     && m.dcAbs < 8.0e-3 && m.tailDcAbs < 1.0e-3
+                     // Nothing in the bank may lean on the output rail. It is
+                     // a safety net for the extremes, not a mix-bus
+                     // compressor: a preset that sits on it is soft-clipped
+                     // every time it is played, which dulls the attack long
+                     // before it looks like distortion on a meter. Forty-three
+                     // presets were doing exactly that when the bank was
+                     // benched on RMS.
+                     && m.railedPct <= 0.0;
         if (! ok) ++failures;
-        std::printf ("  %-15s %-4d %10.3f %10.1f %10.6f %10.0f %10.3f %10s\n",
-                     p.name, p.instrument, m.peak, m.rmsDb,
+        std::printf ("  %-15s %-4d %10.3f %8.2f%% %10.1f %10.6f %10.0f %10.3f %10s\n",
+                     p.name, p.instrument, m.peak, m.railedPct, m.rmsDb,
                      std::max (m.dcAbs, m.tailDcAbs), m.centroid, m.highRatio,
                      m.finite ? (ok ? "PASS" : "FAIL") : "NOT FINITE");
     }

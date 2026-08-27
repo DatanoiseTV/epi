@@ -315,7 +315,10 @@ inline constexpr ParamValue kGongTemple[] = {
     { "barCouple", 0.80f }, { "resDamp", 0.20f },
     { "bodyMix", 0.40f }, { "cabMix", 0.25f },
     { "spaceMix", 0.30f }, { "spaceSize", 0.65f },
-    { "outGain", 6.0f },
+    // Two decibels under where it was: fat wire and a long decay stack more
+    // energy than any other tine patch, and it was the last one still
+    // grazing the output rail after the bank moved to a peak bench.
+    { "outGain", 4.0f },
 };
 
 // ---------------------------------------------------------------------------
@@ -382,7 +385,11 @@ inline constexpr ParamValue kElectroGrand[] = {
     { "instrument", 1.0f }, { "pickupSel", 2.0f },
     { "treble", 1.0f },
     { "cabMix", 0.0f }, { "spaceMix", 0.16f },
-    { "outGain", -2.0f },
+    // The electrostatic pickup on wound strings is the hottest transducer
+    // path in the instrument -- its transient peaked nearly three times
+    // the rail knee before the bank moved to a peak bench, and this keeps
+    // the last of it clear.
+    { "outGain", -7.0f },
 };
 
 // The chorus-era CP: the phaser slow and shallow, which on this instrument

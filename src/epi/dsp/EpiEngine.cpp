@@ -27,24 +27,36 @@ namespace epi
 {
 
 // Loudness alignment. Five instruments, five signal chains, one fader
-// convention: the same mezzo-forte chord measures the same RMS through
-// each, benched at -18 dBFS within a decibel -- raised from -24 because
-// the plugin sat quiet against other instruments in a session. Peaks
-// above the bench land in the soft output rail, which bounds at 1.0 by
-// construction: fortissimo attacks (the grand's especially, with its real
-// 22 dB crest) get the transient rounding of a console, never a hard
-// clip.
+// convention. It used to be an RMS convention: the same mezzo-forte chord
+// measuring the same RMS through each, benched at -18 dBFS. That is not
+// achievable and never was, and the rail was hiding it. These instruments
+// do not share a crest factor -- measured on the bank's own phrase, the
+// reed and the grand run 22 to 24.5 dB between RMS and peak while the
+// tine, the electric grand and the clav run 14.6 to 16.3 -- so matching
+// RMS necessarily puts the high-crest pair six to nine decibels into the
+// output rail. It did: forty-three presets were touching the rail and the
+// reed bank sat 13 dB inside it, soft-clipping every bark it played, at
+// mezzo-forte, with 1.3 percent of all samples limited.
+//
+// So the bench is on PEAKS now, which is what a recording engineer would
+// have done in the first place: each instrument is trimmed so its own
+// loudest presets land just under the rail's knee, and the loudness that
+// results is whatever its crest factor says it should be. A reed reads
+// quieter on a meter than a tine and always did -- the difference was
+// being spent on the limiter instead of being shown. Nothing is louder
+// than it was; several things are honest for the first time.
+//
 // The trims sit at the very end of each path, after every nonlinearity,
 // so no operating point moves, only the meter.
-static constexpr float kTrimRhodes = 1.32f;
-static constexpr float kTrimCP70   = 7.88f;
-static constexpr float kTrimWurli  = 12.76f;
-static constexpr float kTrimGrand  = 150.0f;   // mic-pair units are small. Deliberately ~6 dB under the electrics' bench: a close-miked grand carries a 22 dB attack crest, and matching RMS exactly would put every mf attack into the output rail
+static constexpr float kTrimRhodes = 1.0485f;   // -2.0 dB
+static constexpr float kTrimCP70   = 4.1834f;   // -5.5 dB
+static constexpr float kTrimWurli  = 2.6968f;   // -13.5 dB, the reed's 22 dB crest
+static constexpr float kTrimGrand  = 56.376f;   // -8.5 dB, the grand's 24 dB crest
 // The action layer's force into the grand's frame. Calibrated by the
 // engine row 12.4: a mezzo-forte key press sits far under the note it
 // belongs to, and is plainly there when the note is not.
 static constexpr double kGrandActionGain = 0.6;
-static constexpr float kTrimClav   = 0.292f;  // matched to the -24 dBFS mf bench like the other four
+static constexpr float kTrimClav   = 0.2190f;  // -2.5 dB, on the same peak bench
 
 // Per-note tuning folded into the configuration a voice is BUILT to.
 //
