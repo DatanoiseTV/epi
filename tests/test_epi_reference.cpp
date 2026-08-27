@@ -627,13 +627,30 @@ static void sectionG()
     // bass tine swings across the curved part of the field and a treble tine
     // does not.
     //
-    // Where the remaining distance lives, measured: at 0.3 s a hard A1's
-    // H2 rides ABOVE its fundamental and H3 is healthy, but H6 sits at
-    // -46 dB where the measured centroid implies -25 to -30 -- the harmonic
-    // ladder falls too fast with order. A real bass note's sizzle is H6-H15,
-    // and those come from the pole's sharp features (the flat's edge, the
-    // wedge) which the field map smooths over far off-axis. The fix is a
-    // field map with honest far structure, not a gain anywhere.
+    // Where the remaining distance lives, re-measured at the reference
+    // parameters (this matters: with the amp stages in, the preamp's own
+    // harmonics swamp the transducer's and the ladder reads several tens of
+    // decibels richer than the pickup makes it).
+    //
+    // A hard A1 at 0.3 s now runs +0 +23 +16 +22 +15 +15 +10 +4 +1 -9 -9
+    // -26 -22 -46 -37 -56 over H1..H16. H2 rides above the fundamental and
+    // the ladder holds up through H11 -- an earlier note here put H6 at
+    // -46 dB and that has not been true for some time; the collapse is at
+    // H12, not H6. What is still short is the centre of mass: this spectrum
+    // sits at harmonic 4.1, and E5's at 1.6, which is the 4.0x this row
+    // measures. Reaching the 2.2x ceiling needs A1's centre near harmonic 9,
+    // i.e. real weight out at H12-H16 where the model is 26 to 56 dB down.
+    //
+    // Two things are now measured about where that weight would come from.
+    // The excursion is large: at this velocity the tine samples the field
+    // from -4.03 to +3.34 pole half-widths, so what shapes the bass ladder
+    // is the field FAR off the pole, not the pole face. And the pole face's
+    // own charge footprint is not the lever -- swapping the disc taper for
+    // the bar the cited slug actually is, with and without a softened rim,
+    // moves H12 by 2 dB the wrong way, because the tine spends its swing
+    // outside the footprint entirely. So the open item is specifically the
+    // far field, past one half-width, where this model has only the two
+    // charge sheets and their sign change.
     {
         const auto& lo = render (33, kHard, 2.0);          // A1, 55 Hz
         const auto& hi = render (kUpper.midi, kHard, 2.0); // E5, 659 Hz
