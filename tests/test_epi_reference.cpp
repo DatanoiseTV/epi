@@ -641,16 +641,37 @@ static void sectionG()
     // measures. Reaching the 2.2x ceiling needs A1's centre near harmonic 9,
     // i.e. real weight out at H12-H16 where the model is 26 to 56 dB down.
     //
-    // Two things are now measured about where that weight would come from.
-    // The excursion is large: at this velocity the tine samples the field
-    // from -4.03 to +3.34 pole half-widths, so what shapes the bass ladder
-    // is the field FAR off the pole, not the pole face. And the pole face's
-    // own charge footprint is not the lever -- swapping the disc taper for
-    // the bar the cited slug actually is, with and without a softened rim,
-    // moves H12 by 2 dB the wrong way, because the tine spends its swing
-    // outside the footprint entirely. So the open item is specifically the
-    // far field, past one half-width, where this model has only the two
-    // charge sheets and their sign change.
+    // Where it is NOT, each tried and measured, because a note that only
+    // says "still short" sends the next person round the same loop:
+    //
+    // - Not the pole face. At this velocity the tine samples the field from
+    //   -4.03 to +3.34 pole half-widths, so it spends its swing outside the
+    //   footprint entirely. Swapping the disc taper for the bar the cited
+    //   Alnico slug actually is, as a hard edge and with a softened rim,
+    //   moves H12 by 2 dB -- the wrong way.
+    // - Not the gap. Sweeping PICKUP DIST 0.05 to 0.70 bottoms this ratio at
+    //   3.44, because closing the gap brightens A1 and E5 together: their
+    //   centroids go 439/1684 and 203/1022 across the sweep and the ratio
+    //   will not separate.
+    // - Not the launch dwell. Relaxing it from 0.55 to 0.35 and 0.20 moves
+    //   this ratio 4.08 -> 3.91 -> 3.78, a sixth of the distance, and moves
+    //   C1 at E5 by half a decibel -- while failing A3 at 0.35 and A2 as
+    //   well at 0.20. It is a strong lever on the tone rows and a weak one
+    //   on these.
+    //
+    // And a reason to stop looking at the pickup's near geometry at all: a
+    // source at distance d cannot make lateral field structure finer than
+    // about d. The operating gap is 2.07 mm, which is 1.3 half-widths, so
+    // the 0.28 mm flat at the wedge tip is invisible from where the tine
+    // is. The measured profile is what that implies -- a smooth monotone
+    // bell from 0.651 at the centreline to 0.021 at four half-widths, no
+    // feature anywhere in between. A swing of 3.7 half-widths across
+    // structure 1.3 wide supports partials to about H11, which is exactly
+    // where the measured ladder holds and exactly where it stops.
+    //
+    // So the remaining weight is not available from this field at this gap
+    // by any shaping of the pole, and the open question is what else in the
+    // real instrument carries it.
     {
         const auto& lo = render (33, kHard, 2.0);          // A1, 55 Hz
         const auto& hi = render (kUpper.midi, kHard, 2.0); // E5, 659 Hz
