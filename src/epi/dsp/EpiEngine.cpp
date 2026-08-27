@@ -253,6 +253,25 @@ void EpiEngine::reset()
     // the first block after a reset snaps to its parameters, exactly as the
     // first block after construction does.
     sm = SmoothedParams {};
+    // And the tine bank's own record of the configuration it was last cut
+    // to, which prepare() leaves as a sentinel so the first block re-cuts
+    // all eighty-eight and reset() did not. Without it the first block
+    // after a reset compares the player's parameters against the ones
+    // still standing from before it, finds no change, and leaves the bank
+    // holding whatever the tines were carrying -- so the instrument did
+    // not repeat across a reset, which is exactly what a bounce is.
+    lastCfg = RhodesVoice::Config {};
+    lastCfg.hammerHardness = -1.0e30;
+    // ...and the five banks' records of which version they were last cut
+    // at, which prepare() zeroes and this did not, so half the staleness
+    // bookkeeping came back from a reset holding the previous session's
+    // numbers while the other half started from zero.
+    cfgVersion = 0;
+    tineCfgVersion.fill (0);
+    cp70CfgVersion.fill (0);
+    wurliCfgVersion.fill (0);
+    grandCfgVersion.fill (0);
+    clavCfgVersion.fill (0);
     pedalDown = false;
     pedalAmount = 0.0;
     unaCorda = false;
@@ -452,9 +471,29 @@ void EpiEngine::handleEvent (const NoteEvent& e, const EngineParams& p)
                 invalidateNoteBuild (i);
             }
 
-            // A tine that has been waiting its turn is built before it is hit.
-            if (tineCfgVersion[i] != cfgVersion
-                || tineMod[static_cast<std::size_t> (i)].dirty.load (std::memory_order_acquire))
+            // A tine that has been waiting its turn is built before it is
+            // hit -- and only when the tine piano is the one being played,
+            // which is what every other bank below already does.
+            //
+            // Unconditional, this was a way to cut one tine permanently to a
+            // configuration the panel does not show. The version counter is
+            // shared by the five banks, so a voice marked stale for a reason
+            // the tine path did not cause -- a workshop edit, a per-note
+            // tuning change -- would be re-cut by a note struck on ANOTHER
+            // instrument, using whatever the tine-only controls happened to
+            // read at that moment, and then marked current at the shared
+            // version. Put those controls back and nothing notices: the
+            // tine path's own record still holds the original value, the
+            // whole-struct comparison finds no change, the version never
+            // advances, and that one voice is never re-cut. Measured, it
+            // rendered bit-identically to an instrument whose PICKUP POS had
+            // been left at the away value. Gated, a stale voice simply stays
+            // stale while another instrument is playing, and the idle sweep
+            // in the tine path -- which is already gated the same way --
+            // picks it up on the way back.
+            if (p.instrument == 0
+                && (tineCfgVersion[i] != cfgVersion
+                    || tineMod[static_cast<std::size_t> (i)].dirty.load (std::memory_order_acquire)))
             {
                 rebuildTine (i, rhodesConfig (p));
                 tineCfgVersion[i] = cfgVersion;

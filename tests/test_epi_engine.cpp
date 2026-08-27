@@ -2453,21 +2453,35 @@ static void sectionDeterminism()
     // bit. The reed's bank is cleared now and it repeats exactly; so do the
     // E-Grand, the grand and the Clav.
     //
-    // The tine still shifts by 0.01 dB and only the tine. It was 1.5 dB
-    // when this row was written, and three things were fixed on the way
-    // down, each correct on its own account: the let-off graduation moved
-    // to the manual's own figure (which is what took the bulk of it), the
+    // Every bank now repeats to the measurement floor. The tine was the
+    // last to, and it took five fixes, each correct on its own account:
+    // the let-off graduation moved to the manual's own figure, the
     // engine's free-running generators -- the per-note `seed` and the
     // action layer's `noiseRng` -- are returned to their constructed
-    // values, and the block-rate smoothers are returned to the sentinel
-    // that makes the first block after a reset snap the way the first
-    // block after construction does. What remains is a tenth of a percent
-    // in amplitude, inaudible, and none of those three is its cause: each
-    // was measured separately and none of them moves it. The remaining
-    // candidate is per-voice glide state that survives RhodesVoice::reset
-    // (the saturation and pickup-offset ramps), which is worth pinning
-    // when someone is next in that file. Held at 2.0 dB so it cannot
-    // silently widen back.
+    // values, the block-rate smoothers go back to the sentinel that makes
+    // the first block after a reset snap the way the first block after
+    // construction does, and finally reset() returns the tine bank's
+    // record of the configuration it was last cut to, plus all five
+    // banks' version arrays, to what prepare() leaves them at. That last
+    // one is what closed it: without it the first block after a reset
+    // compared the player's parameters against the ones still standing
+    // from before, found no change, and left the bank holding whatever
+    // the tines were carrying. Measured, the peak residual went from
+    // 0.00193 dB to 0.00003, sixty-four times down and inside the target.
+    //
+    // What is NOT the cause, each measured separately and each moving it
+    // by nothing: the saturation ramp, the pickup offset and gap ramps
+    // (the candidate this comment used to name), the last tip values, the
+    // dormant-tier hold and the rest flux.
+    //
+    // One property this row does not reach is still open, recorded here
+    // because it is sharp enough to act on: a reset followed by the SAME
+    // note that was struck before it does not return the identical
+    // render -- about -43 dB of difference, from the first sample. Any
+    // OTHER note comes back bit-identical, at -3025 dB, which is zero.
+    // So it is per-voice, it is specific to the voice that was last
+    // struck, and it decays with how long that note was left ringing.
+    // Held at 2.0 dB so the peak measure cannot silently widen back.
     {
         for (int inst = 0; inst < 5; ++inst)
         {
