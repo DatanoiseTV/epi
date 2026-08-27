@@ -4,6 +4,89 @@ All notable changes to Epi are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [semver](https://semver.org/) (pre-1.0: minor bumps may break).
 
+## [Unreleased]
+
+### Fixed
+- The hammer's hysteretic loss term is solved implicitly instead of
+  explicitly. It is a velocity-proportional force, and integrating one
+  explicitly is stable only while `c dt / m` stays under 2; measured at ff
+  across the grand's compass it ran 1.5 to 30 times past that. The contact
+  did not chatter quietly: `(1 + lambda ddot(delta))` went negative on every
+  note, the guard half-rectified the force, the string's top modes were
+  pumped to tens of metres per second, and the force came out 34 N, 160,
+  0, 242 sample to sample. Letting both bodies answer the force inside the
+  step gives it in closed form -- one divide, no physics changed, and the
+  denominator is 1 wherever the explicit form was already valid.
+- The soft pedal made the top of the grand's keyboard LOUDER, by as much as
+  9.7 dB. That was the chatter above, seen from the outside: striking two of
+  three strings is a 1.5x change in load, worth about six per cent of
+  contact time, and it was moving contact 34 per cent and tripling the peak
+  force at conserved impulse. The soft pedal now drops the level at every
+  note on the compass, which is the only thing a soft pedal can do.
+- The grand's hammer stiffness anchors, re-fitted against the same published
+  contact times now that the contact they were fitted through has stopped
+  chattering: 5e8 / 8e9 / 1.5e11 at C2/C4/C7, an order of magnitude back
+  toward the literature, with contact measuring 3.69, 2.06 and 1.17 ms
+  against targets of 4, 2 and 1. `lambda` is 0.15 s/m, which is
+  Hunt-Crossley's own `3 (1 - e) / (2 v)` for a felt restitution near 0.6 at
+  an ff arrival, not the 1.0 that stood there -- a value that needs a
+  restitution of -0.2.
+- Half-pedal was not monotone on the grand: a tenth of a pedal measured
+  16 dB QUIETER than no pedal at all, and a player rolling the pedal on
+  heard the note dip and recover. The sympathetic gate opened on the pedal
+  being touched at all, while the dampers do not begin to lift until three
+  tenths of travel, so the whole harp joined the board against still-seated
+  dampers and the struck note paid for the coupling. The gate is now the
+  threshold the damper itself calls free.
+- Sostenuto caught notes struck after it was already down, if the host
+  repeated the controller message -- which hosts do on transport start,
+  on punch-in, and from any controller that sends its position
+  continuously. Measured 53 dB up on the same note unpedalled, i.e. a note
+  hanging until the player releases a pedal they are already holding. The
+  catch now happens on the pedal's edge, not on every message that says
+  "down".
+- One tine could be cut permanently to a voicing the panel does not show.
+  The tine bank was rebuilt on note-on whatever instrument was playing --
+  alone among the five -- so a voice marked stale by a workshop edit or a
+  tuning change was re-cut by a note struck on another instrument, using
+  whatever the tine-only controls read at that moment. Putting the control
+  back did not undo it: the comparison found no change and that voice was
+  never re-cut again.
+- A reset did not return the instrument to what it was, which is what a
+  bounce is. reset() restored neither the tine bank's record of its last
+  configuration nor any of the five banks' version arrays, though prepare()
+  sets all of them. Peak residual across six reset cycles goes from
+  0.00193 dB to 0.00003.
+- The strings, reeds and rods were animated but could not be seen to move on
+  four of the five instruments. Swing is real displacement times the rod's
+  drawn-to-real ratio, and that ratio is not one number -- a tine is 1.14
+  px/mm where a grand string is 0.18 -- so a ff C4 swung 5.3 px on the tine
+  and 0.98 px on the grand, under the width of its own line. The magnifier
+  is now per instrument. The grand was also the only one publishing
+  something that was not a displacement at all.
+- The interface jumped when the instrument changed. The card's height
+  followed the panel content, 400 design px against 378, and the card is
+  centred and scaled to fit -- so those 22 px moved everything on screen by
+  35 and resized it on the way.
+
+### Added
+- Eighteen rows for the pedals as a player works them, rather than for what
+  each pedal is: half-pedal never damping harder on any of the five, the
+  sostenuto rule from both sides including the re-sent message, the left
+  pedal sparing a note already sounding, the grand's two pedals arriving at
+  instruments that do not have them, and a note damped to silence staying
+  dead when the pedal comes back down.
+
+### Changed
+- Close Pop, Parlor and Harp Grand re-trimmed: the new attack moved them off
+  the level bench.
+- Harp Grand's note said nylon rings the top clear where wire crowds it. It
+  cannot: the bending loss carries the material's loss factor minus the
+  stock wire's, so wire's is identically zero and nylon's is 2.0e-2, and the
+  top goes an order of magnitude faster. The preset is the short, clean,
+  dark one -- harmonic, because nylon's stiffness is nothing against its
+  tension, which is what it was always for.
+
 ## [0.8.0] - 2026-08-26
 
 ### Added
