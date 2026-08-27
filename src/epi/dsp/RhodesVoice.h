@@ -1461,6 +1461,27 @@ private:
         // the stiffness scale has its own measurement behind it; the numbers
         // are in docs/acoustic-checklist.md.
         hammerCfg.stiffness = 6.0e6 * std::pow (12.0, cfg.hammerHardness - 0.5);
+        // MEASURED, AND KNOWINGLY LEFT: lambda is about ten times what
+        // Hunt-Crossley's own 3 (1 - e) / (2 v) allows. The tip arrives at
+        // 4.6 m/s at ff, so this 1.6 would need a restitution of -3.3. The
+        // cost is real: (1 + lambda ddot(delta)) reaches -1.65 and 29% of
+        // an ff contact's samples have their force clamped to zero by the
+        // guard in HuntCrossleyHammer, against 4% at mf, so the tip's
+        // dynamic response is partly shaped by that clamp rather than by
+        // the neoprene. The grand carried the same error and correcting it
+        // there bought an audible, measurable improvement.
+        //
+        // Here it is not a drop-in. The tine is calibrated AROUND this
+        // lambda: pulling it toward physical costs 3 reference rows at
+        // x0.4 and 7 at x0.15. Solving the term implicitly -- the grand's
+        // other half -- does smooth the force, three force reversals per
+        // contact down to one, but it does not touch the clamping, which
+        // is lambda's doing; it moves the instrument by 22 dB of
+        // difference and costs row C2 at E5, for a defect it does not fix.
+        // So this needs its own campaign: lambda to its restitution value,
+        // with the stiffness and the dwell shaping re-fitted alongside it
+        // against the B/C/G rows, not one constant at a time. Until then
+        // it stays exactly as measured.
         hammerCfg.lambda    = 2.4 - 1.6 * cfg.hammerHardness;
         {
             const HammerCover hc = hammerCover (std::clamp (static_cast<int> (cfg.hammerMat + 0.5), 0, 5));
