@@ -276,6 +276,7 @@ void EpiEngine::reset()
     pedalAmount = 0.0;
     unaCorda = false;
     softAmount = 0.0;
+    sostenutoDown = false;
     coil.reset();
     decimL.reset();
     decimR.reset();
@@ -599,8 +600,21 @@ void EpiEngine::handleEvent (const NoteEvent& e, const EngineParams& p)
         case NoteEvent::sostenuto:
         {
             // The piano rule: only the keys down at the moment the pedal
-            // falls are caught; releasing it frees them all.
+            // FALLS are caught; releasing it frees them all.
+            //
+            // On the edge, not on the message. A host repeats controller
+            // state -- on transport start, on a punch-in, from any
+            // controller that sends its position continuously -- and acting
+            // on every CC66 that says "down" re-ran the catch against
+            // whatever was held right then. Measured: a note struck after
+            // the pedal was already down, followed by one repeated CC66,
+            // came out 53 dB up on the same note unpedalled, which is a
+            // note hanging until the player thinks to release a pedal they
+            // are already holding. The tabs are under the lifted levers
+            // once; they cannot take another bite without dropping first.
             const bool down = e.velocity > 0.5f;
+            if (down == sostenutoDown) break;
+            sostenutoDown = down;
             for (int i = 0; i < kNumTines; ++i)
                 grand[static_cast<std::size_t> (i)].setSostenuto (down && keyDown[i]);
             break;
@@ -1312,7 +1326,26 @@ void EpiEngine::processGrand (float* outL, float* outR, int numSamples,
     // openSympathetic IS that physics (the in-loop board stops at 1.3 kHz,
     // so the reduced set is what the coupling band can deliver). Woken once
     // per block, when the board actually carries something.
-    if (pedalDown
+    // Gated on the same threshold the damper calls FREE, so the two agree
+    // by construction: a string is opened to the board exactly when its own
+    // damper has left it, and not before.
+    //
+    // This was keyed to pedalDown, which is true from a hundredth of a
+    // pedal, while the damper does not begin to lift until 0.3 and is not
+    // free until 0.7. So the whole harp was opened to the board with every
+    // damper still seated -- and opening a string ADDS its coupling load
+    // whatever its damping, so the drain into those still-damped strings
+    // cost the struck note 16 dB. Measured on C4, a tenth of a pedal came
+    // out quieter than no pedal at all, and a player sweeping the pedal
+    // heard the note dip and recover. A sustain pedal cannot do that: the
+    // half-pedal curve has to be monotone, which is what row P4 now pins.
+    //
+    // Opening at the knee instead of the touch is not enough on its own --
+    // the step just moves to 0.3 -- because the model has no partial
+    // coupling: a string is either in the two-port or not. Between the knee
+    // and free, where a real damper rides the string, the honest choice is
+    // the conservative one.
+    if (pedalAmount >= GrandVoice::kPedalFree
         && std::abs (grandBoard.outputL()) + std::abs (grandBoard.outputR()) > 1.0e-9)
     {
         for (int i = 0; i < kNumTines; ++i)

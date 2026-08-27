@@ -174,6 +174,14 @@ public:
     // playable only with the cap and the sympathetic reduced set.
     static constexpr int kMaxModes = 220;
     static constexpr double kVerticalCapHz = 12000.0;
+
+    // Half-pedal knee: below 30% the dampers are seated, above 70% free;
+    // the 30..70% span is the partial-damping playing range [D]. Public
+    // because it is one rail: whatever frees THIS string is what frees the
+    // rest of them, and the engine's sympathetic gate has to agree with the
+    // damper about where that happens.
+    static constexpr double kPedalSeated = 0.3;
+    static constexpr double kPedalFree   = 0.7;
     using System = SavModalSystem<kMaxModes, 2>;
 
     struct Config
@@ -1028,10 +1036,6 @@ private:
     // calibration the plan schedules, done against its own rows.
     static constexpr double kHOffsetCents = 1.8;
     static constexpr double kBridgeFoot = 0.030;   // m, bridge contact length
-    // Half-pedal knee: below 30% the dampers are seated, above 70% free;
-    // the 30..70% span is the partial-damping playing range [D].
-    static constexpr double kPedalSeated = 0.3;
-    static constexpr double kPedalFree   = 0.7;
     // Grab-chatter force scale and its ~50 ms settle (per-sample at 48 k;
     // recomputed for fs in prepare if the base rate differs).
     static constexpr double kGrabForce = 1.35;

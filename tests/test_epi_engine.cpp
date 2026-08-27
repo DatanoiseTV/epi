@@ -2999,6 +2999,226 @@ static void sendBendRange (MpeTuning& m, int channel, int semis, int cents)
     m.controller (channel, 38, cents);
 }
 
+// ===========================================================================
+// 20. The pedals as a player works them.
+//
+// The suite already fences what each pedal IS -- the damper line (G1), the
+// half-pedal ordering (G2), the sostenuto latch (3c), the trapwork thumps
+// (12.x) and the left pedal's two mechanisms (13.x). What it did not fence
+// is the choreography: pedals moved while notes ring, moved a little rather
+// than all the way, moved on an instrument that does not have them, and
+// moved twice. Every row here was written against a measurement, and two of
+// them were written because the measurement was wrong.
+// ===========================================================================
+
+static void sectionPedalPlaying()
+{
+    heading ("20. pedals as played: partial, re-pressed, mid-note, wrong instrument");
+
+    const double fs = 48000.0;
+    auto at = [fs] (double t) { return static_cast<int> (t * fs); };
+    auto ev = [] (NoteEvent::Type ty, int note, float vel)
+    {
+        NoteEvent n; n.type = ty; n.note = note; n.velocity = vel; return n;
+    };
+
+    // 20.0 -- the half-pedal curve is monotone.
+    //
+    // A sustain pedal can only ever take damping away, so pressing it
+    // further can never leave a note quieter. That is not a calibration
+    // statement, it is what the mechanism is, and it caught a real defect:
+    // the grand's sympathetic gate keyed off "pedal touched at all" (a
+    // hundredth of travel) while its dampers do not begin to lift until
+    // three tenths and are not free until seven. Opening a string adds its
+    // coupling load to the bridge whatever its damping, so the whole harp
+    // came online against still-seated dampers and the struck note lost
+    // 16 dB. Measured on C4: a tenth of a pedal read -105.6 dB where no
+    // pedal at all read -89.5, and a player rolling the pedal on heard the
+    // note dip and recover.
+    //
+    // Half a decibel of slack, because the sympathetic wash is a different
+    // signal arriving on top and it does not have to be smooth to the last
+    // digit -- but a 16 dB hole cannot hide under that.
+    {
+        for (int inst = 0; inst < 5; ++inst)
+        {
+            double worstDrop = 0.0, atCc = 0.0, prev = -1.0e9;
+            for (int k = 0; k <= 10; ++k)
+            {
+                const double cc = k / 10.0;
+                EngineParams p = measParams (inst);
+                const Stereo s = renderBench (fs, p, 2.0,
+                    { { at (0.0),  ev (NoteEvent::noteOn,  60, 0.8f) },
+                      { at (0.05), ev (NoteEvent::noteOff, 60, 0.0f) },
+                      { at (0.06), ev (NoteEvent::sustain, 0, static_cast<float> (cc)) } });
+                const double v = rmsDbMono (s, 0.8, 1.8);
+                // Judged only where there is a signal to judge. Below the
+                // knee several of these banks are at their denormal floor --
+                // the clav sits near -248 dB with every damper seated -- and
+                // decibel wobble down there is arithmetic, not sound.
+                if (k > 0 && prev > -120.0 && v > -120.0 && prev - v > worstDrop)
+                { worstDrop = prev - v; atCc = cc; }
+                prev = v;
+            }
+            char id[12], what[80];
+            std::snprintf (id, sizeof id, "20.0%d", inst);
+            std::snprintf (what, sizeof what, "%s half-pedal never damps harder",
+                           kInstName[inst]);
+            row (id, what, "no drop > 0.5 dB as CC64 rises",
+                 fmt2 ("worst drop %.1f dB at CC64 %.1f", worstDrop, atCc),
+                 verdict (worstDrop <= 0.5));
+        }
+    }
+
+    // 20.1 -- sostenuto catches what was held and nothing else.
+    //
+    // Two halves of the same rule, and the second is the one a naive
+    // implementation gets wrong: a note struck AFTER the pedal is already
+    // down must not be caught by it. Measured against the same performance
+    // without the pedal, so what is read is the pedal's own doing.
+    {
+        auto run = [&] (bool sos, bool strikeAfter)
+        {
+            std::vector<TimedEvent> e;
+            e.push_back ({ at (0.0),  ev (NoteEvent::noteOn,  60, 0.8f) });
+            if (sos) e.push_back ({ at (0.30), ev (NoteEvent::sostenuto, 0, 1.0f) });
+            e.push_back ({ at (0.40), ev (NoteEvent::noteOff, 60, 0.0f) });
+            if (strikeAfter)
+            {
+                e.push_back ({ at (0.50), ev (NoteEvent::noteOn,  64, 0.8f) });
+                e.push_back ({ at (0.60), ev (NoteEvent::noteOff, 64, 0.0f) });
+            }
+            EngineParams p = measParams (3);
+            return rmsDbMono (renderBench (fs, p, 2.6, e), 1.6, 2.4);
+        };
+        const double caught = run (true,  false);
+        const double plain  = run (false, false);
+        row ("20.1", "sostenuto holds the key that was down", ">= 20 dB over the same release",
+             fmt2 ("%.1f vs %.1f dB", caught, plain),
+             verdict (caught - plain >= 20.0));
+
+        // A note struck after the pedal is already down must not be caught
+        // by it. Measured on its own -- pedal down first with nothing held,
+        // so it latches nothing, then one note struck and released -- rather
+        // than on top of a latched note, where the latched note's own ring
+        // masks the answer and a decibel difference of two sums says
+        // nothing about either.
+        auto late = [&] (bool sos, int repress)
+        {
+            std::vector<TimedEvent> e;
+            if (sos) e.push_back ({ at (0.10), ev (NoteEvent::sostenuto, 0, 1.0f) });
+            e.push_back ({ at (0.50), ev (NoteEvent::noteOn,  64, 0.8f) });
+            if (repress) e.push_back ({ at (0.55), ev (NoteEvent::sostenuto, 0, 1.0f) });
+            e.push_back ({ at (0.70), ev (NoteEvent::noteOff, 64, 0.0f) });
+            EngineParams p = measParams (3);
+            return rmsDbMono (renderBench (fs, p, 2.6, e), 1.6, 2.4);
+        };
+        const double lateSos   = late (true,  0);
+        const double latePlain = late (false, 0);
+        row ("20.2", "a note struck after sostenuto is not caught", "within 3 dB of unpedalled",
+             fmt2 ("%.1f vs %.1f dB", lateSos, latePlain),
+             verdict (std::fabs (lateSos - latePlain) <= 3.0));
+
+        // And the edge a host actually produces: CC66 arriving again while
+        // the pedal is already down, which happens on transport start and
+        // from controllers that repeat their state. The mechanism cannot
+        // catch anything new without being released first -- the tabs are
+        // already under the lifted levers -- so a repeat has to be inert.
+        const double lateAgain = late (true, 1);
+        row ("20.2b", "sostenuto re-sent while down catches nothing",
+             "within 3 dB of unpedalled",
+             fmt2 ("%.1f vs %.1f dB", lateAgain, latePlain),
+             verdict (std::fabs (lateAgain - latePlain) <= 3.0));
+    }
+
+    // 20.3 -- the left pedal cannot reach a note already sounding.
+    //
+    // The shift moves the action, and the action is upstream of the string:
+    // a hammer that has already struck cannot be moved to a different pair
+    // of strings, and felt that has already left cannot be swapped. So CC67
+    // pressed under a ringing note has to leave that note exactly alone and
+    // take effect at the next strike -- which is the same rebuild-at-next-
+    // strike rule the material and hammer benches follow.
+    {
+        for (int inst = 0; inst < 5; ++inst)
+        {
+            EngineParams p = measParams (inst);
+            const Stereo mid = renderBench (fs, p, 2.0,
+                { { at (0.0),  ev (NoteEvent::noteOn, 60, 0.9f) },
+                  { at (0.30), ev (NoteEvent::soft,   0,  1.0f) } });
+            const Stereo none = renderBench (fs, p, 2.0,
+                { { at (0.0),  ev (NoteEvent::noteOn, 60, 0.9f) } });
+            const double d = changeDb (mid, none, 0.35, 1.9);
+            char id[12], what[80];
+            std::snprintf (id, sizeof id, "20.3%d", inst);
+            std::snprintf (what, sizeof what, "%s soft pedal spares the ringing note",
+                           kInstName[inst]);
+            row (id, what, "difference <= -60 dB",
+                 fmt ("%.1f dB", d), verdict (d <= -60.0));
+        }
+    }
+
+    // 20.4 -- the grand's two pedals, sent to instruments that do not have
+    // them. A host does not know which instrument is loaded, and a player
+    // who leaves a sostenuto pedal down while switching sends CC66 to a
+    // Wurlitzer. Nothing may go non-finite, and nothing that has no such
+    // pedal may change its sound because of one.
+    {
+        for (int inst = 0; inst < 5; ++inst)
+        {
+            EngineParams p = measParams (inst);
+            const std::vector<TimedEvent> pedals {
+                { at (0.00), ev (NoteEvent::sostenuto, 0, 1.0f) },
+                { at (0.02), ev (NoteEvent::soft,      0, 1.0f) },
+                { at (0.05), ev (NoteEvent::noteOn,   60, 0.9f) },
+                { at (0.30), ev (NoteEvent::sostenuto, 0, 0.0f) },
+                { at (0.35), ev (NoteEvent::soft,      0, 0.0f) },
+                { at (0.60), ev (NoteEvent::sostenuto, 0, 1.0f) } };
+            const Stereo s = renderBench (fs, p, 2.0, pedals);
+            bool finite = true;
+            double peak = 0.0;
+            for (std::size_t i = 0; i < s.L.size(); ++i)
+            {
+                if (! std::isfinite (s.L[i]) || ! std::isfinite (s.R[i])) finite = false;
+                peak = std::max (peak, static_cast<double> (std::fabs (s.L[i])));
+            }
+            char id[12], what[80];
+            std::snprintf (id, sizeof id, "20.4%d", inst);
+            std::snprintf (what, sizeof what, "%s survives the grand's pedals", kInstName[inst]);
+            row (id, what, "finite, peak <= 1",
+                 fmt ("peak %.4f", peak) + (finite ? ", finite" : ", NOT FINITE"),
+                 verdict (finite && peak <= 1.0));
+        }
+    }
+
+    // 20.5 -- re-pedalling does not bring a dead note back.
+    //
+    // Lift the pedal, let the dampers take the note all the way down, then
+    // press again. Whatever is left is what a damper left behind, and it has
+    // to stay inaudible -- a note that returns on the second press is a
+    // damper that was pausing rather than damping. The grand keeps its
+    // strings coupled where the electrics retire the voice outright, so it
+    // is the one with anything left at all; -80 dB is the fence, which is
+    // below the noise of any signal chain this ends up in.
+    {
+        for (int inst = 0; inst < 5; ++inst)
+        {
+            EngineParams p = measParams (inst);
+            const Stereo s = renderBench (fs, p, 4.5,
+                { { at (0.0),  ev (NoteEvent::noteOn,  60, 0.8f) },
+                  { at (0.05), ev (NoteEvent::noteOff, 60, 0.0f) },
+                  { at (0.06), ev (NoteEvent::sustain, 0, 1.0f) },
+                  { at (0.80), ev (NoteEvent::sustain, 0, 0.0f) },
+                  { at (2.50), ev (NoteEvent::sustain, 0, 1.0f) } });
+            const double back = rmsDbMono (s, 3.0, 4.4);
+            char id[12], what[80];
+            std::snprintf (id, sizeof id, "20.5%d", inst);
+            std::snprintf (what, sizeof what, "%s stays dead when re-pedalled", kInstName[inst]);
+            row (id, what, "<= -80 dB", fmt ("%.1f dB", back), verdict (back <= -80.0));
+        }
+    }
+}
+
 static void sectionPostRelease()
 {
     heading ("19. the 0.8.0 audit: five defects and four properties that held");
@@ -3510,6 +3730,7 @@ int main()
     sectionDeterminism();
     sectionEdges();
     sectionPassivity();
+    sectionPedalPlaying();
     sectionPostRelease();
 
     const double wall = std::chrono::duration<double> (std::chrono::steady_clock::now() - t0).count();
