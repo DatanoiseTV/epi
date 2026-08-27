@@ -329,6 +329,15 @@ public:
     int  noteNumber() const { return note; }
     int  hammerContactSamples() const { return hammer.contactDurationSamples(); }
 
+    // What the interface draws: the string's own motion at the strike
+    // point, in metres, the same quantity the tine and the clav publish.
+    // The choir's members move together to well within a line width, so
+    // the first one speaks for all of them.
+    double strikeDisplacement() const
+    {
+        return str[0].sys.displacementAt (str[0].strikeShape);
+    }
+
     double modalEnergy() const
     {
         double e = 0.0;

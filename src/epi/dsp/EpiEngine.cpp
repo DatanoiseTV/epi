@@ -1317,7 +1317,7 @@ void EpiEngine::processGrand (float* outL, float* outR, int numSamples,
             grandRad.push (f, grandPanL[static_cast<std::size_t> (i)],
                               grandPanR[static_cast<std::size_t> (i)]);
             ++active;
-            const float amp = static_cast<float> (std::abs (f)) * 0.02f;
+            const float amp = static_cast<float> (std::abs (v.strikeDisplacement()));
             if (amp > tineBlockPeak[i]) tineBlockPeak[i] = amp;
         }
         grandBoard.tick();

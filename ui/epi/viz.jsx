@@ -35,12 +35,23 @@ const VZ_SWING_CAP = 5.4;
 /* The drawing is a scaled instrument, so the swing can be physical: the
    engine reports every tip's peak displacement in microns, each note's rod
    is drawn at a known fraction of its real length, and the excursion on
-   screen is displacement times that same fraction. One uniform x3
-   magnifier on top -- a microscope, not a lie: it preserves every ratio
-   between notes, and without it a treble tine's fifth of a millimetre is
-   less than a pixel, which is also why you cannot see one move in real
-   life. */
-const VZ_MAG = 3;
+   screen is displacement times that same fraction. A magnifier on top --
+   a microscope, not a lie: it preserves every ratio between notes, and
+   without it a treble tine's fifth of a millimetre is less than a pixel,
+   which is also why you cannot see one move in real life.
+
+   The magnifier is per mode because that drawn-to-real fraction is not
+   one number. A tine is 175 mm drawn 79 px wide, 1.14 px/mm; a grand
+   string is 665 mm drawn 117 px, 0.18 px/mm. Six times less screen for
+   the same real millimetre. Under one uniform magnifier the tine swung
+   97% of the cap and the grand 18% -- under a pixel, which is narrower
+   than the 2.3 px line drawn on top of it, so the strings were being
+   animated and could not be seen to move. Each mode now gets the
+   magnification that makes its own true motion visible at its own drawn
+   scale. Inside a mode the mapping is still strictly proportional, so
+   velocity, register and the sympathetic ratios all read exactly as
+   before. */
+const VZ_MAG = [3, 30, 3, 30, 30];   // by instrument: tine, e-grand, reed, grand, clav
 
 /* Real resonator lengths in millimetres. Rhodes tines run 175 down to 22;
    the CP-70's strings follow the voice's own length law,
@@ -232,7 +243,7 @@ function VizCard() {
         /* Physical swing: microns to millimetres, millimetres to pixels
            through this rod's own drawn-to-real scale, times the uniform
            magnifier. */
-        const rawA = (env[i] * 1e-3) * (Lm / vzLenMm(i, mode)) * VZ_MAG;
+        const rawA = (env[i] * 1e-3) * (Lm / vzLenMm(i, mode)) * VZ_MAG[raw];
         const A = VZ_SWING_CAP * Math.tanh(rawA / VZ_SWING_CAP);
 
         /* Physical frequency: this note's fundamental, with the master
