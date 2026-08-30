@@ -197,6 +197,33 @@ public:
         pendingNote = -1;
         reduced = false;
         configured = false;
+        // The transduction's running state. It belongs to the note that was
+        // sounding, so it cannot outlive a reset: swingEnv is a peak-hold
+        // that chooses the linear path for a quiet tine, and the last tip
+        // values are where that note happened to be when the music stopped.
+        swingEnv = 0.0;
+        lastTipV = lastTipH = 0.0;
+        // The oversampler's interpolation history, which is three tip
+        // positions of the note that was sounding. A strike from rest seeds
+        // it; a strike onto a voice that is still ringing deliberately does
+        // not, because the metal really is still moving. A reset is neither:
+        // the metal has been stopped, so the history it left behind has to
+        // go with it or the next note's first samples are interpolated
+        // through the last one's.
+        for (int i = 0; i < 3; ++i) { vHist[i] = 0.0; hHist[i] = 0.0; }
+        // And the iron goes back to where a freshly built voice has it, with
+        // the next application snapped rather than swept in. The glide exists
+        // so a knob turned UNDER a ringing note does not click; after a reset
+        // there is no note to click, and carrying the last session's operating
+        // point through is how a prepared instrument ends up sounding
+        // different from a fresh one -- measured on the tine at -27.5 dB
+        // against the signal, for any note struck before the host
+        // reconfigured. The engine invalidates its own coilSat cache in
+        // prepare(), so the real value lands on the first block after this.
+        satAmt = satAmtT = 0.0;
+        satOn = false;
+        updateRestSaturation();
+        snapTransduction = true;
     }
 
     bool isSounding() const { return sounding; }
@@ -881,7 +908,13 @@ public:
         // voicing screw: the knee's operating values shift the resting flux,
         // and a step there is a click through the differentiating coil.
         satAmtT = std::clamp (sat, 0.0, 1.0);
-        if (! configured) satAmt = satAmtT;
+        // Snapped when the instrument is being set up rather than played:
+        // before the first configure, and once after any reset. Both are
+        // moments with no signal to protect, and gliding through them is
+        // what made a re-prepared voice differ from a fresh one -- measured
+        // on the tine at -27.5 dB against the signal, for any note that had
+        // been struck before the host reconfigured.
+        if (! configured || snapTransduction) { satAmt = satAmtT; snapTransduction = false; }
         satOn  = std::max (satAmt, satAmtT) > 1.0e-4;
         updateRestSaturation();
     }
@@ -2085,6 +2118,7 @@ private:
     bool lockedOut = false;
     static constexpr double kReducedEnergy = 1.0e-10;
     double swingEnv = 0.0;
+    bool   snapTransduction = true;   // see reset(): set up, not played
     double dormantV = 0.0, dormantSlope = 0.0;
     double linearSwing = 1.0e-4, quietEnergy = 1.0e-13;
     bool   reduced = false;

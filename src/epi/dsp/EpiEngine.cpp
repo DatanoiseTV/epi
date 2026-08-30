@@ -272,6 +272,15 @@ void EpiEngine::reset()
     wurliCfgVersion.fill (0);
     grandCfgVersion.fill (0);
     clavCfgVersion.fill (0);
+    // ...and the two single-value caches, for the same reason and with the
+    // same failure mode: a value the engine believes it has already handed
+    // out, against a bank that has just been returned to its built state,
+    // is a setting silently lost until something else moves it. prepare()
+    // has always invalidated these; reset() did not, and the moment the
+    // voices started returning their transduction to rest it showed up as
+    // the core saturation going missing after every reset.
+    lastCoilSat = -1.0f;
+    lastSpaceSize = -1.0f;
     pedalDown = false;
     pedalAmount = 0.0;
     softAmount = 0.0;

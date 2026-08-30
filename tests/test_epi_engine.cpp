@@ -2474,14 +2474,22 @@ static void sectionDeterminism()
     // (the candidate this comment used to name), the last tip values, the
     // dormant-tier hold and the rest flux.
     //
-    // One property this row does not reach is still open, recorded here
-    // because it is sharp enough to act on: a reset followed by the SAME
-    // note that was struck before it does not return the identical
-    // render -- about -43 dB of difference, from the first sample. Any
-    // OTHER note comes back bit-identical, at -3025 dB, which is zero.
-    // So it is per-voice, it is specific to the voice that was last
-    // struck, and it decays with how long that note was left ringing.
-    // Held at 2.0 dB so the peak measure cannot silently widen back.
+    // The property this row could not reach is closed too, and rows 16.5
+    // and 16.6 below now measure it directly: a reset followed by the same
+    // note struck before it used to differ by about -43 dB from the first
+    // sample, while any other note came back bit-identical. It was the
+    // oversampler's Hermite history -- three tip positions of the note that
+    // had been sounding, cleared on a strike from rest but never on a
+    // reset -- plus the transduction's own operating point. Both are
+    // returned by RhodesVoice::reset now, and the engine invalidates its
+    // coilSat and room-size caches there as it always did in prepare, so a
+    // bank returned to rest does not sit at a setting the engine believes
+    // it has already handed out.
+    //
+    // Peak is a coarse instrument -- it is why this row read 0.01 dB while
+    // whole samples were 6% out -- so the rows below compare the renders
+    // rather than their loudest point. This one stays as it is: held at
+    // 2.0 dB, and it is the row that survives a platform change.
     {
         for (int inst = 0; inst < 5; ++inst)
         {
@@ -2510,6 +2518,148 @@ static void sectionDeterminism()
             std::snprintf (what, sizeof what, "%s repeats across six reset cycles", kInstName[inst]);
             row (id, what, "peak within 0.001 dB of the first",
                  fmt ("%.2f dB", worst), gapIf (worst <= 0.001, worst <= hold));
+        }
+    }
+
+    // How much of one render is not in the other, as a level against the
+    // first one's own energy. Zero decibels means the difference is as big
+    // as the signal; a very negative number means the two are the same
+    // render. Declared here because the shared changeDb lives further down
+    // the file, and these two rows want it before then.
+    auto diffDb = [] (const Stereo& a, const Stereo& b)
+    {
+        const std::size_t n = std::min (a.L.size(), b.L.size());
+        double d = 0.0, e = 0.0;
+        for (std::size_t i = 0; i < n; ++i)
+        {
+            const double dl = static_cast<double> (a.L[i]) - static_cast<double> (b.L[i]);
+            const double dr = static_cast<double> (a.R[i]) - static_cast<double> (b.R[i]);
+            d += dl * dl + dr * dr;
+            e += static_cast<double> (a.L[i]) * static_cast<double> (a.L[i])
+               + static_cast<double> (a.R[i]) * static_cast<double> (a.R[i]);
+        }
+        return 10.0 * std::log10 (std::max (d, 1.0e-300) / std::max (e, 1.0e-300));
+    };
+
+    // 16.5 -- a reset returns the instrument, sample for sample.
+    //
+    // Not the peak: the whole render. A bounce is a reset followed by the
+    // same performance, and "the same" has to mean the same samples, or two
+    // exports of one project differ. Measured both ways round, because the
+    // defect this catches was specific to the voice last struck: strike a
+    // note, reset, then strike EITHER the same note or a different one.
+    // The same note used to come back -43 dB down while a different one was
+    // exact, which is what pointed at per-voice state rather than anything
+    // global.
+    {
+        auto take = [&] (int inst, bool withHistory, int note)
+        {
+            auto e = std::make_unique<EpiEngine>();
+            e->prepare (fs, 256);
+            EngineParams p = measParams (inst);
+            p.coilSat = 0.4f;          // a bank-wide setting the caches gate
+            std::vector<float> L (256), R (256);
+            if (withHistory)
+            {
+                NoteEvent on { 0, NoteEvent::noteOn, 60, 0.7f };
+                e->process (L.data(), R.data(), 256, p, &on, 1);
+                for (int b = 0; b < 60; ++b) e->process (L.data(), R.data(), 256, p, nullptr, 0);
+                e->reset();
+            }
+            Stereo s; s.fs = fs;
+            NoteEvent on { 0, NoteEvent::noteOn, note, 0.8f };
+            for (int b = 0; b < 60; ++b)
+            {
+                e->process (L.data(), R.data(), 256, p, b == 0 ? &on : nullptr, b == 0 ? 1 : 0);
+                s.L.insert (s.L.end(), L.begin(), L.end());
+                s.R.insert (s.R.end(), R.begin(), R.end());
+            }
+            return s;
+        };
+        for (int inst = 0; inst < 5; ++inst)
+        {
+            double worst = -1.0e300;
+            int worstNote = 0;
+            for (int note : { 60, 64 })        // 60 was struck before the reset, 64 was not
+            {
+                const double d = diffDb (take (inst, true, note), take (inst, false, note));
+                if (d > worst) { worst = d; worstNote = note; }
+            }
+            char id[12], what[80];
+            std::snprintf (id, sizeof id, "16.5%d", inst);
+            std::snprintf (what, sizeof what, "%s is identical after a reset", kInstName[inst]);
+            // Four of the five are bit-identical, at -3020 dB, which is the
+            // arithmetic saying zero. The clav is not, and what remains is
+            // measured rather than guessed at: all eight of its scalars that
+            // differ after a reset are configuration-derived, and reset()
+            // marks the voice unconfigured so the next strike overwrites
+            // every one of them -- so the residual is in the case
+            // resonator's or the string's array state, not in anything the
+            // voice reports about itself. At -114 dB it is a ten-thousandth
+            // of a per cent of the signal and inaudible; it is held here so
+            // it cannot widen, and so the next person starts from what has
+            // already been eliminated.
+            row (id, what, "<= -120 dB against the fresh render",
+                 fmt2 ("%.1f dB (note %.0f)", worst, static_cast<double> (worstNote)),
+                 gapIf (worst <= -120.0, worst <= -100.0));
+        }
+    }
+
+    // 16.6 -- and so does a re-prepare, which is what a host does when the
+    // device changes or an offline bounce runs at another block size. It
+    // reaches more state than reset: prepare rebuilds every bank and then
+    // re-applies the parameters, so anything it fails to return shows up on
+    // the very first note afterwards. This is where the Hermite history was
+    // found -- a used engine, prepared again, rendered 27 dB off a fresh one
+    // for any note that had been struck before.
+    {
+        auto take = [&] (int inst, bool withHistory, double rate, int block)
+        {
+            auto e = std::make_unique<EpiEngine>();
+            EngineParams p = measParams (inst);
+            p.coilSat = 0.4f;
+            p.spaceSize = 0.7f;
+            if (withHistory)
+            {
+                e->prepare (48000.0, 256);
+                std::vector<float> a (256), b (256);
+                for (int blk = 0; blk < 80; ++blk)
+                {
+                    std::vector<NoteEvent> evs;
+                    if (blk == 0)
+                        for (int n : { 48, 60 })
+                            evs.push_back ({ 0, NoteEvent::noteOn, n, 0.9f });
+                    e->process (a.data(), b.data(), 256, p,
+                                evs.empty() ? nullptr : evs.data(), static_cast<int> (evs.size()));
+                }
+            }
+            e->prepare (rate, block);
+            std::vector<float> L (static_cast<std::size_t> (block)),
+                               R (static_cast<std::size_t> (block));
+            Stereo s; s.fs = rate;
+            const int blocks = static_cast<int> (rate * 1.2) / block;
+            NoteEvent on { 0, NoteEvent::noteOn, 60, 0.85f };
+            for (int b = 0; b < blocks; ++b)
+            {
+                e->process (L.data(), R.data(), block, p, b == 0 ? &on : nullptr, b == 0 ? 1 : 0);
+                s.L.insert (s.L.end(), L.begin(), L.end());
+                s.R.insert (s.R.end(), R.begin(), R.end());
+            }
+            return s;
+        };
+        for (int inst = 0; inst < 5; ++inst)
+        {
+            const double same = diffDb (take (inst, true, 48000.0, 256),
+                                        take (inst, false, 48000.0, 256));
+            const double moved = diffDb (take (inst, true, 96000.0, 64),
+                                         take (inst, false, 96000.0, 64));
+            const double worst = std::max (same, moved);
+            char id[12], what[80];
+            std::snprintf (id, sizeof id, "16.6%d", inst);
+            std::snprintf (what, sizeof what, "%s is identical after a re-prepare", kInstName[inst]);
+            row (id, what, "<= -120 dB, same rate and changed",
+                 fmt2 ("%.1f dB same, %.1f changed", same, moved),
+                 gapIf (worst <= -120.0, worst <= -100.0));
         }
     }
 

@@ -61,10 +61,29 @@ All notable changes to Epi are documented here. The format follows
   back did not undo it: the comparison found no change and that voice was
   never re-cut again.
 - A reset did not return the instrument to what it was, which is what a
-  bounce is. reset() restored neither the tine bank's record of its last
-  configuration nor any of the five banks' version arrays, though prepare()
-  sets all of them. Peak residual across six reset cycles goes from
-  0.00193 dB to 0.00003.
+  bounce is, and neither did a re-prepare -- the thing a host does when the
+  audio device changes or an offline render runs at another block size.
+  Three separate omissions, each found by comparing renders rather than
+  peaks:
+  - the oversampler's Hermite history, three tip positions of the note that
+    had been sounding. Cleared on a strike from rest, deliberately kept on a
+    strike onto a still-ringing voice, and never cleared on a reset -- so
+    the next note's first samples were interpolated through the last one's.
+    This is what made a re-prepared tine render 27 dB off a fresh one for
+    any note that had been struck before, while notes that had not been
+    struck came back exact.
+  - the transduction's operating point: the core saturation glided on from
+    wherever the previous session left the iron instead of being
+    re-established.
+  - the engine's coilSat and room-size caches, invalidated in prepare()
+    since always but not in reset(), so a bank returned to rest sat at a
+    setting the engine believed it had already handed out.
+  Peak residual across six reset cycles goes from 0.00193 dB to exactly
+  zero, and four of the five instruments are now bit-identical after both a
+  reset and a re-prepare. The clav is not: a measured -114 dB remains,
+  a ten-thousandth of a per cent of the signal, bounded by its rows.
+- The clav's third interpolation history was never cleared on a reset,
+  though its two siblings were and the same hermite() reads all three.
 - The strings, reeds and rods were animated but could not be seen to move on
   four of the five instruments. Swing is real displacement times the rod's
   drawn-to-real ratio, and that ratio is not one number -- a tine is 1.14
@@ -78,6 +97,11 @@ All notable changes to Epi are documented here. The format follows
   35 and resized it on the way.
 
 ### Added
+- Ten rows that compare renders rather than peaks: every instrument is
+  identical after a reset, and after a re-prepare at both the same rate and
+  a changed one. Peak is a coarse instrument -- it is why the existing row
+  read 0.01 dB while whole samples were six per cent out -- and these are
+  the rows that found the three omissions above.
 - Twenty rows for the pedals as a player works them, rather than for what
   each pedal is: half-pedal never damping harder on any of the five, the
   sostenuto rule from both sides including the re-sent message, the left

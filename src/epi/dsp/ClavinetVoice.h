@@ -553,7 +553,20 @@ public:
         sinceStrike = 1.0e9;
         peakEnergy = 1.0e-30;
         configured = false;
-        for (int i = 0; i < 3; ++i) { cHist[i] = bHist[i] = 0.0; }
+        // All THREE interpolation histories -- the contact-force one was
+        // missed, and it is read by the same hermite() the other two are, so
+        // a reset voice interpolated its next strike's first samples through
+        // the last one's contact. Measured on the clav at -114 dB against
+        // the fresh render: inaudible, and still the difference between a
+        // bounce that repeats and one that does not.
+        for (int i = 0; i < 3; ++i) { cHist[i] = bHist[i] = cfHist[i] = 0.0; }
+        // The strike-scoped values, back to what a freshly built voice has.
+        // Every one is written again by the next strike before it is read,
+        // so this changes no sound; it makes "reset" and "fresh" the same
+        // object, which is the property the rows check.
+        lastTipV = 0.0;
+        seatSamples = 1 << 30;
+        lastContactSamples = 0;
         fluxPrev[0] = fluxPrev[1] = 0.0;
         fluxPrimed = false;
         thumpRemaining = thumpTotal = 0;
