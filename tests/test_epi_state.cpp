@@ -266,6 +266,102 @@ int main()
              ! set.empty() && bad.isEmpty(), bad.joinIntoString (", ").toRawUTF8());
     }
 
+    // S8b -- and the point of all that: the instrument SOUNDS the same after
+    // the trip. S8 proves every parameter comes back; this proves every one
+    // of them reaches the engine on the way back, in an order that leaves the
+    // same instrument standing. A value that round-trips into the tree but
+    // never reaches the voice, or reaches it before something it depends on,
+    // is invisible to S8 and audible to the player -- and reopening a project
+    // to a different sound is the single failure a plugin cannot ship.
+    //
+    // Rendered on each of the five instruments, because the parameter set
+    // that reaches the engine differs per instrument and a whole bank's worth
+    // of state could otherwise be missed.
+    {
+        constexpr double fs = 48000.0;
+        constexpr int block = 128;
+        constexpr int blocks = 180;
+
+        auto scribble = [] (EpiAudioProcessor& p, int instrument)
+        {
+            auto& t = p.getValueTreeState();
+            for (auto* raw : p.getParameters())
+            {
+                auto* rp = dynamic_cast<juce::RangedAudioParameter*> (raw);
+                if (rp == nullptr) continue;
+                const auto& r = rp->getNormalisableRange();
+                float v;
+                if (auto* c = dynamic_cast<juce::AudioParameterChoice*> (raw))
+                    v = static_cast<float> ((c->getIndex() + 1) % c->choices.size());
+                else
+                    v = r.convertFrom0to1 (0.41f);
+                if (rp->getParameterID() == "instrument") v = static_cast<float> (instrument);
+                if (auto* fp = t.getParameter (rp->getParameterID()))
+                    fp->setValueNotifyingHost (r.convertTo0to1 (v));
+            }
+        };
+        auto render = [&] (EpiAudioProcessor& p)
+        {
+            p.prepareToPlay (fs, block);
+            juce::AudioBuffer<float> buf (2, block);
+            std::vector<float> out;
+            for (int b = 0; b < blocks; ++b)
+            {
+                juce::MidiBuffer midi;
+                if (b == 0)
+                {
+                    midi.addEvent (juce::MidiMessage::noteOn (1, 55, 0.8f), 0);
+                    midi.addEvent (juce::MidiMessage::noteOn (1, 62, 0.8f), 4);
+                    midi.addEvent (juce::MidiMessage::controllerEvent (1, 64, 127), 8);
+                }
+                if (b == 20) midi.addEvent (juce::MidiMessage::noteOff (1, 55), 0);
+                buf.clear();
+                p.processBlock (buf, midi);
+                for (int i = 0; i < block; ++i)
+                {
+                    out.push_back (buf.getSample (0, i));
+                    out.push_back (buf.getSample (1, i));
+                }
+            }
+            return out;
+        };
+
+        juce::StringArray bad;
+        double worst = -1.0e300;
+        for (int inst = 0; inst < 5; ++inst)
+        {
+            auto aOwned = std::make_unique<EpiAudioProcessor>();
+            scribble (*aOwned, inst);
+            const std::vector<float> first = render (*aOwned);
+
+            juce::MemoryBlock blob;
+            aOwned->getStateInformation (blob);
+
+            auto bOwned = std::make_unique<EpiAudioProcessor>();
+            bOwned->setStateInformation (blob.getData(), static_cast<int> (blob.getSize()));
+            const std::vector<float> second = render (*bOwned);
+
+            const std::size_t n = std::min (first.size(), second.size());
+            double d = 0.0, e = 0.0;
+            bool finite = true;
+            for (std::size_t i = 0; i < n; ++i)
+            {
+                const double dd = static_cast<double> (first[i]) - static_cast<double> (second[i]);
+                d += dd * dd;
+                e += static_cast<double> (first[i]) * static_cast<double> (first[i]);
+                finite = finite && std::isfinite (second[i]);
+            }
+            const double db = 10.0 * std::log10 (std::max (d, 1.0e-300) / std::max (e, 1.0e-300));
+            worst = std::max (worst, db);
+            if (! finite || e <= 0.0 || db > -120.0)
+                bad.add (juce::String (inst) + ": " + juce::String (db, 1) + " dB");
+        }
+        row ("S8b", "the instrument sounds the same after the trip",
+             bad.isEmpty(),
+             (juce::String ("worst ") + juce::String (worst, 1) + " dB"
+              + (bad.isEmpty() ? juce::String() : juce::String (" -- ") + bad.joinIntoString (", "))).toRawUTF8());
+    }
+
     // S9 -- the MPE switch. It lives on the bench tree rather than the
     // parameter tree (it is a setup switch, not something a player rides),
     // so S8 cannot see it and it needs the bench treatment: default on a

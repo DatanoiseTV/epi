@@ -97,6 +97,14 @@ All notable changes to Epi are documented here. The format follows
   35 and resized it on the way.
 
 ### Added
+- A row that renders the instrument, saves the project, loads it into a
+  fresh processor and renders again, on each of the five instruments. The
+  suite proved every parameter came BACK; nothing proved every one of them
+  reached the engine on the way back, in an order that leaves the same
+  instrument standing -- and a value that round-trips into the tree without
+  reaching the voice is invisible to a parameter check and audible to the
+  player. Measured at -155 dB worst, and checked for vacuity by skipping
+  the restore, which fails it on all five by up to 68 dB.
 - Ten rows that compare renders rather than peaks: every instrument is
   identical after a reset, and after a re-prepare at both the same rate and
   a changed one. Peak is a coarse instrument -- it is why the existing row
