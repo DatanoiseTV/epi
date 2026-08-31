@@ -3179,6 +3179,95 @@ static void sendBendRange (MpeTuning& m, int channel, int semis, int cents)
 // doing its job.
 // ===========================================================================
 
+static void sectionAbortedSwitch()
+{
+    heading ("22. an instrument switch the host takes back");
+
+    const double fs = 48000.0;
+
+    // 22.0 -- a note struck during a switch that never completes.
+    //
+    // Note events are parked while the outgoing bank drains, because a key
+    // pressed during the fade is meant for the instrument being switched TO.
+    // They are also played live on the way past -- processActive gets the
+    // same event array every block -- which is right while the switch is
+    // going to complete, since the outgoing bank is on its way to silence.
+    //
+    // It is not right if the host puts the instrument back before the fade
+    // finishes, which is what dragging a mouse across a selector does, and
+    // what some hosts do on transport start. Then the switch never happened,
+    // the note has already sounded on the bank that is still active, and
+    // replaying the parked copy strikes the same voice again.
+    //
+    // What made it more than a curiosity: the size of the artifact depended
+    // on the buffer. Measured at 64, 128 and 256 samples the same automation
+    // gave -0.06, -5.47 and -0.91 dB against the same note without the blip.
+    // A plugin may not let the host's buffer size decide what a performance
+    // sounds like, and row 16.1a's block invariance does not reach this
+    // because it never moves the instrument.
+    {
+        auto take = [&] (bool wiggle, int block)
+        {
+            EngineParams p = measParams (0);
+            return renderBench (fs, p, 1.6,
+                { { 4 * block + block / 2, [] { NoteEvent n; n.type = NoteEvent::noteOn;
+                                                n.note = 60; n.velocity = 0.8f; return n; } () } },
+                {},
+                [wiggle, block] (int blockStart, EngineParams& q)
+                {
+                    q.instrument = (wiggle && blockStart == 4 * block) ? 3 : 0;
+                },
+                block);
+        };
+        double worst = 0.0; int worstBlock = 0;
+        for (int block : { 64, 128, 256 })
+        {
+            const double plain = 20.0 * std::log10 (std::max (1.0e-30, peakAbs (take (false, block))));
+            const double blip  = 20.0 * std::log10 (std::max (1.0e-30, peakAbs (take (true,  block))));
+            if (std::fabs (blip - plain) > std::fabs (worst))
+            { worst = blip - plain; worstBlock = block; }
+        }
+        row ("22.0", "a switch taken back does not restrike the note",
+             "within 0.5 dB at every block size",
+             fmt2 ("worst %+.2f dB (block %.0f)", worst, static_cast<double> (worstBlock)),
+             verdict (std::fabs (worst) <= 0.5));
+    }
+
+    // 22.1 -- and the switch that DOES complete still delivers the note it
+    // parked. This is the other half: the fix must not throw the parked copy
+    // away when it is the only one the player will hear, because the live
+    // copy went to a bank that is fading to silence. Measured against the
+    // same note on an engine that was on the destination instrument all
+    // along, swept across the blocks the fade spans.
+    {
+        double worst = 0.0;
+        for (int nb = 4; nb <= 14; ++nb)
+        {
+            const int block = 64;
+            auto take = [&] (bool switching)
+            {
+                EngineParams p = measParams (switching ? 0 : 3);
+                return renderBench (fs, p, 1.6,
+                    { { nb * block + block / 2,
+                        [] { NoteEvent n; n.type = NoteEvent::noteOn; n.note = 60;
+                             n.velocity = 0.8f; return n; } () } },
+                    {},
+                    [switching, block] (int blockStart, EngineParams& q)
+                    {
+                        if (switching && blockStart >= 4 * block) q.instrument = 3;
+                    },
+                    block);
+            };
+            const double sw  = 20.0 * std::log10 (std::max (1.0e-30, peakAbs (take (true))));
+            const double ctl = 20.0 * std::log10 (std::max (1.0e-30, peakAbs (take (false))));
+            if (std::fabs (sw - ctl) > std::fabs (worst)) worst = sw - ctl;
+        }
+        row ("22.1", "a switch that lands still plays the note it parked",
+             "within 0.5 dB of the same note unswitched",
+             fmt ("worst %+.2f dB", worst), verdict (std::fabs (worst) <= 0.5));
+    }
+}
+
 static void sectionSwitches()
 {
     heading ("21. discrete controls stepped under a held chord");
@@ -3254,21 +3343,39 @@ static void sectionSwitches()
             // Two of these are known, measured and left, and they are left
             // for opposite reasons.
             //
-            // The reed's transducer options are not level-matched: measured
-            // against Native at otherwise-default settings, Magnetic is
-            // +10.9 dB and Contact +13.5 (the tine's Electro is -7.9, the
-            // e-grand's Electro +6.3, the clav within +/-3, and the grand's
-            // choice does nothing at all, which is right -- it is an
-            // acoustic instrument with a microphone, not a pickup). So the
-            // step is mostly a level jump, and the eight presets that
-            // select a non-default transducer each carry a compensating
-            // outGain, from -21 dB to +8.5. Matching them inside the engine
-            // is the real fix and it is a calibration campaign, not an
-            // edit: every one of those presets needs its gain re-trimmed by
-            // the same amount, and any saved project sitting on a
-            // non-default transducer would change level on load. Recorded
-            // here with the numbers so that decision can be taken
-            // deliberately.
+            // The reed's transducer options are not level-matched, and the
+            // step is mostly that. It was measured properly afterwards --
+            // notes 40/52/60/72/84 at two dynamics, not one note -- and the
+            // answer is that they cannot be matched by a constant at all:
+            //
+            //   lane              mean      spread across the register
+            //   Tine Contact     -15.8 dB          48.1 dB
+            //   Tine Electro     -13.6            23.6
+            //   Clav Electro      -0.0            22.9
+            //   Reed Magnetic     +9.4            17.7
+            //   Reed Contact     +12.5            17.6
+            //   E-Grand Electro   -3.1            16.4
+            //
+            // Tine Contact runs +2.9 dB at note 40 and -45.3 at note 84 at
+            // one fixed velocity. These are four different transduction
+            // laws -- saturating flux, y/(g-y), an omega-squared clamp force
+            // -- and they scale differently with frequency and amplitude
+            // because that is what they are. The grand's choice does
+            // nothing at all, which is right: an acoustic instrument with a
+            // microphone has no pickup to swap.
+            //
+            // So a single makeup nulls the mean and leaves a 10-48 dB
+            // residual, and for the tine the mean-nulled version drives the
+            // bass into the limiter on 19% of samples. Scaling the source
+            // constants instead is worse: they sit upstream of the
+            // saturation, so Contact Reed -- which is being driven 12.5 dB
+            // into the reed chain and pulled back by a -21 dB outGain --
+            // comes out 6.4 dB louder and audibly de-saturated. And any
+            // change at all shifts every saved project sitting on a
+            // non-default transducer, with no version marker to migrate on.
+            //
+            // Which makes the compensation the eight presets already carry
+            // the right place for it, and this row the record of why.
             //
             // The clav's rockers are the opposite: they are switches in the
             // signal path of the real instrument, a player flips them while
@@ -4049,6 +4156,7 @@ int main()
     sectionEdges();
     sectionPassivity();
     sectionSwitches();
+    sectionAbortedSwitch();
     sectionPedalPlaying();
     sectionPostRelease();
 

@@ -767,15 +767,37 @@ void EpiEngine::process (float* outL, float* outR, int numSamples,
         phaserL.reset(); phaserR.reset();
         airL.reset(); airR.reset();
         activeInst = p.instrument;
+        switchLanded = true;
     }
     EngineParams pa = p;
     pa.instrument = activeInst;
     if (p.instrument == activeInst && numPending > 0)
     {
-        for (int i = 0; i < numPending; ++i)
-            handleEvent (pendingNotes[i], pa);
+        // Parked notes belong to the instrument that was being switched TO,
+        // and they are replayed only if that switch actually landed.
+        //
+        // They were also played live on the way past: processActive gets the
+        // same event array every block, so a note struck during the fade
+        // already sounded on the outgoing bank. That is correct while the
+        // switch is going to complete -- the outgoing bank is on its way to
+        // silence and the parked copy is what the player will hear. It is
+        // not correct if the host puts the instrument back before the fade
+        // finishes, which is what a mouse dragged across a selector or a
+        // transport start does: the switch never happened, the note has
+        // already sounded on the bank that is still active, and replaying it
+        // strikes the same voice a second time.
+        //
+        // Measured on a one-block round trip at 128 samples: the note came
+        // out 5.5 dB below the same note without the blip, and by a
+        // different amount at 64 and 256 -- so the audible result of an
+        // automation blip depended on the host's buffer size, which is the
+        // one thing a plugin must never let the buffer decide.
+        if (switchLanded)
+            for (int i = 0; i < numPending; ++i)
+                handleEvent (pendingNotes[i], pa);
         numPending = 0;
     }
+    switchLanded = false;
     processActive (outL, outR, numSamples, pa, events, numEvents);
     const double target = (p.instrument == activeInst) ? 1.0 : 0.0;
     const double aRamp = 1.0 - std::exp (-1.0 / (0.0015 * fs));

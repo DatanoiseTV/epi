@@ -647,6 +647,7 @@ private:
     }
     bool   pedalDown   = false;   // engaged at all -- gates the sympathetic path
     bool   sostenutoDown = false; // the middle pedal's own state, for its edge
+    bool   switchLanded  = false; // an instrument switch completed this block
     bool   pedalHigh   = false;   // thunk hysteresis state (0.65 / 0.35)
     static constexpr double kThunkPress = 0.60;  // calibrated by engine row 12.2
     static constexpr double kThunkLift  = 2.2;

@@ -82,6 +82,17 @@ All notable changes to Epi are documented here. The format follows
   zero, and four of the five instruments are now bit-identical after both a
   reset and a re-prepare. The clav is not: a measured -114 dB remains,
   a ten-thousandth of a per cent of the signal, bounded by its rows.
+- An instrument switch the host took back before it finished restruck the
+  note played during it, and by an amount that depended on the buffer size:
+  measured -0.06, -5.47 and -0.91 dB at 64, 128 and 256 samples against the
+  same note without the blip. Note events are parked while the outgoing bank
+  drains, because a key pressed during the fade is meant for the instrument
+  being switched to -- but they are also played live on the way past, which
+  is right only if the switch is going to complete. Dragging a mouse across
+  the selector, or a host that reasserts its parameters on transport start,
+  does not complete it. The parked copy is now replayed only if the switch
+  actually landed, and a switch that does land still delivers the note it
+  parked.
 - Clicking through the preset list with a chord ringing clicked, audibly.
   The transducer choice hard-bypassed a resonant filter in one sample -- the
   tine's coil, and the reed's electrostatic bus -- and a pickup is bench
@@ -116,6 +127,10 @@ All notable changes to Epi are documented here. The format follows
   35 and resized it on the way.
 
 ### Added
+- Two rows for an instrument switch the host takes back, one for each half:
+  the note is not restruck at any buffer size, and a switch that does land
+  still plays the note it parked. Both checked against the defect: reverting
+  the fix fails the first at -5.47 dB and leaves the second passing.
 - A click fence for the discrete controls. The existing one sweeps the
   continuous knobs and covers no switch at all -- which is where a click is
   most likely, since a switch has no small step to hide in. Fifteen switches
@@ -148,18 +163,21 @@ All notable changes to Epi are documented here. The format follows
 
 ### Changed
 - Recorded, measured and deliberately not changed: the transducer options
-  are not level-matched. Against Native at otherwise-default settings the
-  reed's Magnetic is +10.9 dB and its Contact +13.5, the tine's Electro
-  -7.9, the e-grand's Electro +6.3, the clav within +/-3, and the grand's
-  choice does nothing at all -- which is right, an acoustic instrument with
-  a microphone has no pickup to swap. The eight presets that select a
-  non-default transducer each carry a compensating outGain, from -21 dB to
-  +8.5, so everything shipped is level-matched and the bench passes.
-  Matching them inside the engine is the real fix and it is a calibration
-  campaign rather than an edit: every one of those presets needs re-trimming
-  by the same amount, and any saved project sitting on a non-default
-  transducer would change level on load. The numbers are in the rows so the
-  decision can be taken deliberately.
+  cannot be level-matched by a constant, which is a stronger statement than
+  simply not being level-matched. Measured across the register at two
+  dynamics rather than at one note, the gap against Native has a spread of
+  16 to 48 dB per lane -- Tine Contact alone runs +2.9 dB at note 40 and
+  -45.3 at note 84 at one fixed velocity. They are four different
+  transduction laws and they scale differently with frequency and amplitude
+  because that is what they are. A single makeup nulls the mean and leaves
+  the spread, and the mean-nulled tine rails its bass on 19% of samples;
+  scaling the source constants instead is worse, because they sit upstream
+  of the saturation, so Contact Reed comes out 6.4 dB louder and audibly
+  de-saturated. Any change at all also shifts every saved project on a
+  non-default transducer, with no version marker to migrate on. Which makes
+  the compensation the eight presets already carry the right place for it.
+  The grand's choice doing nothing is correct: an acoustic instrument with a
+  microphone has no pickup to swap.
 - Close Pop, Parlor and Harp Grand re-trimmed: the new attack moved them off
   the level bench.
 - Harp Grand's note said nylon rings the top clear where wire crowds it. It
