@@ -1393,6 +1393,22 @@ void EpiEngine::processGrand (float* outL, float* outR, int numSamples,
     // keys land on.
     action.setBed (p.keyBed);
 
+    // MEASURED COST, so nobody spends an afternoon on it: with the pedal
+    // down this is what the grand costs. One note held at 48 k / 128 runs
+    // 36.5% of a core against 4.1% with the pedal up -- a fixed 32% that
+    // does not depend on what is played, because it is 88 open strings
+    // rather than the note. Forty notes take it to 48%.
+    //
+    // It is not slack. Measured a second after the strike, sixty-seven of
+    // the eighty-eight are live and the WEAKEST of them holds 1.6e-8 of
+    // modal energy, against a dormancy threshold of 1e-13 and an audible
+    // wash that the dormancy note below puts at 1e-7 to 1e-9. So every
+    // string still running is inside the audible band; the ones below it
+    // have already been retired by that mechanism, and there is a clean gap
+    // between the two -- nothing at all sits between zero and 1.6e-8.
+    // Raising the threshold far enough to save anything would start cutting
+    // the wash itself. The cost is the physics.
+    //
     // Sympathetic life, the grand way: with the pedal lifted the undamped
     // strings listen to the shared board through their coupled prefix --
     // openSympathetic IS that physics (the in-loop board stops at 1.3 kHz,
