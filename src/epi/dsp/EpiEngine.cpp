@@ -934,6 +934,19 @@ void EpiEngine::processActive (float* outL, float* outR, int numSamples,
         sm.step (sm.bass, p.bassDb, k * 0.35f);
         sm.step (sm.treb, p.trebleDb, k * 0.35f);
         sm.step (sm.cabMix, p.cabMix, k);
+        // The transducer swap, crossfaded rather than switched. A coil is a
+        // resonant filter; taking it out of the path in one sample is a step
+        // in both level and phase, and it measured as a click 1447 times the
+        // signal's own worst second difference -- the loudest thing in the
+        // instrument that a control could do. Nor is it something the
+        // instrument can do: a pickup is bench hardware, like the felt and
+        // the wire, and every other bench control here reaches the player at
+        // the next strike rather than under the note already in the air. A
+        // shared output stage has no next strike to wait for, so the honest
+        // form of the same statement is the shortest ramp that manufactures
+        // no transient of its own.
+        sm.step (sm.coilMix, p.transducer <= 1 ? 1.0f : 0.0f, k);
+        sm.step (sm.electroMix, (p.transducer == 1 || p.transducer == 2) ? 1.0f : 0.0f, k);
         sm.step (sm.air, p.clarityDb, k);
         airL.set (sm.air, fs);
         airR.set (sm.air, fs);
@@ -1101,9 +1114,13 @@ void EpiEngine::processActive (float* outL, float* outR, int numSamples,
         {
             // A coil is magnetic hardware; the swapped transducers feed the
             // preamp directly, at their own calibrated level.
-            double y = (p.transducer <= 1)
-                     ? coil.process (static_cast<float> (os[k]))
-                     : os[k];
+            // The coil runs either way, so its state never goes stale: a
+            // filter switched back into a live path after sitting out is a
+            // transient of its own. The blend is what the player hears.
+            const double dry = os[k];
+            const double wet = coil.process (static_cast<float> (dry));
+            const double mix = static_cast<double> (sm.coilMix);
+            double y = mix >= 1.0 ? wet : mix <= 0.0 ? dry : dry + mix * (wet - dry);
             y = preamp.process (y);
             // One cabinet per channel. Running both through a single instance
             // interleaves two signals in its filters, which is not a stereo
@@ -1740,6 +1757,19 @@ void EpiEngine::processCP70 (float* outL, float* outR, int numSamples,
         sm.step (sm.bass, p.bassDb, k * 0.35f);
         sm.step (sm.treb, p.trebleDb, k * 0.35f);
         sm.step (sm.cabMix, p.cabMix, k);
+        // The transducer swap, crossfaded rather than switched. A coil is a
+        // resonant filter; taking it out of the path in one sample is a step
+        // in both level and phase, and it measured as a click 1447 times the
+        // signal's own worst second difference -- the loudest thing in the
+        // instrument that a control could do. Nor is it something the
+        // instrument can do: a pickup is bench hardware, like the felt and
+        // the wire, and every other bench control here reaches the player at
+        // the next strike rather than under the note already in the air. A
+        // shared output stage has no next strike to wait for, so the honest
+        // form of the same statement is the shortest ramp that manufactures
+        // no transient of its own.
+        sm.step (sm.coilMix, p.transducer <= 1 ? 1.0f : 0.0f, k);
+        sm.step (sm.electroMix, (p.transducer == 1 || p.transducer == 2) ? 1.0f : 0.0f, k);
         sm.step (sm.air, p.clarityDb, k);
         airL.set (sm.air, fs);
         airR.set (sm.air, fs);
@@ -1993,6 +2023,19 @@ void EpiEngine::processWurli (float* outL, float* outR, int numSamples,
         sm.step (sm.bass, p.bassDb, k * 0.35f);
         sm.step (sm.treb, p.trebleDb, k * 0.35f);
         sm.step (sm.cabMix, p.cabMix, k);
+        // The transducer swap, crossfaded rather than switched. A coil is a
+        // resonant filter; taking it out of the path in one sample is a step
+        // in both level and phase, and it measured as a click 1447 times the
+        // signal's own worst second difference -- the loudest thing in the
+        // instrument that a control could do. Nor is it something the
+        // instrument can do: a pickup is bench hardware, like the felt and
+        // the wire, and every other bench control here reaches the player at
+        // the next strike rather than under the note already in the air. A
+        // shared output stage has no next strike to wait for, so the honest
+        // form of the same statement is the shortest ramp that manufactures
+        // no transient of its own.
+        sm.step (sm.coilMix, p.transducer <= 1 ? 1.0f : 0.0f, k);
+        sm.step (sm.electroMix, (p.transducer == 1 || p.transducer == 2) ? 1.0f : 0.0f, k);
         sm.step (sm.sat, p.coilSat, k);
         sm.step (sm.air, p.clarityDb, k);
         airL.set (sm.air, fs);
@@ -2094,10 +2137,21 @@ void EpiEngine::processWurli (float* outL, float* outR, int numSamples,
         if (! std::isfinite (wurliFrame.displacement())) wurliFrame.reset();
 
         double os[Decimator::kOver];
-        const bool electroChain = (p.transducer == 1 || p.transducer == 2);
+        // Crossfaded for the same reason the tine's coil is: this bypasses
+        // the whole electrostatic bus and substitutes a flat gain, so
+        // switching it under a ringing chord is a step in level and in
+        // filtering at once -- measured at 326 times the signal's own worst
+        // second difference. The bus runs either way so it never re-enters
+        // a live path cold.
+        const double eMix = static_cast<double> (sm.electroMix);
         for (int k = 0; k < WurliVoice::kOver; ++k)
-            os[k] = wurliPre.process (electroChain ? wurliBus.process (dcBus[k])
-                                                   : dcBus[k] * 40.0);
+        {
+            const double bus = wurliBus.process (dcBus[k]);
+            const double flat = dcBus[k] * 40.0;
+            os[k] = wurliPre.process (eMix >= 1.0 ? bus
+                                    : eMix <= 0.0 ? flat
+                                    : flat + eMix * (bus - flat));
+        }
         // The chain up to here speaks VOLTS -- the preamp's collector really
         // swings two volts into saturation -- and the engine's nominal
         // domain does not. Without this stage a bass fortissimo left the

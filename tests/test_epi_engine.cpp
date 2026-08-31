@@ -3161,6 +3161,130 @@ static void sendBendRange (MpeTuning& m, int channel, int semis, int cents)
 // them were written because the measurement was wrong.
 // ===========================================================================
 
+// ===========================================================================
+// 21. The switches, stepped under a ringing chord.
+//
+// Section 6 sweeps the continuous knobs and fences a click at the same
+// bound this uses. It covers no discrete control at all -- and a switch is
+// where a click is most likely, because there is no small step to hide in:
+// it goes from one value to the next in one sample. That gap is how a
+// transducer swap came to bypass a resonant filter mid-note and measure
+// fourteen hundred times the signal's own worst second difference, which is
+// what a player heard when they clicked through the preset list with a
+// chord ringing.
+//
+// Judged by section 6's rule: a click exceeds BOTH 0.05 absolute and 1.25x
+// the worst STATIC value of the two settings it moves between, so a switch
+// that legitimately selects a sharper-sounding path is not condemned for
+// doing its job.
+// ===========================================================================
+
+static void sectionSwitches()
+{
+    heading ("21. discrete controls stepped under a held chord");
+
+    const double fs = 48000.0;
+
+    struct Sw { const char* name; int from; int to; void (*set) (EngineParams&, int); };
+    static const Sw kSwitches[] = {
+        { "pickupSel",  1, 0, [] (EngineParams& p, int v) { p.pickupSel = v; p.transducer = v; } },
+        { "pickupSel",  1, 2, [] (EngineParams& p, int v) { p.pickupSel = v; p.transducer = v; } },
+        { "pickupSel",  1, 3, [] (EngineParams& p, int v) { p.pickupSel = v; p.transducer = v; } },
+        { "material",   0, 3, [] (EngineParams& p, int v) { p.material = v; } },
+        { "material",   0, 7, [] (EngineParams& p, int v) { p.material = v; } },
+        { "bodyMat",    0, 2, [] (EngineParams& p, int v) { p.bodyMat = v; } },
+        { "damperFelt", 0, 2, [] (EngineParams& p, int v) { p.damperFelt = v; } },
+        { "hammerMat",  0, 4, [] (EngineParams& p, int v) { p.hammerMat = v; } },
+        { "keyBed",     0, 2, [] (EngineParams& p, int v) { p.keyBed = v; } },
+        { "roomProfile",0, 2, [] (EngineParams& p, int v) { p.roomProfile = v; } },
+        { "softMode",   0, 1, [] (EngineParams& p, int v) { p.softMode = v; } },
+        { "clavSwitch", 0, 3, [] (EngineParams& p, int v) { p.clavSwitch = v; } },
+        { "clavBrill",  0, 1, [] (EngineParams& p, int v) { p.clavBrill = v != 0; } },
+        { "clavTreb",   0, 1, [] (EngineParams& p, int v) { p.clavTreb = v != 0; } },
+        { "clavSoft",   0, 1, [] (EngineParams& p, int v) { p.clavSoft = v != 0; } },
+    };
+
+    for (int inst = 0; inst < 5; ++inst)
+    {
+        std::vector<std::pair<std::string, double>> over;
+        double worstClean = 0.0;
+        std::string worstCleanName = "none";
+
+        for (const Sw& w : kSwitches)
+        {
+            auto take = [&] (int a, int b, double at)
+            {
+                EngineParams p = measParams (inst);
+                w.set (p, a);
+                return renderBench (fs, p, 2.0, chordOn ({ 48, 55, 60, 64 }, 0.7f), {},
+                    [&w, b, at, fs] (int blockStart, EngineParams& q)
+                    {
+                        if (at >= 0.0 && blockStart >= static_cast<int> (at * fs)) w.set (q, b);
+                    });
+            };
+            const double moved = maxD2 (take (w.from, w.to, 1.0),
+                                        static_cast<int> (0.95 * fs),
+                                        static_cast<int> (1.60 * fs));
+            if (moved <= 0.05) { if (moved > worstClean)
+                                 { worstClean = moved; worstCleanName = w.name; } continue; }
+            // Over the absolute bound, so ask what each setting does when
+            // nothing is moving at all.
+            double staticMax = 0.0;
+            for (int v : { w.from, w.to })
+                staticMax = std::max (staticMax, maxD2 (take (v, v, -1.0),
+                                                        static_cast<int> (0.95 * fs),
+                                                        static_cast<int> (1.60 * fs)));
+            if (moved > std::max (0.05, 1.25 * staticMax))
+                over.push_back ({ std::string (w.name) + " "
+                                  + std::to_string (w.from) + "->" + std::to_string (w.to),
+                                  moved });
+            else if (moved > worstClean) { worstClean = moved; worstCleanName = w.name; }
+            (void) staticMax;
+        }
+
+        char id[12], what[80];
+        std::snprintf (id, sizeof id, "21.%d", inst);
+        std::snprintf (what, sizeof what, "%s worst clean switch of %d", kInstName[inst],
+                       static_cast<int> (std::size (kSwitches)));
+        row (id, what, "d2 <= max(0.05, 1.25 x static)",
+             fmt ("%.4f", worstClean) + " (" + worstCleanName + ")",
+             verdict (over.empty() || inst == 2 || inst == 4));
+        for (const auto& o : over)
+        {
+            // Two of these are known, measured and left, and they are left
+            // for opposite reasons.
+            //
+            // The reed's transducer options are not level-matched: measured
+            // against Native at otherwise-default settings, Magnetic is
+            // +10.9 dB and Contact +13.5 (the tine's Electro is -7.9, the
+            // e-grand's Electro +6.3, the clav within +/-3, and the grand's
+            // choice does nothing at all, which is right -- it is an
+            // acoustic instrument with a microphone, not a pickup). So the
+            // step is mostly a level jump, and the eight presets that
+            // select a non-default transducer each carry a compensating
+            // outGain, from -21 dB to +8.5. Matching them inside the engine
+            // is the real fix and it is a calibration campaign, not an
+            // edit: every one of those presets needs its gain re-trimmed by
+            // the same amount, and any saved project sitting on a
+            // non-default transducer would change level on load. Recorded
+            // here with the numbers so that decision can be taken
+            // deliberately.
+            //
+            // The clav's rockers are the opposite: they are switches in the
+            // signal path of the real instrument, a player flips them while
+            // playing, and they click when they do. Modelling that is the
+            // point. Held so the click cannot grow.
+            const bool known = (inst == 2 && o.first.rfind ("pickupSel", 0) == 0)
+                            || (inst == 4 && (o.first.rfind ("clavBrill", 0) == 0
+                                           || o.first.rfind ("clavTreb", 0) == 0));
+            row (id, (std::string (kInstName[inst]) + " " + o.first
+                      + (known ? " steps" : " clicks")).c_str(),
+                 "d2 <= max(0.05, 1.25 x static)", fmt ("%.4f", o.second),
+                 known ? gapIf (false, o.second <= 1.0) : verdict (false));
+        }
+    }
+}
+
 static void sectionPedalPlaying()
 {
     heading ("20. pedals as played: partial, re-pressed, mid-note, wrong instrument");
@@ -3924,6 +4048,7 @@ int main()
     sectionDeterminism();
     sectionEdges();
     sectionPassivity();
+    sectionSwitches();
     sectionPedalPlaying();
     sectionPostRelease();
 

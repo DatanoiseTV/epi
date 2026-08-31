@@ -741,6 +741,15 @@ private:
         float drive = -1.0f, bass = 0.0f, treb = 0.0f, cabMix = -1.0f, sat = -1.0f;
         float air = 0.0f;
         float gain = -1.0f;
+        // How much of the coil, and of the reed's electrostatic bus, is in
+        // the path. The transducer choice is a bench swap -- you cannot
+        // change the pickup under a ringing note -- and these are what stop
+        // it being applied to one retroactively. Two values rather than one
+        // because the two instruments take the swap differently: the tine
+        // reads a coil on Magnetic and Native, the reed its bus on Native
+        // and Electro.
+        float coilMix = -1.0f;
+        float electroMix = -1.0f;
         void step (float& v, float target, float k)
         {
             if (v < -0.5f) { v = target; return; }   // first block: snap

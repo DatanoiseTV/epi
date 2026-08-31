@@ -82,6 +82,16 @@ All notable changes to Epi are documented here. The format follows
   zero, and four of the five instruments are now bit-identical after both a
   reset and a re-prepare. The clav is not: a measured -114 dB remains,
   a ten-thousandth of a per cent of the signal, bounded by its rows.
+- Clicking through the preset list with a chord ringing clicked, audibly.
+  The transducer choice hard-bypassed a resonant filter in one sample -- the
+  tine's coil, and the reed's electrostatic bus -- and a pickup is bench
+  hardware: you cannot change one under a note already in the air, and every
+  other bench control here reaches the player at the next strike. A shared
+  output stage has no next strike to wait for, so both are now crossfaded
+  over the shortest ramp that manufactures no transient of its own, with the
+  filter running either way so it never re-enters a live path cold. Measured
+  on the tine at 1447 times the signal's own worst second difference before,
+  and nothing measurable after.
 - The clav's third interpolation history was never cleared on a reset,
   though its two siblings were and the same hermite() reads all three.
 - The strings, reeds and rods were animated but could not be seen to move on
@@ -97,6 +107,14 @@ All notable changes to Epi are documented here. The format follows
   35 and resized it on the way.
 
 ### Added
+- A click fence for the discrete controls. The existing one sweeps the
+  continuous knobs and covers no switch at all -- which is where a click is
+  most likely, since a switch has no small step to hide in. Fifteen switches
+  on each of the five instruments, judged by the same rule: a click has to
+  exceed both an absolute bound and the worst STATIC value of the two
+  settings it moves between, so a switch that legitimately selects a
+  sharper path is not condemned for doing its job. It is the row that found
+  the transducer bypass above.
 - A row that renders the instrument, saves the project, loads it into a
   fresh processor and renders again, on each of the five instruments. The
   suite proved every parameter came BACK; nothing proved every one of them
@@ -120,6 +138,19 @@ All notable changes to Epi are documented here. The format follows
   it fences: reinstating the old behaviour fails them.
 
 ### Changed
+- Recorded, measured and deliberately not changed: the transducer options
+  are not level-matched. Against Native at otherwise-default settings the
+  reed's Magnetic is +10.9 dB and its Contact +13.5, the tine's Electro
+  -7.9, the e-grand's Electro +6.3, the clav within +/-3, and the grand's
+  choice does nothing at all -- which is right, an acoustic instrument with
+  a microphone has no pickup to swap. The eight presets that select a
+  non-default transducer each carry a compensating outGain, from -21 dB to
+  +8.5, so everything shipped is level-matched and the bench passes.
+  Matching them inside the engine is the real fix and it is a calibration
+  campaign rather than an edit: every one of those presets needs re-trimming
+  by the same amount, and any saved project sitting on a non-default
+  transducer would change level on load. The numbers are in the rows so the
+  decision can be taken deliberately.
 - Close Pop, Parlor and Harp Grand re-trimmed: the new attack moved them off
   the level bench.
 - Harp Grand's note said nylon rings the top clear where wire crowds it. It
