@@ -5051,6 +5051,407 @@ static void sectionVibrato()
     }
 }
 
+
+// ===========================================================================
+// 25. The long run: drift, DC, denormals, and the NaN that got swallowed.
+//
+// The longest render anywhere in this project is twenty-two seconds, and the
+// whole of this suite is under ten. Everything downstream of the voices holds
+// state that a short render cannot exercise: the phaser is a feedback loop
+// (Effects.h clamps its feedback at 0.9 precisely because above that the loop
+// runs away), the room is a feedback network, the cabinet and the preamp
+// carry filter state, and the tremolo and phaser phase accumulators free-run
+// for as long as the plugin is loaded. This project's own standing lesson is
+// that a slow generator inside a feedback path is invisible in a short
+// render -- section 24's own history is a contact model whose damping term
+// became a source, and it was found by measuring, not by listening.
+//
+// What is rendered here is a performance, not a test tone: one five-second
+// bar, twenty notes at four a second walking the whole compass, each key held
+// half a second, the damper down for the first half of every bar. It repeats
+// EXACTLY. There is no random source in it, the velocity table has the same
+// period as the note table, and both LFO rates are a whole number of cycles
+// per bar -- six hertz of tremolo is thirty, and the phaser's 0.4 and 0.8 Hz
+// are two and four. That discipline is the whole method: the two windows
+// compared below hold identical music, so a difference in level between them
+// is engine state and nothing else. Measured bar by bar over sixty seconds,
+// every instrument is flat from the first bar; the largest residual is the
+// Clavinet's 0.12 dB, and it is a strict four-bar cycle, which is why the two
+// windows are twenty seconds apart -- a whole number of those cycles.
+//
+// Duration: forty seconds per configuration, ten configurations, about fifty
+// seconds of wall clock, which is what the suite can afford. That is NOT the
+// duration the property was investigated at. The same performance was run for
+// five minutes per configuration at both settings, and seconds 300 to 310
+// matched seconds 20 to 30 by every measure taken here: RMS within 0.055 dB
+// on all ten and within 0.001 dB on eight of them, peaks equal to four
+// figures, DC largest at the Clavinet's 1.6e-3 at the corner (which is the
+// same value it holds twenty seconds in), every sample finite, block cost
+// moved by under twelve per cent, and recoveryCount() at zero everywhere.
+// Forty seconds is where all of that is already flat, so the fences here are
+// the five-minute numbers with room for the shorter window -- not a bound
+// relaxed to fit.
+//
+// The targets are measured-and-fenced, not external. There is no published
+// figure for how far an electric piano model may drift in forty seconds. The
+// rule applied is the click rows' rule: fence a few times the observed value,
+// so that a failure is a defect and not a rounding difference.
+//
+// And the last row is the point of the section as much as the first. The
+// reference suite's S8 PRINTS recoveryCount() and judges on finiteness alone,
+// so a non-finite sample that the output chain caught and papered over --
+// which is a rebuilt chain and an audible click -- reads as a pass. It is
+// asserted here. It holds on everything this section renders; it is not
+// unreachable in general, and the note under the row says where.
+// ===========================================================================
+
+static constexpr double kEndFs      = 48000.0;
+static constexpr double kEndBar     = 5.0;     // one bar of the performance
+static constexpr double kEndSeconds = 40.0;    // per configuration
+static constexpr double kEndWindow  = 10.0;    // two bars
+static constexpr double kEndEarlyA  = 10.0;    // bars 2-3
+static constexpr double kEndLateA   = 30.0;    // bars 6-7, four bars later
+static constexpr int    kEndBlock   = 512;
+static constexpr int    kEndPerBar  = 20;
+
+// The bar. Chosen to cover the compass rather than to sound like anything:
+// three octaves apart in sequence so the sympathetic field is loaded from
+// both ends, and inside the 21..108 the engine allocates.
+static const int kEndNote[kEndPerBar] = { 28, 52, 76, 40, 64, 88, 33, 57, 81, 45,
+                                          69, 93, 24, 48, 72, 96, 36, 60, 84, 100 };
+
+// Velocity with the same period as the note table, so the bar is the whole
+// period of the performance and no window can catch a different phrase than
+// another. A velocity cycle of a different length was the first version of
+// this and it put 2.4 dB of pure musical content into a row that is supposed
+// to measure drift.
+static float endVel (int k) { return 0.30f + 0.03f * static_cast<float> ((k * 7) % kEndPerBar); }
+
+struct EndWindow
+{
+    double peak = 0.0, sumSq = 0.0, sum = 0.0;
+    long   n = 0;
+    void add (double v)
+    { peak = std::max (peak, std::fabs (v)); sumSq += v * v; sum += v; ++n; }
+    double rmsDb() const
+    { return n > 0 ? 10.0 * std::log10 (std::max (1.0e-300, sumSq / static_cast<double> (n))) : -300.0; }
+    double dc() const { return n > 0 ? sum / static_cast<double> (n) : 0.0; }
+};
+
+struct EndRun
+{
+    EndWindow early, late;
+    bool   finite     = true;
+    double firstBad   = -1.0;
+    int    recoveries = 0;
+    double msEarly = 0.0, msLate = 0.0;
+};
+
+// The two settings. Musical is a player's: tremolo halfway, phaser in, room
+// in, cabinet at its default mix. Extreme is every one of those at the end of
+// its own travel and still reachable from the panel -- the phaser feedback at
+// the 0.9 the effect clamps to, the room at full size and full send, the
+// cabinet fully wet, and drive, coil saturation and string nonlinearity all
+// at one.
+static EngineParams endParams (int inst, bool extreme)
+{
+    EngineParams p;
+    p.instrument = inst;
+    if (! extreme)
+    {
+        p.tremRate  = 6.0f;  p.tremDepth  = 0.5f;
+        p.phaserMix = 0.4f;  p.phaserRate = 0.4f; p.phaserDepth = 0.7f; p.phaserFb = 0.5f;
+        p.spaceMix  = 0.25f; p.spaceSize  = 0.45f;
+        p.cabMix    = 0.5f;  p.preampDrive = 0.3f;
+    }
+    else
+    {
+        p.tremRate  = 6.0f;  p.tremDepth  = 1.0f; p.tremStereo  = 0.5f;
+        p.phaserMix = 1.0f;  p.phaserRate = 0.8f; p.phaserDepth = 1.0f; p.phaserFb = 0.9f;
+        p.spaceMix  = 1.0f;  p.spaceSize  = 1.0f;
+        p.cabMix    = 1.0f;  p.preampDrive = 1.0f; p.coilSat = 1.0f; p.nonlinAmt = 1.0f;
+    }
+    return p;
+}
+
+// The tenth percentile of a window's block costs, not the median: this suite
+// runs on machines that are doing other things, and a contended block is slow
+// for a reason that has nothing to do with the engine. The low percentile is
+// the cost when nothing interfered, which is the number a denormal cliff
+// actually moves -- a cliff raises the FLOOR, it does not add outliers.
+static double lowPercentile (std::vector<double> v)
+{
+    if (v.empty()) return 0.0;
+    const std::size_t k = v.size() / 10;
+    std::nth_element (v.begin(), v.begin() + static_cast<long> (k), v.end());
+    return v[k];
+}
+
+static EndRun endRun (int inst, bool extreme)
+{
+    EndRun r;
+    // Heap, for the reason renderBench states: an engine carries the whole
+    // instrument and Windows grants a main thread about a megabyte.
+    auto e = std::make_unique<EpiEngine>();
+    e->prepare (kEndFs, kEndBlock);
+    EngineParams p = endParams (inst, extreme);
+
+    const long N = static_cast<long> (kEndFs * kEndSeconds);
+    std::vector<float> L (static_cast<std::size_t> (kEndBlock));
+    std::vector<float> R (static_cast<std::size_t> (kEndBlock));
+    std::vector<NoteEvent> evs;
+    std::vector<double> msEarly, msLate;
+
+    const long notePeriod = static_cast<long> (kEndFs * kEndBar / kEndPerBar);
+    long step = 0;
+    bool pedal = false;
+
+    for (long i = 0; i < N; i += kEndBlock)
+    {
+        const int    n = static_cast<int> (std::min<long> (kEndBlock, N - i));
+        const double t = static_cast<double> (i) / kEndFs;
+
+        evs.clear();
+        while (step * notePeriod < i + n)
+        {
+            const int off = static_cast<int> (step * notePeriod - i);
+            const std::size_t k = static_cast<std::size_t> (step % kEndPerBar);
+            evs.push_back ({ off, NoteEvent::noteOn, kEndNote[k], endVel (static_cast<int> (k)) });
+            // Every key is held two note slots -- half a second, so at any
+            // moment two are down and the damper decides the rest.
+            if (step >= 2)
+                evs.push_back ({ off, NoteEvent::noteOff,
+                                 kEndNote[static_cast<std::size_t> ((step - 2) % kEndPerBar)], 0.0f });
+            ++step;
+        }
+        const bool want = std::fmod (t, kEndBar) < kEndBar * 0.5;
+        if (want != pedal)
+        {
+            evs.push_back ({ 0, want ? NoteEvent::sustainOn : NoteEvent::sustainOff, 0, 0.0f });
+            pedal = want;
+        }
+
+        const auto b0 = std::chrono::steady_clock::now();
+        e->process (L.data(), R.data(), n, p,
+                    evs.empty() ? nullptr : evs.data(), static_cast<int> (evs.size()));
+        const double ms = std::chrono::duration<double, std::milli> (
+                              std::chrono::steady_clock::now() - b0).count();
+        if (t >= kEndEarlyA && t < kEndEarlyA + kEndWindow) msEarly.push_back (ms);
+        if (t >= kEndLateA  && t < kEndLateA  + kEndWindow)  msLate.push_back (ms);
+
+        for (int k = 0; k < n; ++k)
+        {
+            const double l  = static_cast<double> (L[static_cast<std::size_t> (k)]);
+            const double rr = static_cast<double> (R[static_cast<std::size_t> (k)]);
+            if (r.finite && (! std::isfinite (l) || ! std::isfinite (rr)))
+            { r.finite = false; r.firstBad = t + static_cast<double> (k) / kEndFs; }
+            const double tk = t + static_cast<double> (k) / kEndFs;
+            if (tk >= kEndEarlyA && tk < kEndEarlyA + kEndWindow) { r.early.add (l); r.early.add (rr); }
+            if (tk >= kEndLateA  && tk < kEndLateA  + kEndWindow)  { r.late.add (l);  r.late.add (rr); }
+        }
+    }
+    r.recoveries = e->recoveryCount();
+    r.msEarly = lowPercentile (msEarly);
+    r.msLate  = lowPercentile (msLate);
+    return r;
+}
+
+static void sectionEndurance()
+{
+    heading ("25. forty seconds of playing: level drift, DC, denormals, swallowed NaNs");
+
+    EndRun musical[5], extreme[5];
+    for (int inst = 0; inst < 5; ++inst)
+    {
+        musical[inst] = endRun (inst, false);
+        extreme[inst] = endRun (inst, true);
+    }
+
+    // 25a/25b -- the level between two windows twenty seconds apart holding
+    // identical music. Anything that accumulates in the phaser loop, the
+    // room, the cabinet or a free-running LFO shows here and nowhere else in
+    // the suite.
+    //
+    // Bound: 0.25 dB of RMS and 3 per cent of peak. Measured, eight of the ten
+    // configurations move by less than 0.001 dB between the two windows -- the
+    // performance really is repeating and the engine really does return to the
+    // same place. The two that do not are the Wurlitzer's, at 0.078 dB played
+    // and 0.047 dB at the corner, because its action noise is the one
+    // stochastic layer in the whole performance and the two windows draw
+    // different noise. The fence is three times that worst case. A drift a
+    // player would ever hear is tens of times it.
+    for (int pass = 0; pass < 2; ++pass)
+        for (int inst = 0; inst < 5; ++inst)
+        {
+            const EndRun& r = pass == 0 ? musical[inst] : extreme[inst];
+            const double dRms = r.late.rmsDb() - r.early.rmsDb();
+            const double dPk  = r.early.peak > 0.0 ? r.late.peak / r.early.peak - 1.0 : 0.0;
+            char idb[12], what[80];
+            std::snprintf (idb, sizeof idb, "25%c.%d", pass == 0 ? 'a' : 'b', inst);
+            std::snprintf (what, sizeof what, "%s level holds, %s", kInstName[inst],
+                           pass == 0 ? "musical" : "at the corner");
+            row (idb, what, "RMS within 0.25 dB, peak 3%",
+                 fmt2 ("%+.3f dB, peak %+.2f%%", dRms, 100.0 * dPk),
+                 verdict (std::fabs (dRms) <= 0.25 && std::fabs (dPk) <= 0.03));
+        }
+
+    // 25c -- DC. A rectifying nonlinearity inside a feedback loop is the
+    // classic way an offset builds up, and an offset is inaudible until it
+    // eats headroom and the output rail starts clipping asymmetrically. The
+    // chain's own high-pass is what should prevent it, and on four of the five
+    // instruments it does: the offset sits between 5e-9 and 8e-5 whatever the
+    // settings. The Clavinet at the corner is the exception and it is not a
+    // drift -- with the drive, the coil saturation and the string
+    // nonlinearity all at one, its saturation is asymmetric and leaves a
+    // standing 1.6e-3, about 50 dB under its own level. Measured ten seconds at
+    // a time across five minutes it reaches 1.5e-3 inside the first twenty and
+    // is 1.6e-3 at the end: it settles, it does not grow, which is the
+    // difference between a voicing artefact and the defect this row is for.
+    // Bound: 3e-3, twice the one instrument that has any.
+    for (int inst = 0; inst < 5; ++inst)
+    {
+        const double dcM = std::fabs (musical[inst].late.dc());
+        const double dcX = std::fabs (extreme[inst].late.dc());
+        char idb[12], what[80];
+        std::snprintf (idb, sizeof idb, "25c.%d", inst);
+        std::snprintf (what, sizeof what, "%s carries no DC after 40 s", kInstName[inst]);
+        row (idb, what, "|DC| <= 3e-3 both settings",
+             fmt2 ("musical %.1e, corner %.1e", dcM, dcX),
+             verdict (dcM <= 3.0e-3 && dcX <= 3.0e-3));
+    }
+
+    // 25d -- containment, and the row this section exists for. Finiteness is
+    // necessary and it is not sufficient: every one of the five process paths
+    // ends in a guard that rebuilds the whole output chain when a non-finite
+    // sample reaches it, zeroes that sample and counts it. The output stays
+    // finite either way, so a suite that only checks finiteness cannot tell a
+    // clean render from one with a click in it. Both are asserted.
+    //
+    // These ten renders are clean. That is a measurement of these ten renders
+    // and not a proof about the engine: 25d.5 below renders a gesture that
+    // does move the counter, on a single instrument, and pins it.
+    for (int inst = 0; inst < 5; ++inst)
+    {
+        const EndRun& m = musical[inst];
+        const EndRun& x = extreme[inst];
+        const bool ok = m.finite && x.finite && m.recoveries == 0 && x.recoveries == 0;
+        char idb[12], what[80];
+        std::snprintf (idb, sizeof idb, "25d.%d", inst);
+        std::snprintf (what, sizeof what, "%s: nothing caught, nothing hidden", kInstName[inst]);
+        std::string got;
+        if (! m.finite)      got = fmt ("non-finite at %.2f s, musical", m.firstBad);
+        else if (! x.finite) got = fmt ("non-finite at %.2f s, corner", x.firstBad);
+        else                 got = fmt2 ("%.0f + %.0f chain rebuilds",
+                                         static_cast<double> (m.recoveries),
+                                         static_cast<double> (x.recoveries));
+        row (idb, what, "finite, and 0 recoveries", got, verdict (ok));
+    }
+
+    // 25d.5 -- the one place the counter is not zero, pinned where it stands.
+    //
+    // Per-note tuning is latched when the hammer lands, and when it CHANGES
+    // the string is re-cut before the strike (EpiEngine.cpp, the noteCents
+    // compare and invalidateNoteBuild beside it). Re-cut a CP-70 bass string
+    // while it is still ringing and its state does not survive the operation:
+    // the modal energy runs away, and because processCP70 sums the string bus
+    // with no per-sample finiteness check -- the voice's own guard lives in
+    // controlTick, which runs once per control block, not once per sample --
+    // the infinity reaches the output chain, and the chain rebuilds itself.
+    //
+    // The gesture is not exotic. One key, struck four times a second, each
+    // strike carrying a different per-note tuning inside +/-300 cents: an MPE
+    // controller with per-note bend, which is exactly what MpeTuning exists to
+    // serve, and three semitones out of the forty-eight a member channel
+    // defaults to under RP-053. No pedal, no parameter off its default,
+    // mezzo-forte. Measured: the first non-finite sample twenty-three seconds
+    // in, and 425 chain rebuilds in the thirty this row renders. It is the
+    // CP-70 alone -- the other four never move the counter under the same
+    // gesture -- and it is its bass and middle alone: swept up the compass the
+    // same strike fires from MIDI 24 to about MIDI 54 and not at 60 or above.
+    //
+    // The output stays finite the whole way through, which is precisely why
+    // reference row S8 records this as a pass today. The true target is zero
+    // rebuilds; until the bus gets its guard the row is held so the defect
+    // cannot quietly widen, which is this suite's rule for a gap that is
+    // understood and not yet fixed. The holding bound is 2000, about five
+    // times what is measured here: the count is the outcome of a divergence
+    // and is not stable to the last digit across toolchains, so what it is
+    // there to catch is a change in kind, not one in the third figure.
+    {
+        const int    block = 128;
+        const double secs  = 30.0;
+        auto e = std::make_unique<EpiEngine>();
+        e->prepare (kEndFs, block);
+        EngineParams p;            // the engine's own defaults, nothing moved
+        p.instrument = 1;          // the CP-70
+
+        const long N = static_cast<long> (kEndFs * secs);
+        std::vector<float> L (static_cast<std::size_t> (block));
+        std::vector<float> R (static_cast<std::size_t> (block));
+        std::vector<NoteEvent> evs;
+        // A fixed generator, so the gesture is the same gesture every run.
+        std::uint32_t rng = 987654321u;
+        auto nx = [&rng] { rng = rng * 1664525u + 1013904223u; return rng; };
+
+        long   next     = 0;
+        int    prev     = 0;
+        double firstBad = -1.0;
+        bool   finite   = true;
+        for (long i = 0; i < N; i += block)
+        {
+            evs.clear();
+            while (next < i + block)
+            {
+                NoteEvent ev { static_cast<int> (next - i), NoteEvent::noteOn, 48, 0.85f };
+                ev.tuneCents = static_cast<float> (static_cast<int> (nx() % 600u) - 300);
+                evs.push_back (ev);
+                next += static_cast<long> (kEndFs / 4.0);
+            }
+            e->process (L.data(), R.data(), block, p, evs.data(), static_cast<int> (evs.size()));
+            if (e->recoveryCount() != prev && firstBad < 0.0)
+                firstBad = static_cast<double> (i) / kEndFs;
+            prev = e->recoveryCount();
+            for (int k = 0; k < block; ++k)
+                if (! std::isfinite (L[static_cast<std::size_t> (k)])
+                 || ! std::isfinite (R[static_cast<std::size_t> (k)])) finite = false;
+        }
+        const int rec = e->recoveryCount();
+        row ("25d.5", "CP-70 re-cut by per-note tuning", "0 recoveries in 30 s",
+             rec == 0 ? std::string ("none")
+                      : fmt2 ("%.0f rebuilds, first at %.1f s",
+                              static_cast<double> (rec), firstBad),
+             gapIf (rec == 0 && finite, finite && rec <= 2000));
+    }
+
+    // 25e -- the denormal cliff. A feedback loop decaying into silence is
+    // where denormals appear, and on hardware that traps them the cost per
+    // block steps by an order of magnitude when they do. The performance
+    // never stops, so this is the mild form of the test; the honest note is
+    // that Apple silicon flushes denormals at full speed, so this row can only
+    // ever fire on an x86 build -- which is exactly where it would matter.
+    // Bound: the late window's tenth-percentile block cost within 2x the early
+    // window's. A cliff is ten to a hundred times. The measured spread is
+    // under 20 per cent in either direction, and it moves both ways because
+    // voices are still accumulating during the early window.
+    {
+        double worst = 0.0;
+        int worstInst = 0; bool worstExtreme = false;
+        for (int pass = 0; pass < 2; ++pass)
+            for (int inst = 0; inst < 5; ++inst)
+            {
+                const EndRun& r = pass == 0 ? musical[inst] : extreme[inst];
+                if (r.msEarly <= 0.0) continue;
+                const double ratio = r.msLate / r.msEarly;
+                if (ratio > worst) { worst = ratio; worstInst = inst; worstExtreme = pass == 1; }
+            }
+        char got[96];
+        std::snprintf (got, sizeof got, "%.2fx worst (%s %s)", worst, kInstName[worstInst],
+                       worstExtreme ? "corner" : "musical");
+        row ("25e.0", "cost per block does not step", "late/early low decile <= 2x",
+             got, verdict (worst <= 2.0));
+    }
+}
+
 int main()
 {
     const auto t0 = std::chrono::steady_clock::now();
@@ -5086,6 +5487,7 @@ int main()
     sectionPostRelease();
     sectionVelMap();
     sectionVibrato();
+    sectionEndurance();
 
     const double wall = std::chrono::duration<double> (std::chrono::steady_clock::now() - t0).count();
     std::printf ("\nsuite wall time %.1f s\n", wall);

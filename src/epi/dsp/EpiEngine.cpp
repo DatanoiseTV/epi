@@ -1906,7 +1906,40 @@ void EpiEngine::processCP70 (float* outL, float* outR, int numSamples,
                 }
             }
 
-            bus += v.process (cfg);
+            // Guarded per sample, as the frame reaction above it is and as
+            // the tine's force sum is. A string re-cut while it is still
+            // ringing can diverge, and the voice's own catch lives in
+            // controlTick, which runs once per control block -- so without
+            // this the infinity crosses the whole gap between the sample it
+            // appears in and the block that notices, reaches the output
+            // chain, and tears down and rebuilds the preamp, the cabinet,
+            // the phaser and the room.
+            //
+            // Reachable, and not by anything exotic. Per-note tuning is
+            // latched at the strike and a CHANGED value re-cuts the string
+            // before the hammer lands. Retuning a resonator that is still
+            // ringing keeps its state while changing its stiffness, so its
+            // potential energy jumps by the stiffness ratio -- and doing
+            // that over and over at the moment the displacement happens to
+            // be large is parametric pumping, the same trick as a child on
+            // a swing. Measured on the CP-70 at engine defaults, one key
+            // struck four times a second with a different per-note tuning
+            // inside +/-300 cents each time -- an MPE controller with
+            // per-note bend, three semitones out of the forty-eight a
+            // member channel defaults to under RP-053 -- the first
+            // non-finite sample arrives at 23.5 s and the chain is rebuilt
+            // 425 times in thirty seconds. It is the bass and middle of
+            // this instrument alone: from MIDI 24 to about 54, and never at
+            // 60 or above.
+            //
+            // This bounds the damage to the sample it happens in and lets
+            // the voice's own recovery do the rest. It does not stop the
+            // pumping, which is a property of retuning a ringing resonator
+            // and wants the retune path to preserve energy rather than
+            // state; row 25d.5 holds the count so that stays visible.
+            double vOut = v.process (cfg);
+            if (! std::isfinite (vOut)) vOut = 0.0;
+            bus += vOut;
             v.applyDamperIfDue();
             ++active;
             const float amp = static_cast<float> (std::abs (v.tipDisplacement()));

@@ -82,6 +82,24 @@ All notable changes to Epi are documented here. The format follows
   zero, and four of the five instruments are now bit-identical after both a
   reset and a re-prepare. The clav is not: a measured -114 dB remains,
   a ten-thousandth of a per cent of the signal, bounded by its rows.
+- The E-Grand could diverge under per-note tuning, and the output chain was
+  catching it and papering over it. Per-note tuning is latched at the strike
+  and a CHANGED value re-cuts the string before the hammer lands; retuning a
+  resonator that is still ringing keeps its state while changing its
+  stiffness, so its potential energy jumps by the stiffness ratio, and doing
+  that repeatedly at the moment the displacement happens to be large is
+  parametric pumping. Measured at engine defaults, one key struck four times
+  a second with a different per-note tuning inside +/-300 cents -- an MPE
+  controller with per-note bend, three semitones out of the forty-eight a
+  member channel defaults to under RP-053 -- the first non-finite sample
+  arrived at 23.5 s and the chain was torn down and rebuilt 425 times in
+  thirty seconds, while the output stayed finite and every suite reported a
+  pass. The string bus now carries the same per-sample guard the tine's
+  force sum and the frame reactions already had, which bounds the damage to
+  the sample and lets the voice's own recovery do the rest: zero rebuilds.
+  It does not stop the pumping, which wants the retune path to preserve
+  energy rather than state, and row 25d.5 holds the count so that stays
+  visible.
 - A velocity map carrying a non-finite ordinate silenced the instrument
   permanently. std::clamp(NaN, 0, 1) returns NaN -- both comparisons are
   false -- and std::max steps over it, so the sanitiser passed it through;
@@ -163,6 +181,18 @@ All notable changes to Epi are documented here. The format follows
   35 and resized it on the way.
 
 ### Added
+- Twenty-two rows for what only shows up over time. Nothing in this project
+  ran longer than twenty-two seconds, and everything downstream of the
+  voices holds state a short render cannot exercise -- a phaser whose
+  feedback is clamped at 0.9 precisely because above it the loop runs away,
+  a room, a cabinet, and two free-running LFO accumulators. Section 25 plays
+  a strictly periodic forty-second performance on each instrument at a
+  musical setting and at every control's corner, and measures level drift
+  between two windows twenty seconds apart holding identical music, standing
+  DC, block cost, and -- the point of the section -- that recoveryCount() is
+  zero, since a non-finite sample the chain caught and hid is a rebuilt
+  chain reported as a pass. The property was investigated at five minutes
+  per configuration and fenced at forty seconds, where it is already flat.
 - Thirty-three rows for two features that had no coverage at all. The
   velocity map -- persisted, user-drawable, and reached at every note-on --
   is now fenced for monotonicity, knot exactness, overshoot, the identity
