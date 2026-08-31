@@ -163,6 +163,19 @@ All notable changes to Epi are documented here. The format follows
   35 and resized it on the way.
 
 ### Added
+- Thirty-three rows for two features that had no coverage at all. The
+  velocity map -- persisted, user-drawable, and reached at every note-on --
+  is now fenced for monotonicity, knot exactness, overshoot, the identity
+  short-circuit being bit-transparent, clamping outside [0,1], reaching all
+  five banks, and refusing a non-finite ordinate. The suitcase vibrato, the
+  instrument's signature effect, is fenced for rate against the four sample
+  rates it is built for and at block 1/64/512, for the two photocells
+  opposing at width 1 and running together at width 0, for how much survives
+  a mono fold, for depth being linear in the gain excursion and transparent
+  at zero, for the header's own "barely reaches 20 dB at speed" figure, and
+  for a width flip not being able to outrun the photocell's attack. Where
+  the code publishes a figure the row cites it; everywhere else the target
+  is the measured value being fenced, and each row says which it is.
 - The project round-trip row now scribbles all four per-note benches -- the
   tine's geometry, the e-grand's and the grand's strings, the tine's pickup
   -- where before it moved only parameters and the mic stage. Three of the

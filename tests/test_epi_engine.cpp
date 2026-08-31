@@ -4137,6 +4137,920 @@ static void sectionPostRelease()
 
 // ===========================================================================
 
+// ===========================================================================
+// 23. the velocity map
+// ===========================================================================
+//
+// The five drawable ordinates over {0, 1/4, 1/2, 3/4, 1}, set by
+// EpiEngine::setVelMap and read once per strike in handleEvent as
+// vel = pow (velMapEval (v), shape). It is the only player-facing curve that
+// sits BEFORE everything the instrument does with a strike, so every row here
+// is measured at the output of the whole instrument, never on the interpolant
+// in isolation.
+//
+// Two facts make that measurable with no tolerance to spend. First, the
+// rendered level is strictly monotone in velocity on the tine: 33 velocities
+// from 0 to 1 give zero inversion in peak and zero in RMS (measured; the clav
+// is the one bank that scatters, by 0.04 dB, so the curve rows render the
+// tine). Second, the Hermite basis is exact at its knots -- at t = 0 it is
+// y0 and at t = 1 it is y1, with every other term multiplied by zero -- so a
+// map evaluated AT a knot velocity must reproduce the untouched engine at the
+// ordinate's own velocity BIT FOR BIT. That turns "is the curve right" into a
+// buffer comparison instead of a level tolerance.
+//
+// The setter's contract, in its own words, is that a curve can never invert
+// the player's dynamics. It gets there by clamping to [0, 1] and then taking
+// a running maximum -- NOT by sorting, whatever the comment beside it says:
+// {1, 0, 0, 0, 0} becomes {1, 1, 1, 1, 1} (every velocity at full), where a
+// sort would have given {0, 0, 0, 0, 1}. Row 23.5 pins the behaviour that
+// ships.
+
+static void sectionVelMap()
+{
+    heading ("23. velocity map: monotone, knot-exact, identity-free");
+
+    const double fs    = 48000.0;
+    const int    block = 512;
+    const double secs  = 0.30;
+    const int    note  = 60;
+    // A whole number of blocks, so a mid-render event can be placed on a
+    // block boundary by index (fs*secs alone is not a multiple of 512, and a
+    // trigger written as i == N would then never fire).
+    const int    N     = block * static_cast<int> (fs * secs / block);
+
+    // One strike on a fresh engine, optionally through a drawn map. A fresh
+    // engine per strike is the point: the map is engine state, so a shared
+    // one would let an earlier row's curve leak into a later row's audio.
+    auto play = [&] (const float* map, float vel, int inst) -> Stereo
+    {
+        EpiEngine e;
+        e.prepare (fs, block);
+        if (map != nullptr) e.setVelMap (map);
+        EngineParams p = measParams (inst);
+        Stereo s;
+        s.fs = fs;
+        s.L.assign (static_cast<std::size_t> (N), 0.0f);
+        s.R.assign (static_cast<std::size_t> (N), 0.0f);
+        for (int i = 0; i < N; i += block)
+        {
+            const int n = std::min (block, N - i);
+            NoteEvent ev { 0, NoteEvent::noteOn, note, vel };
+            e.process (s.L.data() + i, s.R.data() + i, n, p,
+                       i == 0 ? &ev : nullptr, i == 0 ? 1 : 0);
+        }
+        return s;
+    };
+    auto same = [] (const Stereo& a, const Stereo& b) { return a.L == b.L && a.R == b.R; };
+
+    // What setVelMap actually holds once it has clamped and monotonised.
+    auto effective = [] (const float* in, float* out)
+    {
+        for (int i = 0; i < 5; ++i) out[i] = std::clamp (in[i], 0.0f, 1.0f);
+        for (int i = 1; i < 5; ++i) out[i] = std::max (out[i], out[i - 1]);
+    };
+
+    const float kIdent[5] = { 0.0f, 0.25f, 0.5f, 0.75f, 1.0f };
+
+    // 23.0 -- the identity ordinates are the untouched engine, on all five
+    // banks. The evaluator short-circuits on an identity flag rather than
+    // running the cubic, and the claim beside that flag is bit-exactness, so
+    // the row spends no tolerance: the default map is not allowed to be a
+    // filter that happens to be nearly transparent.
+    //
+    // The velocities are MIDI 5, 56 and 111 because the cubic evaluated on
+    // the identity ordinates does NOT reproduce those three: 37 of the 128
+    // MIDI velocities come back up to 6e-8 away from their input in float,
+    // and at the other 91 the round trip is exact, so a row tested there
+    // would pass with the short-circuit deleted and prove nothing.
+    {
+        const int kVel[3] = { 5, 56, 111 };
+        int exact = 0;
+        for (int inst = 0; inst < 5; ++inst)
+            for (const int k : kVel)
+            {
+                const float v = static_cast<float> (k) / 127.0f;
+                if (same (play (nullptr, v, inst), play (kIdent, v, inst))) ++exact;
+            }
+        row ("23.0", "identity map == untouched engine", "bit-identical, 15 of 15",
+             fmt ("%.0f/15 exact", static_cast<double> (exact)), verdict (exact == 15));
+    }
+
+    // 23.1 -- knot exactness. At v = k/4 the Hermite basis collapses to the
+    // ordinate itself, so a map must render bit-identically to the untouched
+    // engine driven at that ordinate's velocity. This is the row that says
+    // the curve carries the value the player drew, not something 0.3 dB away
+    // from it -- and it holds the interpolant to the grid it is defined on.
+    {
+        const float m[5] = { 0.05f, 0.30f, 0.42f, 0.80f, 0.95f };
+        float y[5];
+        effective (m, y);
+        int exact = 0;
+        for (int k = 0; k < 5; ++k)
+            if (same (play (m, 0.25f * static_cast<float> (k), 0), play (nullptr, y[k], 0))) ++exact;
+        row ("23.1", "knot velocity renders its ordinate", "bit-identical, 5 knots",
+             fmt ("%.0f/5 exact", static_cast<double> (exact)), verdict (exact == 5));
+    }
+
+    // 23.2 / 23.3 -- the two properties a monotone cubic exists to have,
+    // measured through the instrument. Six adversarial curves: a descending
+    // input (exercises the setter), zero secants at both ends, a near-flat
+    // interior shelf, both constants, and a saw. 17 velocities each.
+    //
+    // 23.2: the rendered peak never falls as velocity rises. 23.3: it never
+    // leaves the bracket its own segment's ordinates set -- the classic
+    // failure of a badly limited monotone cubic is a lobe that swings past a
+    // knot, which here would be a note LOUDER than the loudest velocity the
+    // player drew for that part of the curve. Both bounds are 1e-5 of peak
+    // amplitude, which is -96 dBFS against the 0.64 full-velocity peak: float
+    // slack in the cubic, nothing else.
+    {
+        const float maps[6][5] = { { 1.0f, 0.0f, 0.0f, 0.0f, 0.0f },
+                                   { 0.0f, 0.0f, 1.0f, 1.0f, 1.0f },
+                                   { 0.0f, 0.9f, 0.91f, 0.92f, 1.0f },
+                                   { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f },
+                                   { 1.0f, 1.0f, 1.0f, 1.0f, 1.0f },
+                                   { 0.0f, 1.0f, 0.0f, 1.0f, 0.0f } };
+        double worstDrop = 0.0, worstOver = 0.0;
+        for (const auto& m : maps)
+        {
+            float y[5];
+            effective (m, y);
+            double knot[5];
+            for (int k = 0; k < 5; ++k) knot[k] = peakAbs (play (nullptr, y[k], 0));
+            double prev = -1.0;
+            for (int k = 0; k <= 16; ++k)
+            {
+                const float v = static_cast<float> (k) / 16.0f;
+                const double q = peakAbs (play (m, v, 0));
+                if (prev >= 0.0) worstDrop = std::max (worstDrop, prev - q);
+                const int seg = std::min (3, static_cast<int> (v * 4.0f));
+                worstOver = std::max (worstOver,
+                                      std::max (std::min (knot[seg], knot[seg + 1]) - q,
+                                                q - std::max (knot[seg], knot[seg + 1])));
+                prev = q;
+            }
+        }
+        row ("23.2", "rendered level never falls with velocity", "drop <= 1e-5, 6 curves",
+             fmt ("%.2e", worstDrop), verdict (worstDrop <= 1.0e-5));
+        row ("23.3", "no lobe past a knot (overshoot)", "excess <= 1e-5, 6 curves",
+             fmt ("%.2e", worstOver), verdict (worstOver <= 1.0e-5));
+    }
+
+    // 23.4 -- an INTERIOR flat shelf is flat, bit for bit. {0, .3, .3, .3, 1}
+    // is the curve a player draws to park the middle of the keyboard at one
+    // level, and it is the shape that catches a slope rule which is not
+    // monotone: the two ordinates either side of a flat span pull an
+    // unlimited slope (a Catmull-Rom or arithmetic-mean rule) into a bulge
+    // above the shelf and a dip below it, and the shelf sits far enough from
+    // 0 and 1 that the evaluator's output clamp cannot hide either. Measured
+    // with an arithmetic-mean slope this curve reads 0.319 at v = 0.375 and
+    // 0.256 at v = 0.625 instead of 0.300; the zero-secant guard in the
+    // Fritsch-Carlson slope makes both exactly 0.300, so the row compares
+    // buffers and not levels. The endpoint separation is carried alongside so
+    // "flat" cannot be satisfied by an instrument that has gone silent.
+    {
+        const float m[5] = { 0.0f, 0.3f, 0.3f, 0.3f, 1.0f };
+        const Stereo mid = play (m, 0.25f, 0);
+        const int flat = static_cast<int> (same (mid, play (m, 0.375f, 0)))
+                       + static_cast<int> (same (mid, play (m, 0.5f,   0)))
+                       + static_cast<int> (same (mid, play (m, 0.625f, 0)))
+                       + static_cast<int> (same (mid, play (m, 0.75f,  0)));
+        const double sep = 20.0 * std::log10 (std::max (1.0e-12, peakAbs (play (m, 1.0f, 0)))
+                                            / std::max (1.0e-12, peakAbs (play (m, 0.0f, 0))));
+        row ("23.4", "interior flat shelf renders bit-constant", "4/4 identical, ends > 40 dB apart",
+             fmt2 ("%.0f/4, %.1f dB", static_cast<double> (flat), sep),
+             verdict (flat == 4 && sep > 40.0));
+    }
+
+    // 23.5 -- the setter's monotonisation is a running maximum, not a sort.
+    // {1, 0, 0, 0, 0} therefore becomes {1, 1, 1, 1, 1}: the softest possible
+    // strike renders bit-identically to the untouched engine at full velocity.
+    // A sort would have made the same input the near-silent {0, 0, 0, 0, 1}
+    // -- the opposite instrument -- so this row is the one that pins which of
+    // the two the player actually gets. (The comment beside setVelMap says
+    // "sorts"; the code says running maximum, and the code is what ships.)
+    {
+        const float m[5] = { 1.0f, 0.0f, 0.0f, 0.0f, 0.0f };
+        const bool asMax  = same (play (m, 0.0f, 0), play (nullptr, 1.0f, 0));
+        const bool asSort = same (play (m, 0.0f, 0), play (nullptr, 0.0f, 0));
+        row ("23.5", "descending input lifts to running max", "v=0 == untouched v=1, exact",
+             asMax ? "running max (exact)" : (asSort ? "SORTED" : "NEITHER"),
+             verdict (asMax && ! asSort));
+    }
+
+    // 23.6 -- the map is engine-wide, not a tine feature. handleEvent computes
+    // one velocity and hands it to whichever bank is selected, so a full-scale
+    // map must move all five identically: v = 0.1 through {1,1,1,1,1} is the
+    // untouched engine at v = 1.0, bit for bit, on every instrument.
+    {
+        const float m[5] = { 1.0f, 1.0f, 1.0f, 1.0f, 1.0f };
+        int exact = 0;
+        for (int inst = 0; inst < 5; ++inst)
+            if (same (play (m, 0.1f, inst), play (nullptr, 1.0f, inst))) ++exact;
+        row ("23.6", "map reaches all five banks", "bit-identical, all 5",
+             fmt ("%.0f/5 exact", static_cast<double> (exact)), verdict (exact == 5));
+    }
+
+    // 23.7 -- the evaluator's input is clamped before it reaches the curve, so
+    // a host that sends velocity outside [0, 1] gets the endpoint ordinate and
+    // not an extrapolated cubic (which, with the endpoint slope equal to the
+    // end secant, would run straight past 1 and off the top of the curve).
+    // Measured under a non-identity map so the clamp cannot hide behind the
+    // identity short-circuit.
+    {
+        const float m[5] = { 0.1f, 0.3f, 0.5f, 0.7f, 0.9f };
+        const bool hi = same (play (m,  1.5f, 0), play (m, 1.0f, 0));
+        const bool lo = same (play (m, -0.5f, 0), play (m, 0.0f, 0));
+        row ("23.7", "velocity outside [0,1] clamps to the ends", "both ends bit-identical",
+             fmt2 ("hi %.0f, lo %.0f", hi ? 1.0 : 0.0, lo ? 1.0 : 0.0), verdict (hi && lo));
+    }
+
+    // 23.8 -- what the curve is for: it narrows or widens the dynamic range
+    // the player has to work with. A compressed map {0.4 .. 0.6} must deliver
+    // exactly the untouched engine's span between those two velocities, and
+    // that span must be far narrower than the instrument's own 0-to-1 range.
+    // Both numbers are held, so a curve that quietly re-expands (or collapses)
+    // the range fails even though every monotonicity row above still passes.
+    {
+        const float m[5] = { 0.4f, 0.45f, 0.5f, 0.55f, 0.6f };
+        const double a = peakAbs (play (m, 0.0f, 0)), b = peakAbs (play (m, 1.0f, 0));
+        const double ra = peakAbs (play (nullptr, 0.4f, 0)), rb = peakAbs (play (nullptr, 0.6f, 0));
+        const double full = 20.0 * std::log10 (peakAbs (play (nullptr, 1.0f, 0))
+                                             / std::max (1.0e-12, peakAbs (play (nullptr, 0.0f, 0))));
+        const double span    = 20.0 * std::log10 (std::max (1.0e-12, b) / std::max (1.0e-12, a));
+        const double refSpan = 20.0 * std::log10 (std::max (1.0e-12, rb) / std::max (1.0e-12, ra));
+        row ("23.8", "compressed curve narrows the range", "span == ref +/-0.01 dB, < full-20 dB",
+             fmt2 ("%.2f dB (ref %.2f)", span, refSpan),
+             verdict (std::fabs (span - refSpan) <= 0.01 && span < full - 20.0));
+    }
+
+    // 23.9 -- a non-finite ordinate. KNOWN GAP: setVelMap clamps and
+    // monotonises precisely so that no drawn curve can reach the strike as
+    // something the instrument cannot play, but neither std::clamp nor
+    // std::max rejects a NaN -- clamp returns it (both comparisons are false)
+    // and the running maximum steps over it -- so {0, 0.9, NaN, 0.9, 1}
+    // survives the setter intact, the identity check misses it (a NaN
+    // comparison is false, so the ordinate looks "identity" and the OTHER
+    // ordinates clear the flag), and every velocity evaluates to NaN because
+    // the Hermite term (t^3-t^2)*m1 is 0*NaN = NaN even at t = 0. The strike
+    // velocity is then NaN and the note it lands on is dead for good: exactly
+    // 0.0 out, and restoring the identity map does not bring it back --
+    // only EpiEngine::reset() does.
+    //
+    // It is reachable from saved state, not only in theory: the vmap property
+    // is restored with juce::String::getFloatValue, and JUCE's readDoubleValue
+    // parses "nan" explicitly and returns a quiet NaN (juce_CharacterFunctions.h,
+    // the 'n'/'N' case) rather than falling back to 0. A vmap string that
+    // carries one -- hand-edited, truncated, written by an older or a broken
+    // build -- silences the instrument every time that session is opened, and
+    // no control in the plugin brings it back.
+    //
+    // Held until fixed: the damage does not spread past the notes struck while
+    // the bad curve is installed. The one-line fix is a finite check at the top
+    // of setVelMap (return early on any non-finite ordinate), after which this
+    // row reads PASS -- verified by applying it.
+    {
+        const float bad[5] = { 0.0f, 0.9f, std::nanf (""), 0.9f, 1.0f };
+        const double poisoned = peakAbs (play (bad, 0.8f, 0));
+        const double clean    = peakAbs (play (nullptr, 0.8f, 0));
+
+        // Blast radius: strike the poisoned note, put the identity map back,
+        // then strike a note that was never touched while the bad map was
+        // installed, and compare it against the same sequence on a clean
+        // engine. Every note struck WHILE the NaN map is installed is dead --
+        // that is the defect -- so what is held here is that recovery is
+        // possible at all: an untouched note still plays after the curve is
+        // reset, and the engine as a whole has not gone silent. The bound is
+        // 1 dB rather than a buffer comparison because the clean reference
+        // still has the first note ringing under the second and the poisoned
+        // one does not; measured, that accounts for 0.24 dB. A NaN that took
+        // the shared bus down with it would read -228 dB here.
+        auto neighbour = [&] (const float* map) -> double
+        {
+            EpiEngine e;
+            e.prepare (fs, block);
+            if (map != nullptr) e.setVelMap (map);
+            EngineParams p = measParams (0);
+            std::vector<float> L (static_cast<std::size_t> (block)),
+                               R (static_cast<std::size_t> (block));
+            double pk = 0.0;
+            for (int i = 0; i < 2 * N; i += block)
+            {
+                const int n = std::min (block, 2 * N - i);
+                if (i == N) e.setVelMap (kIdent);
+                NoteEvent ev { 0, NoteEvent::noteOn, i == 0 ? note : note + 12, 0.8f };
+                const bool fire = (i == 0 || i == N);
+                e.process (L.data(), R.data(), n, p, fire ? &ev : nullptr, fire ? 1 : 0);
+                if (i >= N)
+                    for (int k = 0; k < n; ++k)
+                        if (std::isfinite (L[k])) pk = std::max (pk, std::fabs (static_cast<double> (L[k])));
+            }
+            return pk;
+        };
+        const double nb = neighbour (bad), nc = neighbour (nullptr);
+        const double nbDb = 20.0 * std::log10 (std::max (1.0e-12, nb) / std::max (1.0e-12, nc));
+        const bool rejected = poisoned > 0.5 * clean;         // the fix: NaN map ignored
+        const bool held     = poisoned == 0.0 && std::fabs (nbDb) <= 1.0;
+        row ("23.9", "non-finite ordinate cannot kill a note", "map rejected, note plays",
+             fmt2 ("struck note %.2e, neighbour %+.3f dB", poisoned, nbDb),
+             gapIf (rejected, held));
+    }
+
+    // 23.10 -- the identity flag is a latch that has to open again. Draw a
+    // curve, then draw the identity ordinates back: the engine must return to
+    // bit-exact transparency, not to a cubic that merely evaluates close to
+    // one. This is the row that catches a short-circuit set once and never
+    // cleared -- which would leave RESET in the workshop looking like it
+    // worked while every strike still went through the interpolant.
+    {
+        const float m[5] = { 0.0f, 0.9f, 0.91f, 0.92f, 1.0f };
+        EpiEngine e;
+        e.prepare (fs, block);
+        e.setVelMap (m);
+        e.setVelMap (kIdent);
+        EngineParams p = measParams (0);
+        Stereo s;
+        s.fs = fs;
+        s.L.assign (static_cast<std::size_t> (N), 0.0f);
+        s.R.assign (static_cast<std::size_t> (N), 0.0f);
+        for (int i = 0; i < N; i += block)
+        {
+            const int n = std::min (block, N - i);
+            NoteEvent ev { 0, NoteEvent::noteOn, note, 0.3f };
+            e.process (s.L.data() + i, s.R.data() + i, n, p, i == 0 ? &ev : nullptr, i == 0 ? 1 : 0);
+        }
+        const bool back = same (s, play (nullptr, 0.3f, 0));
+        row ("23.10", "identity redrawn is transparent again", "bit-identical to untouched",
+             back ? "identical" : "DIFFERS", verdict (back));
+    }
+}
+
+// ===========================================================================
+// 24. The suitcase vibrato: the panner, the tremolo, and the photocells
+//
+// SuitcaseVibrato (OutputChain.h) is the instrument's signature effect and it
+// had no coverage at all: tremRate appeared only in knob-sweep and fuzz-range
+// tables, never as a measured rate. The Wurlitzer's tremolo has proper rows
+// (wurli M1/M2); this is the same discipline applied to the Rhodes.
+//
+// The gain pair is measured two ways. Unit level runs SuitcaseVibrato with a
+// constant 1.0 input, so l and r ARE gL and gR. Engine level renders the same
+// chord twice -- once at the depth under test, once at depth 0 -- and divides
+// the two rectified envelopes; the voices, the coil, the preamp and the
+// decimator are identical between the renders, so the quotient is the gain
+// pair as it survives the whole chain. Rate measured off the quotient at a
+// 2 ms envelope agrees with the unit-level rate to better than 0.1%, which is
+// what makes the engine rows trustworthy.
+//
+// Where the header publishes a figure ("fast ones barely reach 20 dB", the
+// 2.5 ms / 35 ms photocell) the row asserts against it. Everywhere else the
+// target is THE MEASURED VALUE BEING FENCED, not an external one: the
+// correlation of -0.875, the 3.59 dB that survives a mono fold, the 1.40 dB
+// dip at the middle of the width knob. Those are stated as such in the
+// comment beside each row so nobody later mistakes a fence for a citation.
+// ===========================================================================
+
+// --- measurement -----------------------------------------------------------
+
+// Pearson correlation over [i0, i1).
+static double pearson (const std::vector<double>& a, const std::vector<double>& b,
+                       std::size_t i0, std::size_t i1)
+{
+    const std::size_t n = i1 - i0;
+    double ma = 0.0, mb = 0.0;
+    for (std::size_t i = i0; i < i1; ++i) { ma += a[i]; mb += b[i]; }
+    ma /= static_cast<double> (n);
+    mb /= static_cast<double> (n);
+    double num = 0.0, da = 0.0, db = 0.0;
+    for (std::size_t i = i0; i < i1; ++i)
+    {
+        const double x = a[i] - ma, y = b[i] - mb;
+        num += x * y; da += x * x; db += y * y;
+    }
+    return num / std::sqrt (std::max (1.0e-300, da * db));
+}
+
+// Modulation rate: upward crossings of the trace's own mean, first to last.
+static double lfoRate (const std::vector<double>& g, double fs,
+                       std::size_t i0, std::size_t i1)
+{
+    double mean = 0.0;
+    for (std::size_t i = i0; i < i1; ++i) mean += g[i];
+    mean /= static_cast<double> (i1 - i0);
+    int crossings = 0;
+    std::size_t first = 0, last = 0;
+    for (std::size_t i = i0 + 1; i < i1; ++i)
+        if (g[i - 1] < mean && g[i] >= mean)
+        {
+            if (crossings == 0) first = i;
+            last = i;
+            ++crossings;
+        }
+    return crossings > 1 ? (crossings - 1) / ((last - first) / fs) : -1.0;
+}
+
+static void gainRange (const std::vector<double>& g, std::size_t i0, std::size_t i1,
+                       double& lo, double& hi)
+{
+    lo = 1.0e9; hi = -1.0e9;
+    for (std::size_t i = i0; i < i1; ++i) { lo = std::min (lo, g[i]); hi = std::max (hi, g[i]); }
+}
+
+static double ppDb (const std::vector<double>& g, std::size_t i0, std::size_t i1)
+{
+    double lo, hi;
+    gainRange (g, i0, i1, lo, hi);
+    return 20.0 * std::log10 (hi / std::max (1.0e-12, lo));
+}
+
+struct GainPair { std::vector<double> L, R; double fs = 48000.0; };
+
+// Unit level: constant 1.0 in, so the outputs are the two photocell gains.
+// The parameters are pushed once per block, exactly as EpiEngine pushes them,
+// so a block-size row measures the real per-block path and not a shortcut.
+static GainPair vibGain (double fs, double rate, double depth, double stereo,
+                         double seconds, int block = 1)
+{
+    SuitcaseVibrato v;
+    v.prepare (fs);
+    const int N = static_cast<int> (fs * seconds);
+    GainPair g;
+    g.fs = fs;
+    g.L.resize (static_cast<std::size_t> (N));
+    g.R.resize (static_cast<std::size_t> (N));
+    for (int i = 0; i < N; i += block)
+    {
+        v.setRate (rate); v.setDepth (depth); v.setStereo (stereo);
+        const int n = std::min (block, N - i);
+        for (int k = 0; k < n; ++k)
+            v.process (1.0, g.L[static_cast<std::size_t> (i + k)],
+                            g.R[static_cast<std::size_t> (i + k)]);
+    }
+    return g;
+}
+
+// Engine level: the gain pair recovered from the audio, as the quotient of
+// two renders that differ only in tremDepth. A 2 ms envelope is short enough
+// that a 30 Hz modulation survives it and long enough that the note's own
+// waveform does not leak into the quotient.
+static std::vector<double> env2ms (const std::vector<float>& x, double fs)
+{
+    std::vector<double> d (x.size());
+    for (std::size_t i = 0; i < x.size(); ++i) d[i] = static_cast<double> (x[i]);
+    return an::rectifiedEnvelope (d, fs, 2.0);
+}
+
+static GainPair engineGain (double fs, int inst, double rate, double depth,
+                            double stereo, double seconds, int block = 512)
+{
+    EngineParams on = measParams (inst);
+    on.tremRate   = static_cast<float> (rate);
+    on.tremDepth  = static_cast<float> (depth);
+    on.tremStereo = static_cast<float> (stereo);
+    EngineParams off = on;
+    off.tremDepth = 0.0f;
+
+    const std::vector<TimedEvent> evs = chordOn ({ 48, 55, 60, 64 }, 0.7f);
+    const Stereo a = renderEngine (fs, on,  seconds, evs, {}, block);
+    const Stereo b = renderEngine (fs, off, seconds, evs, {}, block);
+
+    const auto aL = env2ms (a.L, fs), bL = env2ms (b.L, fs);
+    const auto aR = env2ms (a.R, fs), bR = env2ms (b.R, fs);
+    GainPair g;
+    g.fs = fs;
+    g.L.resize (aL.size());
+    g.R.resize (aR.size());
+    for (std::size_t i = 0; i < aL.size(); ++i)
+    {
+        g.L[i] = aL[i] / std::max (1.0e-12, bL[i]);
+        g.R[i] = aR[i] / std::max (1.0e-12, bR[i]);
+    }
+    return g;
+}
+
+static void sectionVibrato()
+{
+    heading ("24. the suitcase vibrato: rate, the two photocells, and the mono fold");
+
+    // 24.1: the phase increment is rate/fs, so a sample-rate regression here
+    // would be invisible at 48k and wrong everywhere else. Four LFO rates
+    // across the four sample rates the plugin is built for. The DSP clamp is
+    // 0.1..30 Hz; 9 Hz is inside the UI's 0.1..12 range and 20 Hz is outside
+    // it, and both still have to be right because the DSP accepts them.
+    {
+        double worst = 0.0;
+        for (double fs : { 44100.0, 48000.0, 96000.0, 192000.0 })
+            for (double rate : { 1.0, 5.5, 9.0, 20.0 })
+            {
+                const double secs = std::max (8.0, 40.0 / rate);
+                const GainPair g = vibGain (fs, rate, 1.0, 1.0, secs);
+                const double r = lfoRate (g.L, fs, static_cast<std::size_t> (2.0 * fs), g.L.size());
+                worst = std::max (worst, std::fabs (r / rate - 1.0));
+            }
+        row ("24.1", "LFO rate = tremRate, 44.1/48/96/192k", "within 0.5%, 4 rates x 4 fs",
+             fmt ("worst %.4f%%", 100.0 * worst), verdict (worst <= 0.005));
+    }
+
+    // 24.2: the same rate measured out of the audio, for both instruments the
+    // suitcase vibrato is wired into. This is the row that would catch the
+    // oscillator being advanced once per oversampled step rather than once per
+    // output sample (EpiEngine.cpp's comment at the tine call site) -- that
+    // defect would read as 4x here and nowhere else.
+    {
+        double worst = 0.0;
+        char got[112];
+        double shown[2] = { 0.0, 0.0 };
+        for (int inst = 0; inst < 2; ++inst)
+            for (double rate : { 2.0, 5.5, 9.0 })
+            {
+                const GainPair g = engineGain (48000.0, inst, rate, 1.0, 1.0, 8.0);
+                const double r = lfoRate (g.L, 48000.0,
+                                          static_cast<std::size_t> (1.5 * 48000.0),
+                                          static_cast<std::size_t> (7.5 * 48000.0));
+                if (rate == 5.5) shown[inst] = r;
+                worst = std::max (worst, std::fabs (r / rate - 1.0));
+            }
+        std::snprintf (got, sizeof got, "Tine %.3f, EG %.3f Hz, %.2f%%",
+                       shown[0], shown[1], 100.0 * worst);
+        row ("24.2", "rate through the audio path, 2/5.5/9 Hz", "within 1% of tremRate, both",
+             got, verdict (worst <= 0.01));
+    }
+
+    // 24.3: block size reaches the vibrato only through the per-block
+    // parameter push, so a block-rate step in rate or depth would show as a
+    // rate or image difference between 1, 64 and 512. Measured through the
+    // engine, which is where the push actually happens.
+    {
+        double rates[3], corrs[3];
+        int i = 0;
+        for (int block : { 1, 64, 512 })
+        {
+            const GainPair g = engineGain (48000.0, 0, 5.5, 1.0, 1.0, 4.0, block);
+            const std::size_t a = static_cast<std::size_t> (1.0 * 48000.0);
+            const std::size_t b = static_cast<std::size_t> (3.9 * 48000.0);
+            rates[i] = lfoRate (g.L, 48000.0, a, b);
+            corrs[i] = pearson (g.L, g.R, a, b);
+            ++i;
+        }
+        const double dr = std::max ({ std::fabs (rates[0] - rates[1]),
+                                      std::fabs (rates[1] - rates[2]),
+                                      std::fabs (rates[0] - rates[2]) });
+        const double dc = std::max ({ std::fabs (corrs[0] - corrs[1]),
+                                      std::fabs (corrs[1] - corrs[2]),
+                                      std::fabs (corrs[0] - corrs[2]) });
+        char got[112];
+        std::snprintf (got, sizeof got, "d %.4f Hz / %.4f corr", dr, dc);
+        row ("24.3", "block 1/64/512 agree on rate and image", "rate 0.01 Hz, corr 0.005",
+             got, verdict (dr <= 0.01 && dc <= 0.005));
+    }
+
+    // 24.4: tremStereo 1 is the panner -- one cell darkens as the other
+    // lightens. The correlation is not -1 and cannot be: the 2.5 ms attack and
+    // 35 ms decay mean the two envelopes are not each other's negative, which
+    // is the whole reason the effect survives a mono fold (24.7). -0.875 is
+    // THE MEASURED VALUE BEING FENCED, not a published figure; the bound is
+    // wide enough to hold the shape and tight enough that in-phase cells
+    // (which read +1) fail it.
+    {
+        const GainPair u = vibGain (48000.0, 5.5, 1.0, 1.0, 8.0);
+        const GainPair e = engineGain (48000.0, 0, 5.5, 1.0, 1.0, 8.0);
+        const double cu = pearson (u.L, u.R, static_cast<std::size_t> (2.0 * 48000.0), u.L.size());
+        const double ce = pearson (e.L, e.R, static_cast<std::size_t> (1.5 * 48000.0),
+                                   static_cast<std::size_t> (7.5 * 48000.0));
+        row ("24.4", "width 1: the cells oppose", "corr -0.875 +/-0.05, both",
+             fmt2 ("unit %+.4f, engine %+.4f", cu, ce),
+             verdict (cu <= -0.825 && cu >= -0.925 && ce <= -0.825 && ce >= -0.925));
+    }
+
+    // 24.5: tremStereo 0 wires them together and the effect is a true
+    // amplitude tremolo -- one gain, both channels, correlation +1 by
+    // construction (the same statement wurli M1 makes about its own tremolo,
+    // measured here rather than asserted).
+    {
+        const GainPair u = vibGain (48000.0, 5.5, 1.0, 0.0, 8.0);
+        const GainPair e = engineGain (48000.0, 0, 5.5, 1.0, 0.0, 8.0);
+        const double cu = pearson (u.L, u.R, static_cast<std::size_t> (2.0 * 48000.0), u.L.size());
+        const double ce = pearson (e.L, e.R, static_cast<std::size_t> (1.5 * 48000.0),
+                                   static_cast<std::size_t> (7.5 * 48000.0));
+        double lo, hi;
+        gainRange (u.L, static_cast<std::size_t> (2.0 * 48000.0), u.L.size(), lo, hi);
+        double lo2, hi2;
+        gainRange (u.R, static_cast<std::size_t> (2.0 * 48000.0), u.R.size(), lo2, hi2);
+        const double chanDiff = std::max (std::fabs (lo - lo2), std::fabs (hi - hi2));
+        row ("24.5", "width 0: the cells run together", "corr >= +0.999, L == R",
+             fmt2 ("unit %+.4f, engine %+.4f", cu, ce),
+             verdict (cu >= 0.999 && ce >= 0.999 && chanDiff <= 1.0e-9));
+    }
+
+    // 24.6: the width control is a wiring ratio, and its middle is a real
+    // degenerate point: the B cell's drive is stereo*(1-tri) + (1-stereo)*tri,
+    // which at 0.5 is the constant 0.5 whatever the LFO does. So at width 0.5
+    // the right channel does not modulate at all and sits at 1 - depth/2,
+    // and the pair is quieter than at either end of the knob. Both numbers
+    // below are MEASURED VALUES BEING FENCED -- the circuit has no published
+    // figure for a half-wired photocell pair -- and they are here so that a
+    // future crossfade rewrite cannot silently change the middle of the knob.
+    {
+        auto pairRmsDb = [] (double stereo)
+        {
+            const GainPair g = vibGain (48000.0, 5.5, 1.0, stereo, 8.0);
+            double acc = 0.0;
+            const std::size_t a = static_cast<std::size_t> (2.0 * 48000.0);
+            for (std::size_t i = a; i < g.L.size(); ++i) acc += g.L[i] * g.L[i] + g.R[i] * g.R[i];
+            return 10.0 * std::log10 (acc / (2.0 * static_cast<double> (g.L.size() - a)));
+        };
+        const GainPair mid = vibGain (48000.0, 5.5, 1.0, 0.5, 8.0);
+        double lo, hi;
+        gainRange (mid.R, static_cast<std::size_t> (2.0 * 48000.0), mid.R.size(), lo, hi);
+        const double dip = 0.5 * (pairRmsDb (0.0) + pairRmsDb (1.0)) - pairRmsDb (0.5);
+        row ("24.6", "width 0.5: R holds at 1-depth/2", "0.5000 +/-1e-6, no swing",
+             fmt2 ("[%.6f..%.6f]", lo, hi),
+             verdict (std::fabs (lo - 0.5) <= 1.0e-6 && std::fabs (hi - 0.5) <= 1.0e-6));
+        row ("24.6", "width 0.5 costs level vs either end", "1.40 dB +/-0.15 (measured)",
+             fmt ("%.2f dB", dip), verdict (dip >= 1.25 && dip <= 1.55));
+    }
+
+    // 24.7: the point of the asymmetric lag. If the two cells were each
+    // other's exact negative the panner would vanish in a mono fold; they are
+    // not, so it does not. 3.59 dB out of the 20.10 dB one channel swings is
+    // THE MEASURED VALUE BEING FENCED. The wired-together case has nothing to
+    // cancel and must survive whole, which is the other half of the row.
+    {
+        const std::size_t a = static_cast<std::size_t> (2.0 * 48000.0);
+        const GainPair p = vibGain (48000.0, 5.5, 1.0, 1.0, 8.0);
+        const GainPair t = vibGain (48000.0, 5.5, 1.0, 0.0, 8.0);
+        std::vector<double> mp (p.L.size()), mt (t.L.size());
+        for (std::size_t i = 0; i < mp.size(); ++i) mp[i] = 0.5 * (p.L[i] + p.R[i]);
+        for (std::size_t i = 0; i < mt.size(); ++i) mt[i] = 0.5 * (t.L[i] + t.R[i]);
+        const double chan = ppDb (p.L, a, p.L.size());
+        const double fold = ppDb (mp,  a, mp.size());
+        const double trem = ppDb (mt,  a, mt.size());
+        row ("24.7", "width 1 survives a mono fold", "3.59 dB +/-0.3 (measured)",
+             fmt2 ("%.2f dB of %.2f dB", fold, chan), verdict (fold >= 3.29 && fold <= 3.89));
+        row ("24.7", "width 0 folds down unharmed", "= one channel within 0.01 dB",
+             fmt2 ("%.2f vs %.2f dB", trem, ppDb (t.L, a, t.L.size())),
+             verdict (std::fabs (trem - ppDb (t.L, a, t.L.size())) <= 0.01));
+    }
+
+    // 24.8: depth is a multiplier on the photocell's own excursion --
+    // g = 1 - depth*(1 - env) -- so the LINEAR peak-to-peak of the gain must
+    // be exactly proportional to depth, and depth 0 must be bit-transparent.
+    // Fencing the ratio rather than the dB values is the sharper test: the dB
+    // curve is compressive (0.82 dB at depth 0.1, 20.10 dB at depth 1) and
+    // eyeballing it for monotonicity would pass a badly warped mapping.
+    {
+        const std::size_t a = static_cast<std::size_t> (2.0 * 48000.0);
+        double ratio[10];
+        bool mono = true;
+        double prev = -1.0;
+        for (int i = 1; i <= 10; ++i)
+        {
+            const double d = 0.1 * i;
+            const GainPair g = vibGain (48000.0, 5.5, d, 1.0, 8.0);
+            double lo, hi;
+            gainRange (g.L, a, g.L.size(), lo, hi);
+            ratio[i - 1] = (hi - lo) / d;
+            if (hi - lo <= prev) mono = false;
+            prev = hi - lo;
+        }
+        double rlo = ratio[0], rhi = ratio[0];
+        for (double r : ratio) { rlo = std::min (rlo, r); rhi = std::max (rhi, r); }
+        const double spread = (rhi - rlo) / rlo;
+        row ("24.8", "gain excursion is linear in depth", "monotone, spread < 0.5%",
+             fmt2 ("%.5f/depth, spread %.4f%%", 0.5 * (rlo + rhi), 100.0 * spread),
+             verdict (mono && spread <= 0.005));
+
+        const GainPair z = vibGain (48000.0, 5.5, 0.0, 1.0, 4.0);
+        double zl = 0.0;
+        for (std::size_t i = 0; i < z.L.size(); ++i)
+            zl = std::max (zl, std::max (std::fabs (z.L[i] - 1.0), std::fabs (z.R[i] - 1.0)));
+        row ("24.8", "depth 0 is exactly transparent", "|g - 1| = 0",
+             fmt ("%.3e", zl), verdict (zl == 0.0));
+    }
+
+    // 24.9: the header's own claim, measured. A VTL5C1 attacks in 2.5 ms and
+    // decays in 35 ms, so at a fast rate the slow side never finishes decaying
+    // and the channels never separate: "Slow settings reach genuine silence on
+    // the off channel; fast ones barely reach 20 dB" (OutputChain.h). 20 dB is
+    // the header's figure and 5.5 Hz is where the row checks it; the
+    // monotonicity across the whole clamp range is the general statement.
+    {
+        double db[8];
+        int i = 0;
+        bool falling = true;
+        for (double rate : { 0.5, 1.0, 2.0, 5.5, 9.0, 12.0, 20.0, 30.0 })
+        {
+            const GainPair g = vibGain (48000.0, rate, 1.0, 1.0, std::max (8.0, 40.0 / rate));
+            db[i] = ppDb (g.L, static_cast<std::size_t> (2.0 * 48000.0), g.L.size());
+            if (i > 0 && db[i] >= db[i - 1]) falling = false;
+            ++i;
+        }
+        row ("24.9", "depth falls with rate, 0.5..30 Hz", "strictly falling, 8 rates",
+             fmt2 ("0.5 Hz %.1f dB -> 30 Hz %.1f", db[0], db[7]),
+             verdict (falling));
+        row ("24.9", "at 5.5 Hz it barely reaches 20 dB", "20 dB +/-2 (header figure)",
+             fmt ("%.2f dB", db[3]), verdict (db[3] >= 18.0 && db[3] <= 22.0));
+        double flo, fhi;
+        {
+            const GainPair g = vibGain (48000.0, 0.5, 1.0, 1.0, 80.0);
+            gainRange (g.L, static_cast<std::size_t> (4.0 * 48000.0), g.L.size(), flo, fhi);
+        }
+        row ("24.9", "slow settings reach real silence", "0.5 Hz: floor < -80 dBFS",
+             fmt ("floor %.1f dB", 20.0 * std::log10 (std::max (1.0e-300, flo))),
+             verdict (20.0 * std::log10 (std::max (1.0e-300, flo)) <= -80.0));
+    }
+
+    // 24.10: reset() and prepare() must land on the same state, and the state
+    // must be the one the object starts life in -- otherwise a host that
+    // relocates the transport gets a different vibrato than one that does not.
+    // Both are bit-exact, at the unit level and through the engine.
+    {
+        SuitcaseVibrato v;
+        v.prepare (48000.0); v.setRate (5.5); v.setDepth (1.0); v.setStereo (1.0);
+        std::vector<double> first (4800), afterReset (4800), afterPrepare (4800);
+        for (auto& s : first) { double l, r; v.process (1.0, l, r); s = l; }
+        for (int i = 0; i < 97531; ++i) { double l, r; v.process (1.0, l, r); }  // free-run to an arbitrary phase
+        v.reset();
+        for (auto& s : afterReset) { double l, r; v.process (1.0, l, r); s = l; }
+        v.prepare (48000.0); v.setRate (5.5); v.setDepth (1.0); v.setStereo (1.0);
+        for (auto& s : afterPrepare) { double l, r; v.process (1.0, l, r); s = l; }
+        double dR = 0.0, dP = 0.0;
+        for (std::size_t i = 0; i < first.size(); ++i)
+        {
+            dR = std::max (dR, std::fabs (first[i] - afterReset[i]));
+            dP = std::max (dP, std::fabs (first[i] - afterPrepare[i]));
+        }
+        row ("24.10", "reset() and prepare() land on phase 0", "both bit-exact vs first run",
+             fmt2 ("reset %.1e, prepare %.1e", dR, dP),
+             verdict (dR == 0.0 && dP == 0.0));
+
+        EngineParams p = measParams (0);
+        p.tremRate = 5.5f; p.tremDepth = 1.0f; p.tremStereo = 1.0f;
+        const std::vector<TimedEvent> evs = chordOn ({ 48, 55, 60, 64 }, 0.7f);
+        const int N = static_cast<int> (48000.0 * 3.0);
+        std::vector<float> a1 (N), a2 (N), b1 (N), b2 (N);
+        EpiEngine e;
+        e.prepare (48000.0, 512);
+        for (int pass = 0; pass < 2; ++pass)
+        {
+            float* oL = pass == 0 ? a1.data() : b1.data();
+            float* oR = pass == 0 ? a2.data() : b2.data();
+            std::vector<NoteEvent> be;
+            for (const auto& te : evs) be.push_back (te.ev);
+            bool sent = false;
+            for (int i = 0; i < N; i += 512)
+            {
+                const int n = std::min (512, N - i);
+                e.process (oL + i, oR + i, n, p, sent ? nullptr : be.data(),
+                           sent ? 0 : static_cast<int> (be.size()));
+                sent = true;
+            }
+            e.reset();
+        }
+        double dE = 0.0;
+        for (int i = 0; i < N; ++i)
+            dE = std::max (dE, std::max (std::fabs (static_cast<double> (a1[i] - b1[i])),
+                                         std::fabs (static_cast<double> (a2[i] - b2[i]))));
+        row ("24.10", "EpiEngine::reset() replays the vibrato", "bit-exact over 3 s",
+             fmt ("%.1e", dE), verdict (dE == 0.0));
+    }
+
+    // 24.11: KNOWN GAP. reset() sets envA = 1 and envB = 0, but phase 0 is the
+    // BOTTOM of the trapezoid (tri = 0), so the cell the phase says is dark is
+    // set bright and vice versa -- both cells land on the wrong rail. The
+    // object therefore starts each life inverted, spends 3.6 LFO cycles
+    // crossing to where its own phase says it should already be, and the right
+    // channel dips to 0.0083 against a steady-state floor of 0.0989. It is
+    // inaudible as shipped: both callers (EpiEngine::reset, and the instrument
+    // switch at EpiEngine.cpp's "provably at silence" comment) run it against
+    // silence, which is why this is a gap and not a defect row.
+    //
+    // The fix is one line -- reset() { phase = 0; envA = 0; envB = stereo; } --
+    // and it was measured, not guessed: it takes the trajectory error from
+    // 0.9917 to 0.1026 and the slew ratio from 8.25x to exactly 1.00x. It
+    // cannot reach zero, and should not be expected to: at 5.5 Hz the A cell's
+    // steady-state value at phase 0 is 0.1027 rather than 0, because the 35 ms
+    // decay has not finished when the cycle wraps. So the pass targets below
+    // are the values the fix reaches at 5.5 Hz, and the held bounds are where
+    // the defect sits today, so it cannot quietly widen.
+    {
+        const double fs = 48000.0, rate = 5.5;
+        const int per = static_cast<int> (fs / rate);
+        SuitcaseVibrato v;
+        v.prepare (fs); v.setRate (rate); v.setDepth (1.0); v.setStereo (1.0);
+        for (int i = 0; i < 50 * per; ++i) { double l, r; v.process (1.0, l, r); }
+        std::vector<double> sL (static_cast<std::size_t> (per)), sR (static_cast<std::size_t> (per));
+        for (int i = 0; i < per; ++i) v.process (1.0, sL[static_cast<std::size_t> (i)],
+                                                      sR[static_cast<std::size_t> (i)]);
+
+        SuitcaseVibrato w;
+        w.prepare (fs); w.setRate (rate); w.setDepth (1.0); w.setStereo (1.0);
+        std::vector<double> fL (static_cast<std::size_t> (4 * per)), fR (fL.size());
+        for (std::size_t i = 0; i < fL.size(); ++i) w.process (1.0, fL[i], fR[i]);
+
+        double dev = 0.0, slewT = 0.0, slewS = 0.0;
+        for (std::size_t i = 0; i < fL.size(); ++i)
+        {
+            const std::size_t k = i % static_cast<std::size_t> (per);
+            dev = std::max (dev, std::max (std::fabs (fL[i] - sL[k]), std::fabs (fR[i] - sR[k])));
+            if (i > 0) slewT = std::max (slewT, std::max (std::fabs (fL[i] - fL[i - 1]),
+                                                          std::fabs (fR[i] - fR[i - 1])));
+        }
+        for (std::size_t i = 1; i < sL.size(); ++i)
+            slewS = std::max (slewS, std::max (std::fabs (sL[i] - sL[i - 1]),
+                                               std::fabs (sR[i] - sR[i - 1])));
+        const double ratio = slewT / slewS;
+        row ("24.11", "reset lands where its phase says", "<= 0.11 (fix); held <= 1.0",
+             fmt ("%.4f off trajectory", dev), gapIf (dev <= 0.11, dev <= 1.0));
+        char slewGot[96];
+        std::snprintf (slewGot, sizeof slewGot, "%.2fx (%.5f vs %.5f)", ratio, slewT, slewS);
+        row ("24.11", "the reset transient's worst slew", "1x steady (fix); held <= 10x",
+             slewGot, gapIf (ratio <= 1.001, ratio <= 10.0));
+    }
+
+    // 24.12: which instruments carry it. The suitcase vibrato is in the Tine
+    // and E-Grand paths only; the Wurlitzer has its own twin-T tremolo (wurli
+    // M1/M2, one gain into both channels, so the pair correlates +1) and the
+    // Grand and the Clav have no tremolo at all, so the knob must be inert
+    // rather than nearly inert. Rendered at full depth against a depth-0
+    // reference, so "inert" means the two renders are the same audio.
+    {
+        double swing[5];
+        double corr[5];
+        for (int inst = 0; inst < 5; ++inst)
+        {
+            const GainPair g = engineGain (48000.0, inst, 5.5, 1.0, 1.0, 6.0);
+            const std::size_t a = static_cast<std::size_t> (1.5 * 48000.0);
+            const std::size_t b = static_cast<std::size_t> (5.5 * 48000.0);
+            swing[inst] = ppDb (g.L, a, b);
+            corr[inst]  = pearson (g.L, g.R, a, b);
+        }
+        char got[112];
+        std::snprintf (got, sizeof got, "%.1f/%.1f/%.1f/%.2f/%.2f dB",
+                       swing[0], swing[1], swing[2], swing[3], swing[4]);
+        row ("24.12", "carried by Tine and E-Grand only", "> 18 dB, > 18, ~7, 0, 0",
+             got,
+             verdict (swing[0] > 18.0 && swing[1] > 18.0
+                      && swing[2] > 5.0 && swing[2] < 10.0
+                      && swing[3] < 0.05 && swing[4] < 0.05));
+        row ("24.12", "the Wurli's own tremolo is not a panner", "corr >= +0.999",
+             fmt ("%+.4f", corr[2]), verdict (corr[2] >= 0.999));
+    }
+
+    // 24.13: the width knob has no smoothing of its own -- setStereo writes
+    // the target straight through, unlike depth, which glides over 20 ms. It
+    // does not need any, and the reason is physical rather than measured: the
+    // width only ever reaches the output through the photocell's attack, so
+    // the largest per-sample gain step ANY width move can make is one attack
+    // coefficient, aAtk = 1 - exp(-1/(0.0025*fs)) -- 0.008302 at 48 kHz --
+    // because |d env| = aAtk*|tgt - env| and both live in [0, 1]. A rewrite
+    // that let the knob write the gain directly would blow straight through
+    // this. The flip is swept across the whole LFO cycle in both directions,
+    // since the worst case is phase dependent (46x the LFO's own slew at 1 Hz,
+    // 1.4x at 30 Hz), and checked at two sample rates because the bound is a
+    // time constant and has to scale.
+    {
+        auto worstFlip = [] (double fs, double rate, double from, double to)
+        {
+            const int per = static_cast<int> (fs / rate);
+            double worst = 0.0;
+            for (int at = 1000; at < 1000 + per; at += std::max (1, per / 64))
+            {
+                SuitcaseVibrato v;
+                v.prepare (fs); v.setRate (rate); v.setDepth (1.0); v.setStereo (from);
+                for (int i = 0; i < static_cast<int> (2.0 * fs); ++i) { double l, r; v.process (1.0, l, r); }
+                double pl = 0.0, pr = 0.0;
+                bool first = true;
+                for (int i = 0; i < per; ++i)
+                {
+                    if (i == at - 1000) v.setStereo (to);
+                    double l, r;
+                    v.process (1.0, l, r);
+                    if (! first) worst = std::max (worst, std::max (std::fabs (l - pl), std::fabs (r - pr)));
+                    pl = l; pr = r; first = false;
+                }
+            }
+            return worst;
+        };
+        auto attackCoeff = [] (double fs) { return 1.0 - std::exp (-1.0 / (0.0025 * fs)); };
+
+        double w48 = 0.0, w96 = 0.0;
+        for (double rate : { 1.0, 5.5, 12.0 })
+        {
+            w48 = std::max (w48, std::max (worstFlip (48000.0, rate, 1.0, 0.0),
+                                           worstFlip (48000.0, rate, 0.0, 1.0)));
+            w96 = std::max (w96, std::max (worstFlip (96000.0, rate, 1.0, 0.0),
+                                           worstFlip (96000.0, rate, 0.0, 1.0)));
+        }
+        const double a48 = attackCoeff (48000.0), a96 = attackCoeff (96000.0);
+        row ("24.13", "a width flip cannot outrun the photocell", "worst step <= aAtk, 48k",
+             fmt2 ("%.6f vs %.6f", w48, a48), verdict (w48 <= a48));
+        row ("24.13", "the bound is a time constant", "96k step <= aAtk/2 of 48k",
+             fmt2 ("%.6f vs %.6f", w96, a96),
+             verdict (w96 <= a96 && w96 < 0.55 * w48));
+    }
+}
+
 int main()
 {
     const auto t0 = std::chrono::steady_clock::now();
@@ -4170,6 +5084,8 @@ int main()
     sectionAbortedSwitch();
     sectionPedalPlaying();
     sectionPostRelease();
+    sectionVelMap();
+    sectionVibrato();
 
     const double wall = std::chrono::duration<double> (std::chrono::steady_clock::now() - t0).count();
     std::printf ("\nsuite wall time %.1f s\n", wall);
