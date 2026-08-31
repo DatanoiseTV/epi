@@ -2561,6 +2561,15 @@ static void sectionDeterminism()
             std::vector<float> L (256), R (256);
             if (withHistory)
             {
+                // The host's own controllers go into the history too. They
+                // are the ones a reset is most obviously for -- a bounce
+                // that inherits the previous take's swell pedal or wheel is
+                // not a bounce -- and they were the last two the engine
+                // left behind: CC11 at its bottom made the next strike
+                // 26.9 dB quiet, and a wheel at +2 semitones brought the
+                // whole instrument back 199.8 cents sharp.
+                e->setExpression (0.25f);
+                e->setPitchBend (2.0f);
                 NoteEvent on { 0, NoteEvent::noteOn, 60, 0.7f };
                 e->process (L.data(), R.data(), 256, p, &on, 1);
                 for (int b = 0; b < 60; ++b) e->process (L.data(), R.data(), 256, p, nullptr, 0);
@@ -2622,6 +2631,8 @@ static void sectionDeterminism()
             if (withHistory)
             {
                 e->prepare (48000.0, 256);
+                e->setExpression (0.25f);
+                e->setPitchBend (2.0f);
                 std::vector<float> a (256), b (256);
                 for (int blk = 0; blk < 80; ++blk)
                 {

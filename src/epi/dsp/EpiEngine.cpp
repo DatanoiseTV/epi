@@ -187,6 +187,11 @@ void EpiEngine::prepare (double sampleRate, int)
     tineCfgVersion.fill (0);
     lastCoilSat = -1.0f;
     lastSpaceSize = -1.0f;
+    // ...and the host's two continuous controllers, for the same reason
+    // reset() returns them: a prepared instrument has to be the instrument a
+    // freshly constructed one is, and rows 16.6x say so.
+    expression = 1.0f;
+    bendSemis = 0.0f;
 }
 
 void EpiEngine::reset()
@@ -285,6 +290,17 @@ void EpiEngine::reset()
     pedalAmount = 0.0;
     softAmount = 0.0;
     sostenutoDown = false;
+    // The two continuous controllers, which this left where the last
+    // session put them while clearing every other one beside them. They are
+    // the host's state, not the instrument's: a reset means the host is
+    // discarding what it had, and a bounce that inherits the previous take's
+    // swell pedal or wheel is not a bounce. Measured before this: CC11 left
+    // at its bottom made the next strike 26.9 dB quiet against a fresh
+    // engine, and a wheel left at +2 semitones brought the whole instrument
+    // back a whole tone sharp -- 199.8 cents, on a keyboard that has no
+    // wheel of its own.
+    expression = 1.0f;
+    bendSemis = 0.0f;
     coil.reset();
     decimL.reset();
     decimR.reset();

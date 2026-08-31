@@ -82,6 +82,15 @@ All notable changes to Epi are documented here. The format follows
   zero, and four of the five instruments are now bit-identical after both a
   reset and a re-prepare. The clav is not: a measured -114 dB remains,
   a ten-thousandth of a per cent of the signal, bounded by its rows.
+- A bounce inherited the previous take's swell pedal and pitch wheel. Every
+  other controller the engine holds -- the sustain pedal, the soft pedal,
+  the sostenuto latch -- is returned by reset(); CC11 expression and the
+  wheel were not, on either reset() or prepare(). Measured against a fresh
+  engine: CC11 left at its bottom made the next strike 26.9 dB quiet, and a
+  wheel left at +2 semitones brought the whole instrument back 199.8 cents
+  sharp -- on a keyboard that has no wheel of its own. Both are the host's
+  state, not the instrument's, and a reset means the host is discarding what
+  it had.
 - An instrument switch the host took back before it finished restruck the
   note played during it, and by an amount that depended on the buffer size:
   measured -0.06, -5.47 and -0.91 dB at 64, 128 and 256 samples against the
@@ -127,6 +136,11 @@ All notable changes to Epi are documented here. The format follows
   35 and resized it on the way.
 
 ### Added
+- The reset and re-prepare identity rows now put the host's controllers into
+  the history they compare against, which is what they should always have
+  done: they are the state a reset most obviously exists to clear. Without
+  the fix above, all ten of them fail, on all five instruments and both
+  paths, by 4.6 to 34.1 dB.
 - Two rows for an instrument switch the host takes back, one for each half:
   the note is not restruck at any buffer size, and a switch that does land
   still plays the note it parked. Both checked against the defect: reverting
