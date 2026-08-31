@@ -543,6 +543,38 @@ private:
             if (kV + kH > kMaxModes) kH = kMaxModes - kV;
 
             Str& S = str[s];
+            // A re-cut that moves the mode LAYOUT cannot carry the old
+            // state across, and this is where that is caught.
+            //
+            // The two polarisations are laid out as a vertical block
+            // followed by a horizontal one, so the horizontal block starts
+            // at whatever the vertical count happens to be. That count is
+            // how many partials fit under the mode budget, so it moves with
+            // the fundamental: measured on this note over a +/-300 cent
+            // span it runs from 94 down to 75. Re-cut a string that is
+            // still ringing and every horizontal mode's stored state lands
+            // at a different index -- read back as a different mode, at a
+            // different frequency, with a different mass. That is not an
+            // energy error that decays, it is state belonging to something
+            // else, and it diverges.
+            //
+            // Reachable at engine defaults: per-note tuning is latched at
+            // the strike, a CHANGED value re-cuts the string before the
+            // hammer lands, and a repeat strike deliberately does NOT clear
+            // the string -- a real one keeps ringing when you hit it again.
+            // One key struck four times a second with a different per-note
+            // tuning each time -- an MPE controller with per-note bend --
+            // reached a non-finite sample in 23.5 s and had the output
+            // chain rebuild itself 425 times in thirty.
+            //
+            // Clearing is the honest answer rather than a guard on the
+            // result: the string really is being re-cut, and a vibration
+            // decomposed onto one set of modes has no meaning on another.
+            // It costs nothing in normal use, because the layout only moves
+            // when the tuning does, and it only moves on the note-on path,
+            // where a strike lands in the same block and masks it.
+            if (configured && (kV != S.kV - S.kH || kH != S.kH))
+                S.sys.clear();
             S.kV = kV + kH;   // total modes carried
             S.kH = kH;
             {

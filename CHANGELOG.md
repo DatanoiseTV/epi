@@ -82,24 +82,33 @@ All notable changes to Epi are documented here. The format follows
   zero, and four of the five instruments are now bit-identical after both a
   reset and a re-prepare. The clav is not: a measured -114 dB remains,
   a ten-thousandth of a per cent of the signal, bounded by its rows.
-- The E-Grand could diverge under per-note tuning, and the output chain was
-  catching it and papering over it. Per-note tuning is latched at the strike
-  and a CHANGED value re-cuts the string before the hammer lands; retuning a
-  resonator that is still ringing keeps its state while changing its
-  stiffness, so its potential energy jumps by the stiffness ratio, and doing
-  that repeatedly at the moment the displacement happens to be large is
-  parametric pumping. Measured at engine defaults, one key struck four times
-  a second with a different per-note tuning inside +/-300 cents -- an MPE
-  controller with per-note bend, three semitones out of the forty-eight a
-  member channel defaults to under RP-053 -- the first non-finite sample
-  arrived at 23.5 s and the chain was torn down and rebuilt 425 times in
-  thirty seconds, while the output stayed finite and every suite reported a
-  pass. The string bus now carries the same per-sample guard the tine's
-  force sum and the frame reactions already had, which bounds the damage to
-  the sample and lets the voice's own recovery do the rest: zero rebuilds.
-  It does not stop the pumping, which wants the retune path to preserve
-  energy rather than state, and row 25d.5 holds the count so that stays
-  visible.
+- The E-Grand diverged under per-note tuning, and the output chain was
+  catching it and papering over it. The cause is a mode LAYOUT change, not
+  an energy error: the two polarisations are laid out as a vertical block
+  followed by a horizontal one, so the horizontal block starts at whatever
+  the vertical count happens to be -- and that count is how many partials
+  fit under the mode budget, so it moves with the fundamental. Measured over
+  a +/-300 cent span on one note it runs from 94 down to 75. Re-cut a string
+  that is still ringing and every horizontal mode's stored state lands at a
+  different index, read back as a different mode at a different frequency
+  with a different mass. Per-note tuning is latched at the strike and a
+  CHANGED value re-cuts the string before the hammer lands, and a repeat
+  strike deliberately does not clear the string, because a real one keeps
+  ringing when you hit it again. So at engine defaults, one key struck four
+  times a second carrying a different per-note tuning -- an MPE controller
+  with per-note bend, three semitones out of the forty-eight a member
+  channel defaults to under RP-053 -- reached a non-finite sample in 23.5 s
+  and had the output chain rebuild itself 425 times in thirty, while the
+  output stayed finite and every suite reported a pass. A string whose
+  layout moves is now cleared, which is the honest answer: the string really
+  is being re-cut, and a vibration decomposed onto one set of modes has no
+  meaning on another. Verified by removing the guard below and measuring
+  zero. The other four instruments do not diverge under the same gesture.
+- And the string bus now carries the same per-sample finiteness guard the
+  tine's force sum and both frame reactions already had. It was the only
+  summing point of the five without one, and the voice's own catch runs once
+  per control block, so an infinity used to cross the whole gap between the
+  sample it appeared in and the block that noticed.
 - A velocity map carrying a non-finite ordinate silenced the instrument
   permanently. std::clamp(NaN, 0, 1) returns NaN -- both comparisons are
   false -- and std::max steps over it, so the sanitiser passed it through;
