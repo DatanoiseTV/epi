@@ -82,6 +82,25 @@ All notable changes to Epi are documented here. The format follows
   zero, and four of the five instruments are now bit-identical after both a
   reset and a re-prepare. The clav is not: a measured -114 dB remains,
   a ten-thousandth of a per cent of the signal, bounded by its rows.
+- A velocity map carrying a non-finite ordinate silenced the instrument
+  permanently. std::clamp(NaN, 0, 1) returns NaN -- both comparisons are
+  false -- and std::max steps over it, so the sanitiser passed it through;
+  the identity check missed it too, because |NaN - 0.25 i| > 1e-6 is also
+  false. In the evaluator the Hermite term 0 * NaN is NaN even at t = 0, so
+  every velocity mapped to NaN. Measured: a strike went from 0.3418 to
+  exactly 0.0 at every velocity, and redrawing the curve to identity did not
+  bring it back -- only a reset did. And it was reachable from a saved
+  project, since the map is restored from a decimal string and JUCE parses
+  "nan" into a quiet NaN rather than failing to zero, so a session file
+  carrying one opened silent every time with no way back from inside the
+  plugin. Non-finite ordinates are now refused at the setter.
+- The suitcase vibrato's two photocells started on the wrong rail. Phase 0 is
+  the bottom of the trapezoid, so the A cell should be dark and the B cell
+  should carry the width; reset() set exactly the opposite on both, and the
+  object spent about three and a half LFO cycles crossing to where its own
+  phase said it already was. Inaudible as it ships -- both callers reset it
+  against silence -- and wrong the moment a reset is reused for anything
+  with a live tail.
 - Per-note workshop edits did not survive a save exactly. The four benches
   are serialised as decimal strings and were written at six places, which
   for values near 1.0 leaves about 2.5e-7 of relative error -- and a tine cut

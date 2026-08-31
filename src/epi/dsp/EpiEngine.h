@@ -463,6 +463,27 @@ public:
     // never invert the player's dynamics.
     void setVelMap (const float* y5)
     {
+        // A non-finite ordinate is refused outright, and it has to be
+        // refused HERE because nothing downstream can survive one.
+        // std::clamp(NaN, 0, 1) returns NaN -- both of its comparisons are
+        // false -- and std::max steps over it, so the sanitising below lets
+        // it through. The identity check then misses it too, because
+        // |NaN - 0.25 i| > 1e-6 is false, so the poisoned ordinate reads as
+        // identity while its neighbours clear the flag. In the evaluator the
+        // Hermite term (t^3 - t^2) * m1 is 0 * NaN = NaN even at t = 0, so
+        // EVERY velocity maps to NaN and every note is silent.
+        //
+        // Measured: one NaN ordinate takes a strike from 0.3418 to exactly
+        // 0.0, at every velocity, and redrawing the curve to identity does
+        // not bring it back -- only a reset does. And it is reachable from a
+        // saved project, because the map is restored from a decimal string
+        // and juce::String::getFloatValue parses "nan" into a quiet NaN
+        // rather than failing to zero. So a session file carrying one is an
+        // instrument that is silent every time it is opened, with no way
+        // back from inside the plugin.
+        for (int i = 0; i < 5; ++i)
+            if (! std::isfinite (y5[i])) return;
+
         float y[5];
         for (int i = 0; i < 5; ++i) y[i] = std::clamp (y5[i], 0.0f, 1.0f);
         for (int i = 1; i < 5; ++i) y[i] = std::max (y[i], y[i - 1]);

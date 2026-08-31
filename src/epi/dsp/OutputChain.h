@@ -252,7 +252,14 @@ public:
         reset();
     }
 
-    void reset() { phase = 0.0; envA = 1.0; envB = 0.0; }
+    // Both cells start where phase 0 puts them. Phase 0 is the BOTTOM of the
+    // trapezoid -- tri = 0, so the A cell is dark and the B cell carries the
+    // whole width -- and this used to set the opposite rail on both, so the
+    // object began each life inverted and spent about three and a half LFO
+    // cycles crossing to where its own phase said it already was. Harmless
+    // as it ships, because both callers reset it against silence; wrong the
+    // moment a reset is reused for anything with a live tail.
+    void reset() { phase = 0.0; envA = 0.0; envB = stereo; }
 
     void setRate (double hz)   { rate = std::clamp (hz, 0.1, 30.0); }
     // A target, not the value: depth scales the photocell envelopes every
