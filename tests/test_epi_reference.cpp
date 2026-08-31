@@ -550,12 +550,34 @@ static void sectionD()
     // end. So this is the mechanical statement of the same shortfall, and
     // the cheapest thing to settle before anyone tunes the field again.
     //
-    // Held as a gap rather than a failure for two honest reasons. The paper
-    // does not state which note or which dynamic Figure 4 is, and a bass
-    // tine at ff and a treble tine at mf differ by more than the factor in
-    // question -- so the target is a magnitude, not a calibration. And
-    // closing it means re-deriving the launch, which moves every row in
-    // this suite. Bounded at 3 mm so it cannot quietly shrink further.
+    // AND THE TARGET CANNOT BE TAKEN AT FACE VALUE, which is worth more
+    // than the target is. Checked against this instrument's own energy
+    // budget -- the collision figures the voice reports, not an estimate --
+    // a 25 mm swing of the FUNDAMENTAL costs:
+    //
+    //   note 28  21.9 mJ of the hammer's 40.7 mJ      53.7%
+    //   note 33  33.7      of        40.3             83.6%
+    //   note 40  61.8      of        46.3            133.4%
+    //   note 52 174.8      of        69.4            252.0%
+    //
+    // At ff, with the whole hammer. Above the bottom octave it is more
+    // energy than the hammer carries at all, and even on the longest tine
+    // here it asks for more than half of it to land in one mode -- where a
+    // real hammer gives a few to a few tens of per cent, and shares that
+    // with every other mode and the second polarisation.
+    //
+    // So Figure 4 is not a bass tine at ff in this geometry, and the first
+    // reading of this row -- that the launch is three times too small --
+    // was wrong. You cannot launch your way to 25 mm. Either the figure is
+    // a different note, or its axis is not tip deflection, or the tine it
+    // was measured on is far longer and lighter than the ones solved here
+    // (this model has 130 mm and 1.04 g of modal mass at note 28, against a
+    // 2.43 g hammer).
+    //
+    // What the row is for now is the discrepancy itself, which is real and
+    // unexplained, and the energy budget beside it, so the next person does
+    // not spend the campaign raising a launch that cannot get there.
+    // Bounded at 3 mm so the model's own figure cannot quietly shrink.
     {
         const int note = 28;                      // low E, the longest tine here
         auto e = std::make_unique<EpiEngine>();
@@ -727,14 +749,16 @@ static void sectionG()
     // where the measured ladder holds and exactly where it stops.
     //
     // So the remaining weight is not available from this field at this gap
-    // by any shaping of the pole. What carries it is row D1: the tip does
-    // not travel far enough. Pfeifle's high-speed camera measures +/-2.5 cm
-    // of tine deflection and this model reaches about a third of that, and
-    // since the harmonics are manufactured by how much of the field's
-    // curvature the tip crosses per cycle, a third of the travel is a third
-    // of the curvature. D1 is the mechanical statement of this row, this row
-    // is the spectral statement of D1, and the two should be closed
-    // together -- from the launch, not from the field.
+    // by any shaping of the pole, and it is not available from a bigger
+    // swing either. Row D1 was written pointing here -- Pfeifle's camera
+    // measures +/-2.5 cm of tine deflection against this model's 7.8 mm,
+    // and the harmonics ARE manufactured by how much of the field's
+    // curvature the tip crosses per cycle -- and then the energy budget
+    // under D1 ruled the swing out: 25 mm of the fundamental costs 54% of
+    // the whole hammer at the bottom of the compass and more than the
+    // hammer has above it. Both ends of the question are now closed off,
+    // which leaves the mechanism genuinely open rather than merely
+    // unmeasured, and that is the honest state of it.
     {
         const auto& lo = render (33, kHard, 2.0);          // A1, 55 Hz
         const auto& hi = render (kUpper.midi, kHard, 2.0); // E5, 659 Hz
