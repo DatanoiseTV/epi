@@ -521,6 +521,63 @@ static void sectionC()
 }
 
 // ===========================================================================
+// D. Mechanics: how far the metal actually moves
+// ===========================================================================
+
+static void sectionD()
+{
+    heading ("D. Mechanics");
+
+    // D1: tip deflection against the one published measurement of it.
+    //
+    // Pfeifle, "Real-time Physical Model of a Wurlitzer and Rhodes Electric
+    // Piano", DAFx-17, tracks a struck Rhodes tine with a Vision Research
+    // V711 high-speed camera at sub-pixel accuracy [R]. His Figure 4 is the
+    // phase plot of the two polarisations, and its axes are the measurement:
+    // vertical deflection +/-2.5 cm, horizontal +/-0.4 cm. His own model
+    // (Figure 11) reproduces it at +/-3.0 and +/-0.5 cm, and the reason his
+    // formulation carries a large-deflection Kirchhoff term at all is that
+    // the deflection IS large -- a couple of centimetres on a rod of about
+    // seventeen, which is a fifth of its length.
+    //
+    // This model's bass tine reaches about 8 mm at ff, roughly a third of
+    // that. The row is here because the number is not incidental: the whole
+    // architecture rests on the field manufacturing the harmonics, and how
+    // much of the field's curvature the tip explores per cycle is set by
+    // exactly this amplitude. A tine that swings a third as far stays in a
+    // third of the field, and G2 -- the bass being too poor in high partials
+    // relative to the treble -- is what that looks like from the spectrum
+    // end. So this is the mechanical statement of the same shortfall, and
+    // the cheapest thing to settle before anyone tunes the field again.
+    //
+    // Held as a gap rather than a failure for two honest reasons. The paper
+    // does not state which note or which dynamic Figure 4 is, and a bass
+    // tine at ff and a treble tine at mf differ by more than the factor in
+    // question -- so the target is a magnitude, not a calibration. And
+    // closing it means re-deriving the launch, which moves every row in
+    // this suite. Bounded at 3 mm so it cannot quietly shrink further.
+    {
+        const int note = 28;                      // low E, the longest tine here
+        auto e = std::make_unique<EpiEngine>();
+        e->prepare (kFs, 256);
+        EngineParams p = referenceParams();
+        p.instrument = 0;
+        std::vector<float> L (256), R (256);
+        NoteEvent on { 0, NoteEvent::noteOn, note, 1.0f };
+        double pk = 0.0;
+        const int idx = note - EpiEngine::kLoNote;
+        for (int b = 0; b < 60; ++b)
+        {
+            e->process (L.data(), R.data(), 256, p, b == 0 ? &on : nullptr, b == 0 ? 1 : 0);
+            pk = std::max (pk, std::abs (static_cast<double> (e->vizTineTip (idx))));
+        }
+        const double mm = pk * 1000.0;
+        row ("D1", "bass tine tip deflection at ff", "25 mm [R], +/-40%",
+             fmt ("%.1f mm", mm), gap (mm, 15.0, 35.0, 3.0, 40.0));
+    }
+}
+
+// ===========================================================================
 // E. Steadiness
 // ===========================================================================
 
@@ -670,8 +727,14 @@ static void sectionG()
     // where the measured ladder holds and exactly where it stops.
     //
     // So the remaining weight is not available from this field at this gap
-    // by any shaping of the pole, and the open question is what else in the
-    // real instrument carries it.
+    // by any shaping of the pole. What carries it is row D1: the tip does
+    // not travel far enough. Pfeifle's high-speed camera measures +/-2.5 cm
+    // of tine deflection and this model reaches about a third of that, and
+    // since the harmonics are manufactured by how much of the field's
+    // curvature the tip crosses per cycle, a third of the travel is a third
+    // of the curvature. D1 is the mechanical statement of this row, this row
+    // is the spectral statement of D1, and the two should be closed
+    // together -- from the launch, not from the field.
     {
         const auto& lo = render (33, kHard, 2.0);          // A1, 55 Hz
         const auto& hi = render (kUpper.midi, kHard, 2.0); // E5, 659 Hz
@@ -1365,6 +1428,7 @@ int main()
     sectionA();
     sectionB();
     sectionC();
+    sectionD();
     sectionE();
     sectionF();
     sectionG();
