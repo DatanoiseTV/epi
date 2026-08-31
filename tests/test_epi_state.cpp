@@ -282,6 +282,29 @@ int main()
         constexpr int block = 128;
         constexpr int blocks = 180;
 
+        // Every per-note bench the workshop can edit, set to a deterministic
+        // non-trivial pattern. These are the four things a player edits by
+        // hand and the ones a lost save would hurt most, and until now no
+        // suite touched three of them at all -- the pickup bench, the
+        // e-grand string bench and the grand string bench are reachable from
+        // the UI, written into the state tree, and were asserted by nothing.
+        auto benches = [] (EpiAudioProcessor& p)
+        {
+            for (int i = 0; i < epi::EpiEngine::kNumTines; ++i)
+            {
+                const float t = static_cast<float> (i) / epi::EpiEngine::kNumTines;
+                p.setTineMod   (i, 1.0f + 0.05f * std::sin (12.0f * t),
+                                   1.0f + 0.04f * std::cos (9.0f * t));
+                p.setGrandMod  (i, 1.0f + 0.04f * std::cos (7.0f * t),
+                                   1.0f + 0.03f * std::sin (11.0f * t));
+                p.setStringMod (i, 1.0f + 0.03f * std::sin (5.0f * t),
+                                   1.0f + 0.05f * std::cos (13.0f * t));
+                p.setPickupMod (i, 0.18f * std::sin (8.0f * t),
+                                   0.12f * std::cos (6.0f * t),
+                                   1.0f + 0.2f * std::sin (4.0f * t));
+            }
+            p.setCabMod ({ 0.7f, 0.35f, 0.6f, 0.45f, 0.55f });
+        };
         auto scribble = [] (EpiAudioProcessor& p, int instrument)
         {
             auto& t = p.getValueTreeState();
@@ -332,6 +355,7 @@ int main()
         {
             auto aOwned = std::make_unique<EpiAudioProcessor>();
             scribble (*aOwned, inst);
+            benches (*aOwned);
             const std::vector<float> first = render (*aOwned);
 
             juce::MemoryBlock blob;
@@ -356,6 +380,45 @@ int main()
             if (! finite || e <= 0.0 || db > -120.0)
                 bad.add (juce::String (inst) + ": " + juce::String (db, 1) + " dB");
         }
+        // And the benches have to DO something, or the row above could pass
+        // by being a no-op at both ends of the trip. Measured against the
+        // same performance with every bench at stock.
+        {
+            // Only the three instruments that HAVE a per-note bench. The
+            // four benches are the tine's geometry, the e-grand's strings,
+            // the grand's strings and the tine's pickup; the reed and the
+            // clav have none, so they are correctly untouched by all of
+            // them and asserting otherwise would be asserting a bench that
+            // does not exist.
+            juce::StringArray dead;
+            for (int inst : { 0, 1, 3 })
+            {
+                auto stockOwned = std::make_unique<EpiAudioProcessor>();
+                scribble (*stockOwned, inst);
+                const std::vector<float> stock = render (*stockOwned);
+
+                auto modOwned = std::make_unique<EpiAudioProcessor>();
+                scribble (*modOwned, inst);
+                benches (*modOwned);
+                const std::vector<float> modded = render (*modOwned);
+
+                const std::size_t n = std::min (stock.size(), modded.size());
+                double d = 0.0, e = 0.0;
+                for (std::size_t i = 0; i < n; ++i)
+                {
+                    const double dd = static_cast<double> (stock[i]) - static_cast<double> (modded[i]);
+                    d += dd * dd;
+                    e += static_cast<double> (stock[i]) * static_cast<double> (stock[i]);
+                }
+                const double db = 10.0 * std::log10 (std::max (d, 1.0e-300) / std::max (e, 1.0e-300));
+                if (db < -40.0) dead.add (juce::String (inst) + ": " + juce::String (db, 1) + " dB");
+            }
+            row ("S8c", "the per-note benches are audible at all",
+                 dead.isEmpty(),
+                 (dead.isEmpty() ? juce::String ("every instrument moved")
+                                 : juce::String ("inaudible on ") + dead.joinIntoString (", ")).toRawUTF8());
+        }
+
         row ("S8b", "the instrument sounds the same after the trip",
              bad.isEmpty(),
              (juce::String ("worst ") + juce::String (worst, 1) + " dB"

@@ -279,30 +279,37 @@ juce::ValueTree EpiAudioProcessor::buildModsTree (bool always) const
     juce::StringArray ls, ds, hs, gs, ws, sl, sd, cs;
     for (const auto& m : tineMods)
     {
-        ls.add (juce::String (m[0], 6));
-        ds.add (juce::String (m[1], 6));
+        ls.add (juce::String (m[0], 9));
+        ds.add (juce::String (m[1], 9));
     }
     for (const auto& m : pickupMods)
     {
-        hs.add (juce::String (m[0], 6));
-        gs.add (juce::String (m[1], 6));
-        ws.add (juce::String (m[2], 6));
+        hs.add (juce::String (m[0], 9));
+        gs.add (juce::String (m[1], 9));
+        ws.add (juce::String (m[2], 9));
     }
     for (const auto& m : stringMods)
     {
-        sl.add (juce::String (m[0], 6));
-        sd.add (juce::String (m[1], 6));
+        sl.add (juce::String (m[0], 9));
+        sd.add (juce::String (m[1], 9));
     }
     juce::StringArray gl, gd;
     for (const auto& m : grandMods)
     {
-        gl.add (juce::String (m[0], 6));
-        gd.add (juce::String (m[1], 6));
+        gl.add (juce::String (m[0], 9));
+        gd.add (juce::String (m[1], 9));
     }
-    for (float v : cabMods) cs.add (juce::String (v, 6));
+    for (float v : cabMods) cs.add (juce::String (v, 9));
     juce::StringArray ms;
-    for (float v : micMods) ms.add (juce::String (v, 6));
+    for (float v : micMods) ms.add (juce::String (v, 9));
 
+    // Nine decimal places, not six. A float needs nine significant digits
+    // to survive a decimal round trip, and the benches are values near 1.0
+    // where six places leaves about 2.5e-7 of relative error. That sounds
+    // like nothing and is not: a tine cut 2.5e-7 short is a tine 2.5e-7
+    // sharp, and over a second of ringing the phase error accumulates until
+    // the reloaded project differs from the saved one by -66 dB. Measured,
+    // and it is why row S8b failed the moment the benches were put into it.
     juce::ValueTree mods ("TineMods");
     mods.setProperty ("len",  ls.joinIntoString (","), nullptr);
     mods.setProperty ("dia",  ds.joinIntoString (","), nullptr);
@@ -316,10 +323,10 @@ juce::ValueTree EpiAudioProcessor::buildModsTree (bool always) const
     mods.setProperty ("cab",  cs.joinIntoString (","), nullptr);
     mods.setProperty ("mic",  ms.joinIntoString (","), nullptr);
     juce::StringArray sts;
-    for (float v : micStage) sts.add (juce::String (v, 6));
+    for (float v : micStage) sts.add (juce::String (v, 9));
     mods.setProperty ("mstage", sts.joinIntoString (","), nullptr);
     juce::StringArray vm;
-    for (float v : velMap) vm.add (juce::String (v, 6));
+    for (float v : velMap) vm.add (juce::String (v, 9));
     mods.setProperty ("vmap", vm.joinIntoString (","), nullptr);
     mods.setProperty ("mpe", getMpeMode(), nullptr);
     return mods;

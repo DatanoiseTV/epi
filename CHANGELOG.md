@@ -82,6 +82,14 @@ All notable changes to Epi are documented here. The format follows
   zero, and four of the five instruments are now bit-identical after both a
   reset and a re-prepare. The clav is not: a measured -114 dB remains,
   a ten-thousandth of a per cent of the signal, bounded by its rows.
+- Per-note workshop edits did not survive a save exactly. The four benches
+  are serialised as decimal strings and were written at six places, which
+  for values near 1.0 leaves about 2.5e-7 of relative error -- and a tine cut
+  2.5e-7 short is a tine 2.5e-7 sharp, so over a second of ringing the phase
+  error accumulates until the reloaded project differs from the saved one by
+  -66 dB. Written at nine places now, which is what a float needs to survive
+  a decimal round trip: the same measurement reads -191 dB. Projects saved
+  by older versions load exactly as before.
 - A bounce inherited the previous take's swell pedal and pitch wheel. Every
   other controller the engine holds -- the sustain pedal, the soft pedal,
   the sostenuto latch -- is returned by reset(); CC11 expression and the
@@ -136,6 +144,12 @@ All notable changes to Epi are documented here. The format follows
   35 and resized it on the way.
 
 ### Added
+- The project round-trip row now scribbles all four per-note benches -- the
+  tine's geometry, the e-grand's and the grand's strings, the tine's pickup
+  -- where before it moved only parameters and the mic stage. Three of the
+  four had no coverage in any suite at all. A companion row checks the
+  benches are audible in the first place, so the round trip cannot pass by
+  being a no-op at both ends.
 - The reset and re-prepare identity rows now put the host's controllers into
   the history they compare against, which is what they should always have
   done: they are the state a reset most obviously exists to clear. Without
