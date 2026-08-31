@@ -293,7 +293,15 @@ public:
 
     void reset()
     {
-        env = 0.0; thump = 0.0; ph1 = ph2 = 0.0; lp1 = lp2 = 0.0; noise = 22222u;
+        // lp0 with them. It is the slow floor the knock subtracts from
+        // itself, and leaving it behind meant the first knock after a reset
+        // carried the last session's DC bias -- so the clav was the one
+        // instrument whose bounce did not repeat. Mild at the default
+        // registration and not mild with all four rockers down, where the
+        // stack attenuates the string while the offset passes the Brilliant
+        // and Treble branches largely intact: measured -44.5 dB against the
+        // signal, which is audible in a quiet passage.
+        env = 0.0; thump = 0.0; ph1 = ph2 = 0.0; lp1 = lp2 = lp0 = 0.0; noise = 22222u;
     }
 
     void strike (int key, double velocity)

@@ -92,6 +92,15 @@ All notable changes to Epi are documented here. The format follows
   filter running either way so it never re-enters a live path cold. Measured
   on the tine at 1447 times the signal's own worst second difference before,
   and nothing measurable after.
+- The clav was the one instrument whose bounce did not repeat, and it was
+  the knock, not the string: ClavinetKnock::reset() cleared five of its six
+  filter states and left lp0, the slow floor the knock subtracts from
+  itself. So the first knock after a reset carried the previous session's DC
+  bias. Measured -77 dB against the signal at the default registration and
+  worse with the rockers down, where the stack attenuates the string while
+  the offset passes the Brilliant and Treble branches largely intact. All
+  five instruments are now bit-identical after both a reset and a
+  re-prepare.
 - The clav's third interpolation history was never cleared on a reset,
   though its two siblings were and the same hermite() reads all three.
 - The strings, reeds and rods were animated but could not be seen to move on
