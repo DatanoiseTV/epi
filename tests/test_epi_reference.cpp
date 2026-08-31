@@ -737,6 +737,15 @@ static void sectionG()
     //   C1 at E5 by half a decibel -- while failing A3 at 0.35 and A2 as
     //   well at 0.20. It is a strong lever on the tone rows and a weak one
     //   on these.
+    // - Not the pickup offset. Sweeping PICKUP POS from -0.70 to -0.05
+    //   leaves the shipped -0.35 the best of them: at -0.50 every gap row
+    //   in this cluster moves the WRONG way (B6 1.45 -> 1.36 dB/s, B5 0.35
+    //   -> 0.32, C1 at E5 -46.2 -> -48.8, C5 6.25 -> 6.17 ms), and at -0.20
+    //   and -0.05 the A rows start failing outright.
+    // - Not the pole's half-width, which is the most direct lever on the
+    //   field's curvature there is. Narrowing it from the calibrated 1.6 mm
+    //   to 1.3 and 1.0 leaves all three of these gapped and fails two and
+    //   then three other rows on the way.
     //
     // And a reason to stop looking at the pickup's near geometry at all: a
     // source at distance d cannot make lateral field structure finer than
