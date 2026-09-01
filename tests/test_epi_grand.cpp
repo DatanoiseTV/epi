@@ -986,13 +986,46 @@ static void sectionGrand()
         // split. What the dip depth hangs on is the PHASE of that 0.48 Hz
         // beat at the fast/slow crossover, interfering across THREE
         // component families (prompt V, three antisymmetric members 0.05-
-        // 0.16 Hz apart, H at -16 dB and +1.8 c): sweeping the shared H
-        // read alone moves C4 and A3 in opposite directions (kGHRead
-        // 0.05/0.45/0.70 -> C4 -4.1/-5.2/-17.1 dB while A3 -6.5/-4.7/-10.8
-        // dB), so no shared constant reaches both targets -- the recorded
-        // Pareto wall. The measured -10..-28 is one draw of that beat-phase
-        // variable; the model's draw lands at -5. Bounded: shallower than
-        // -4.5 dB -- beats visibly filled -- and never deeper than -28.
+        // 0.16 Hz apart, H at -16 dB and +1.8 c).
+        //
+        // THIS COMMENT USED TO CLAIM A PARETO WALL and it was wrong, which
+        // is worth saying plainly because someone would have built on it.
+        // It read: sweeping the shared H read moves C4 and A3 in opposite
+        // directions (kGHRead 0.05/0.45/0.70 -> C4 -4.1/-5.2/-17.1 while A3
+        // -6.5/-4.7/-10.8), so no shared constant reaches both. Those three
+        // numbers reproduce exactly. The conclusion does not follow from
+        // them: they are a three-point sample straddling a region where the
+        // response is not monotone, and on a fine grid above 0.45 the two
+        // dips deepen TOGETHER at a near-constant ratio.
+        //
+        // Settled by enumeration rather than by sampling. The per-note
+        // detune hash only matters modulo 256, so the whole draw space is
+        // finite: over all 128 odd multipliers the correlation between C4's
+        // dip and A3's is -0.013. They are independent. There is no trade
+        // between them to be walled by.
+        //
+        // What the enumeration does show is a one-sided floor. C4 lands
+        // inside this row's target in 36 of the 128 draws -- 28% -- while
+        // A3 clears its own -3 dB fence in NONE of them, the shallowest
+        // ever seen being -4.0. So the blocker is not a trade-off, it is
+        // that A3's dip cannot be made shallow enough by any draw, and the
+        // thing that does move it is the per-string voicing inequality
+        // rather than the detune.
+        //
+        // Which is also why the obvious fix is not taken. Rerolling the
+        // hash to 141 closes this row, W1's slow component and UC1's
+        // ripple, at fail=0 -- and it is a different ticket in the same
+        // lottery, with no physical content whatever, chosen because it
+        // happens to land well. Closing A3 as well needs the voicing
+        // scatter cut from +/-1 dB to +/-0.13, which contradicts the
+        // justification written at that constant, and leaves A3 at -2.9
+        // against a -3.0 fence on an observable this suite already records
+        // as chaotic across platforms. Fitting the suite is not calibrating
+        // the instrument.
+        //
+        // The measured -10..-28 is one draw of the beat-phase variable and
+        // the model's draw lands at -5. Bounded: shallower than -4.5 dB --
+        // beats visibly filled -- and never deeper than -28.
         row ("U2", "C4 deepest null in 4 s", "-10 .. -28 dB",
              fmt ("%.1f dB", dip), gapV (dip, -28.0, -10.0, -28.0, -4.5));
     }
