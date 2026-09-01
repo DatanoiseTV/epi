@@ -4,7 +4,7 @@ All notable changes to Epi are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [semver](https://semver.org/) (pre-1.0: minor bumps may break).
 
-## [Unreleased]
+## [0.9.0] - 2026-09-01
 
 ### Fixed
 - The hammer's hysteretic loss term is solved implicitly instead of
