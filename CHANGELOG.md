@@ -190,6 +190,14 @@ All notable changes to Epi are documented here. The format follows
   35 and resized it on the way.
 
 ### Added
+- A row measuring the tine's tip deflection against the one published
+  measurement of it -- Pfeifle's high-speed camera, DAFx-17 Figure 4, at
+  +/-2.5 cm -- and, beside it, the energy budget that says the figure cannot
+  be a bass tine at ff in this geometry: a 25 mm swing of the fundamental
+  costs 54% of the whole hammer at the bottom of the compass and more than
+  the hammer carries above it. The discrepancy is real and the row holds it;
+  what the row is for is stopping the next attempt spending a campaign
+  raising a launch that cannot reach the target.
 - Twenty-two rows for what only shows up over time. Nothing in this project
   ran longer than twenty-two seconds, and everything downstream of the
   voices holds state a short render cannot exercise -- a phaser whose
@@ -261,6 +269,14 @@ All notable changes to Epi are documented here. The format follows
   it fences: reinstating the old behaviour fails them.
 
 ### Changed
+- Recorded rather than changed, with the numbers, so the same ground is not
+  covered twice: seven levers have now been tried and eliminated for the
+  tine's bass-harmonic shortfall (rows B5, B6 and G2) -- the pole's charge
+  footprint, the pickup gap, the launch dwell, the pickup offset, the pole's
+  half-width, the swing amplitude on energy grounds, and the field's own
+  spatial structure, which cannot be finer than the gap it is read across.
+  Both ends of the mechanism are closed off, which makes it genuinely open
+  rather than merely unmeasured.
 - Recorded, measured and deliberately not changed: the transducer options
   cannot be level-matched by a constant, which is a stronger statement than
   simply not being level-matched. Measured across the register at two
