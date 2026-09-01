@@ -633,10 +633,24 @@ private:
     }
     double run (Biquad& q, double x) const { return runStatic (q, x); }
 
+    // Both designers clamp the corner below Nyquist, the same 0.45 fs the
+    // radiator, the mic stage and the one-pole in EpiModel already use.
+    //
+    // Without it these are RBJ forms evaluated at w > pi, where sin(w)
+    // changes sign and the biquad is no longer the filter it was meant to
+    // be -- it is unstable. It matters here because these corners are
+    // FIXED frequencies rather than fractions of the rate: the treble shelf
+    // sits at 5 kHz, so anything below a 10 kHz sample rate puts it past
+    // Nyquist. Measured at 8 kHz, one note on the E-Grand at defaults put
+    // twenty-three non-finite samples into the output chain, each one
+    // tearing down and rebuilding the preamp, the cabinet, the phaser and
+    // the room. At every rate a device actually offers the clamp is
+    // inactive -- 0.45 fs is 19.8 kHz at 44.1 -- so nothing that ships
+    // changes.
     void setPeak (Biquad& q, double f, double dB, double Q)
     {
         const double A = std::pow (10.0, dB / 40.0);
-        const double w = 2.0 * kPiD * f / fs;
+        const double w = 2.0 * kPiD * std::min (f, 0.45 * fs) / fs;
         const double al = std::sin (w) / (2.0 * Q);
         const double a0 = 1.0 + al / A;
         q.b0 = (1.0 + al * A) / a0;
@@ -654,7 +668,7 @@ private:
     void setShelf (Biquad& q, double f, double dB, bool high)
     {
         const double A = std::pow (10.0, dB / 40.0);
-        const double w = 2.0 * kPiD * f / fs;
+        const double w = 2.0 * kPiD * std::min (f, 0.45 * fs) / fs;
         const double cw = std::cos (w), sw = std::sin (w);
         const double al = sw / 2.0 * std::sqrt (2.0);
         const double s2A = 2.0 * std::sqrt (A) * al;

@@ -82,6 +82,18 @@ All notable changes to Epi are documented here. The format follows
   zero, and four of the five instruments are now bit-identical after both a
   reset and a re-prepare. The clav is not: a measured -114 dB remains,
   a ten-thousandth of a per cent of the signal, bounded by its rows.
+- The E-Grand's preamp was unstable below a 10 kHz sample rate. Its tone
+  stages are RBJ biquads designed at FIXED frequencies rather than fractions
+  of the rate -- the treble shelf sits at 5 kHz -- and the designers did not
+  clamp the corner below Nyquist, so at any rate under 10 kHz that shelf is
+  designed past it, where sin(w) changes sign and the filter is no longer
+  the filter it was meant to be. Measured at 8 kHz, one note at defaults put
+  twenty-three non-finite samples into the output chain, each one tearing
+  down and rebuilding the preamp, the cabinet, the phaser and the room. Both
+  designers now clamp to 0.45 fs, the same convention the radiator, the mic
+  stage and the one-pole in EpiModel already use. At every rate a device
+  actually offers the clamp is inactive -- 0.45 fs is 19.8 kHz at 44.1 -- so
+  nothing that ships changes, and every suite is unmoved.
 - The E-Grand diverged under per-note tuning, and the output chain was
   catching it and papering over it. The cause is a mode LAYOUT change, not
   an energy error: the two polarisations are laid out as a vertical block
