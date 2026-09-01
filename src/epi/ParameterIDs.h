@@ -14,6 +14,8 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
+#include <memory>
+
 // Single source of truth for parameter IDs. The WebEditor re-quotes these on
 // the JS side (PARAMS ids in ui/epi/juce-bridge.jsx); keep both in sync — on
 // the JS side a typo becomes a dead control, not a compile error, which is why
