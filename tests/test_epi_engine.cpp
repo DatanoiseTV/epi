@@ -5519,6 +5519,113 @@ static Stereo renderWithControls (double fs, EngineParams p, double seconds,
     return out;
 }
 
+// 27. A knob automated at twice a body mode.
+//
+// This section exists because every invariant the rest of the suite checks
+// stayed green while the instrument was being destroyed. The output rail
+// turns an infinity into exactly 0.891, and the flux guard zeroes any voice
+// that goes non-finite before it reaches the chain -- so "finite", "inside
+// the rail" and "no chain rebuilds" were all true of a render that had gone
+// to a railed roar with the note dead underneath it. What that costs is an
+// invariant on the instrument's stored ENERGY rather than on its output,
+// which is what these rows add.
+//
+// The mechanism is parametric pumping. A mode holds E = M v^2 / 2 + K q^2 / 2,
+// so retuning it at fixed state changes E by dK q^2 / 2, with a sign that
+// depends where in its cycle it is caught. Body Size is a plain 0..1
+// parameter, read once per block, with no smoothing and no rate limit, and
+// it scales the frame's stiffness by about 4.2 across its travel. Modulate
+// that in phase with a mode and the energy multiplies every cycle.
+//
+// Only ONE thing does it -- a rate at twice a body mode -- and that is the
+// test as much as the fix: an ordinary 5 Hz wobble on the same knob at the
+// same depth is inert, which is what says this is resonant pumping and not
+// merely a loud setting.
+
+static void sectionParametric()
+{
+    heading ("27. a body knob automated at twice a mode");
+
+    const double fs = 48000.0;
+    const int block = 64;
+
+    // Body modes are 47, 88, 143, 211, 305 and 418 Hz, so 94 and 176 are
+    // the two lowest pumping rates that fit inside a 64-sample block's own
+    // Nyquist. 5 Hz is the control: same knob, same depth, no resonance.
+    auto sweepBody = [&] (int inst, double lfoHz, double depth, double& railedPct)
+    {
+        auto e = std::make_unique<EpiEngine>();
+        e->prepare (fs, block);
+        EngineParams p = measParams (inst);
+        std::vector<float> L (static_cast<std::size_t> (block));
+        std::vector<float> R (static_cast<std::size_t> (block));
+        std::vector<NoteEvent> on;
+        for (int n : { 48, 55, 60, 64 })
+            on.push_back ({ 0, NoteEvent::noteOn, n, 0.8f });
+        on.push_back ({ 0, NoteEvent::sustainOn, 0, 1.0f });
+        long railed = 0, total = 0;
+        for (long i = 0; i < static_cast<long> (fs * 4.0); i += block)
+        {
+            const double t = static_cast<double> (i) / fs;
+            p.bodySize = static_cast<float> (0.5 + depth * std::sin (2.0 * kPiD * lfoHz * t));
+            e->process (L.data(), R.data(), block, p,
+                        i == 0 ? on.data() : nullptr,
+                        i == 0 ? static_cast<int> (on.size()) : 0);
+            for (int k = 0; k < block; ++k)
+            {
+                if (std::fabs (static_cast<double> (L[static_cast<std::size_t> (k)])) > 0.85) ++railed;
+                ++total;
+            }
+        }
+        railedPct = 100.0 * static_cast<double> (railed) / static_cast<double> (std::max (1L, total));
+        return e->harpEnergy();
+    };
+
+    // 27.0 -- the harp's own energy stays where a still knob leaves it. The
+    // bound is against the CONTROL rather than an absolute: what matters is
+    // that sweeping the knob does not add energy, and the still figure is
+    // what the instrument holds on its own. Ten times that is generous for
+    // a knob being swept and nowhere near the runaway, which reached
+    // infinity from 3e-12 inside four seconds.
+    {
+        double railStill = 0.0, rail94 = 0.0, rail176 = 0.0, rail5 = 0.0;
+        const double still = sweepBody (0, 0.0,   0.0, railStill);
+        const double slow  = sweepBody (0, 5.0,   0.5, rail5);
+        const double at94  = sweepBody (0, 94.0,  0.5, rail94);
+        const double at176 = sweepBody (0, 176.0, 0.5, rail176);
+        const double ceiling = std::max (1.0e-9, still * 10.0);
+        row ("27.0", "Body Size at 2x a mode does not pump the harp",
+             "energy within 10x the still knob",
+             fmt2 ("still %.2e, 94 Hz %.2e", still, at94)
+                 + fmt (", 176 Hz %.2e", at176),
+             verdict (std::isfinite (at94) && std::isfinite (at176)
+                      && at94 <= ceiling && at176 <= ceiling));
+        row ("27.0b", "and a slow sweep of the same knob is inert",
+             "energy within 10x, railed under 1%",
+             fmt2 ("5 Hz %.2e, railed %.2f%%", slow, rail5),
+             verdict (std::isfinite (slow) && slow <= ceiling && rail5 < 1.0));
+    }
+
+    // 27.1 -- and the OUTPUT does not turn into a roar, which is the part a
+    // player would hear. Measured as the share of samples inside the rail's
+    // knee: on the reed this reached 87 per cent before the fix, and the
+    // rail kept every one of them finite and under 1.0.
+    {
+        for (int inst = 0; inst < 5; ++inst)
+        {
+            double railed = 0.0, railedStill = 0.0;
+            (void) sweepBody (inst, 0.0,  0.0, railedStill);
+            (void) sweepBody (inst, 94.0, 0.5, railed);
+            char id[12], what[80];
+            std::snprintf (id, sizeof id, "27.1%d", inst);
+            std::snprintf (what, sizeof what, "%s: the knob does not make a roar", kInstName[inst]);
+            row (id, what, "railed share within 2% of the still knob",
+                 fmt2 ("%.2f%% vs %.2f%% still", railed, railedStill),
+                 verdict (railed <= railedStill + 2.0));
+        }
+    }
+}
+
 static void sectionControllers()
 {
     heading ("26. expression, the wheel, and what a large chord costs");
@@ -5751,6 +5858,7 @@ int main()
     sectionVibrato();
     sectionEndurance();
     sectionControllers();
+    sectionParametric();
 
     const double wall = std::chrono::duration<double> (std::chrono::steady_clock::now() - t0).count();
     std::printf ("\nsuite wall time %.1f s\n", wall);

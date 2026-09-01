@@ -4,6 +4,35 @@ All notable changes to Epi are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [semver](https://semver.org/) (pre-1.0: minor bumps may break).
 
+## [Unreleased]
+
+### Fixed
+- A host LFO on Body Size destroyed the instrument, and nothing caught it.
+  The body benches re-pitch a ringing frame through a retune that preserved
+  the modal STATE, which is not the same as preserving its energy: a mode
+  holds E = M v^2 / 2 + K q^2 / 2, so changing K at fixed state changes E by
+  dK q^2 / 2, with a sign that depends where in its cycle the mode is
+  caught. Body Size is a plain 0..1 parameter, read once per block, with no
+  smoothing and no rate limit, and it scales the frame's stiffness by about
+  4.2 across its travel -- so modulating it in phase with a mode multiplies
+  the energy every cycle. Measured at twice the 47 Hz body mode, at half the
+  knob's depth and with everything else at its default, the harp went from
+  3e-12 to infinity in under four seconds and the reed railed on 87 per cent
+  of its output. Only a rate at twice a mode does it; an ordinary 5 Hz
+  wobble at the same depth is inert, which is what identifies it as
+  parametric pumping rather than a loud setting. The retune now rescales the
+  state so the energy is unchanged, which makes it neutral by construction:
+  no sequence of neutral operations can pump.
+
+### Added
+- Seven rows for it, and they measure the instrument's stored ENERGY rather
+  than its output, because the output could not see this. The rail turns an
+  infinity into exactly 0.891 and the flux guard zeroes non-finite voices,
+  so "finite", "inside the rail" and "no chain rebuilds" were all true of a
+  render that had gone to a railed roar with the note dead underneath. With
+  the fix removed the rows fail at infinite harp energy and 98.9 per cent of
+  the e-grand's samples inside the rail knee.
+
 ## [0.9.0] - 2026-09-01
 
 ### Fixed

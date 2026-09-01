@@ -271,15 +271,58 @@ public:
         setModeKeepingState (i, freqHz, t60[i]);
     }
 
-    // Retune AND redamp without touching stored energy: the body benches
-    // re-pitch a ringing frame, and a live sweep must move the ring, not cut
-    // it.
+    // Retune AND redamp without touching stored ENERGY: the body benches
+    // re-pitch a ringing frame, and a live sweep must move the ring, not
+    // cut it.
+    //
+    // The energy is what has to be preserved, and keeping the state is not
+    // the same thing. A mode holds E = M v^2 / 2 + K q^2 / 2, so changing K
+    // at fixed (q, v) changes E by dK q^2 / 2 -- and the sign of that
+    // depends on where in its cycle the mode happens to be. Do it once and
+    // it is a small error that decays. Do it repeatedly IN PHASE with the
+    // oscillation and it is a child on a swing.
+    //
+    // That is not hypothetical. Body Size is a plain 0..1 parameter with no
+    // smoothing and no rate limit, read once per block, and it scales this
+    // frame's stiffness by about 4.2 across its travel. A host LFO on it at
+    // twice any body mode -- 94 Hz for the 47 Hz mode, 176 for the 88 --
+    // took the harp from 3e-12 to infinity in under four seconds at a depth
+    // of half the knob, and the reed's output railed on 87 per cent of its
+    // samples. Nothing caught it: the output rail turns an infinity into
+    // exactly 0.891, and the flux guard zeroes non-finite voices, so every
+    // invariant the suite checks stayed green while the instrument was
+    // destroyed. Only a growth rate of twice a mode frequency does it,
+    // which is the signature of parametric pumping and not of anything
+    // else.
+    //
+    // Rescaling the state so the energy is unchanged makes a retune
+    // energy-neutral by construction, and no sequence of neutral operations
+    // can pump. It costs a square root per mode per retune, on a path that
+    // runs at control rate.
     void retuneKeepingState (int i, double freqHz, double t60Sec)
     {
         if (i < 0 || i >= MaxN || ! live[i]) return;
         if (! (freqHz > 0.0) || freqHz >= kModeBudget * fs) return;
+
+        const double v0 = (q[i] - qPrev[i]) / k;
+        const double before = 0.5 * mass[i] * v0 * v0 + 0.5 * stiff[i] * q[i] * qPrev[i];
+
         setModeKeepingState (i, freqHz, t60Sec);
         t60[i] = t60Sec;
+
+        const double after = 0.5 * mass[i] * v0 * v0 + 0.5 * stiff[i] * q[i] * qPrev[i];
+        // Only when both are real, positive and finite: the q*qPrev form is
+        // the scheme's own energy and can sit at or below zero for a mode
+        // caught mid-swing, and a mode at rest has nothing to preserve.
+        if (before > 0.0 && after > 0.0 && std::isfinite (before) && std::isfinite (after))
+        {
+            const double a = std::sqrt (before / after);
+            if (std::isfinite (a) && a > 0.0)
+            {
+                q[i]     *= a;
+                qPrev[i] *= a;
+            }
+        }
     }
 
     double baseFrequency (int i) const { return (i >= 0 && i < MaxN) ? baseFreq[i] : 0.0; }
