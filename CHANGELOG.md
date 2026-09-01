@@ -202,6 +202,18 @@ All notable changes to Epi are documented here. The format follows
   35 and resized it on the way.
 
 ### Added
+- Fourteen rows for the two continuous controllers and for large chords,
+  none of which had any coverage. CC11 expression reaches the strike on all
+  five instruments and does nothing to a note already sounding; the pitch
+  wheel does not bend a ringing note and the next strike is at the bent
+  pitch, on all five, since it enters through five separate Config builders
+  and a missing one would be invisible; a wheel sweep under a held chord
+  passes the same click bound the continuous knobs get, which it never did
+  before because the wheel is the fastest automation the engine sees and
+  section 6 does not include it. And a pedalled cluster of up to forty
+  notes still gets louder with each note added and still has dynamics --
+  the three rows elsewhere that use this many notes assert only finiteness
+  and the rail, which a completely flattened cluster would also pass.
 - A row measuring the tine's tip deflection against the one published
   measurement of it -- Pfeifle's high-speed camera, DAFx-17 Figure 4, at
   +/-2.5 cm -- and, beside it, the energy budget that says the figure cannot
@@ -280,6 +292,14 @@ All notable changes to Epi are documented here. The format follows
   dead when the pedal comes back down. Each was checked against the defect
   it fences: reinstating the old behaviour fails them.
 
+- The clavinet's dynamic range is small and that is the mechanism, not a
+  defect: measured on a single note from velocity 0.1 to 1.0 it spans 9 dB
+  against the tine's 51, the reed's 37 and the two pianos' 31. A tangent
+  pressed against a fret is closer to a switch than to a hammer, and the
+  clavinet suite's own row E3 pins its tip velocity at 1.0 to 4.0 m/s --
+  four to one, where the tine's launch spans nearer thirty. The new
+  controller and cluster rows carry a per-instrument floor for that reason,
+  with each instrument's measured range beside it.
 ### Changed
 - Recorded rather than changed, with the numbers, so the same ground is not
   covered twice: seven levers have now been tried and eliminated for the

@@ -5452,6 +5452,267 @@ static void sectionEndurance()
     }
 }
 
+// ===========================================================================
+// 26. The two continuous controllers, and what a large chord costs.
+//
+// CC11 expression and the pitch wheel are the only things a player rides
+// that no row measured. Both are read at the STRIKE and not under the note
+// -- expression multiplies into the strike velocity, and the wheel enters
+// through the five Config builders, whose rebuild sweep skips any voice
+// that is ringing or key-down. That is a deliberate statement about
+// instruments that have no wheel of their own, and it is worth a row
+// precisely because it is a choice rather than an oversight: someone
+// reading the code later cannot tell the difference without one.
+//
+// And the polyphony rows, because every chord anywhere else in this suite
+// is one, three or four notes. The three places that use more assert only
+// that the output is finite and inside the rail, which the rail guarantees
+// by construction and which a completely flattened cluster would also pass.
+// ===========================================================================
+
+// A render that can reach the ENGINE mid-flight, which renderBench's setup
+// hook cannot: it runs once, before any audio. Needed for the rows that ask
+// what a controller does to a note already sounding.
+struct CtlMove { double at; float expression; float bendSemis; bool useExpr; bool useBend; };
+
+static Stereo renderWithControls (double fs, EngineParams p, double seconds,
+                                  std::vector<TimedEvent> evs,
+                                  std::vector<CtlMove> moves,
+                                  int block = 256)
+{
+    const int N = static_cast<int> (fs * seconds);
+    Stereo out;
+    out.fs = fs;
+    out.L.assign (static_cast<std::size_t> (N), 0.0f);
+    out.R.assign (static_cast<std::size_t> (N), 0.0f);
+    std::stable_sort (evs.begin(), evs.end(),
+                      [] (const TimedEvent& a, const TimedEvent& b) { return a.sample < b.sample; });
+    std::stable_sort (moves.begin(), moves.end(),
+                      [] (const CtlMove& a, const CtlMove& b) { return a.at < b.at; });
+
+    auto e = std::make_unique<EpiEngine>();
+    e->prepare (fs, block);
+    std::vector<NoteEvent> blockEvs;
+    std::size_t k = 0, m = 0;
+    for (int i = 0; i < N; i += block)
+    {
+        const int n = std::min (block, N - i);
+        while (m < moves.size() && moves[m].at * fs < i + n)
+        {
+            if (moves[m].useExpr) e->setExpression (moves[m].expression);
+            if (moves[m].useBend) e->setPitchBend  (moves[m].bendSemis);
+            ++m;
+        }
+        blockEvs.clear();
+        while (k < evs.size() && evs[k].sample < i + n)
+        {
+            NoteEvent ev = evs[k].ev;
+            ev.offset = std::max (0, evs[k].sample - i);
+            blockEvs.push_back (ev);
+            ++k;
+        }
+        e->process (out.L.data() + i, out.R.data() + i, n, p,
+                    blockEvs.empty() ? nullptr : blockEvs.data(),
+                    static_cast<int> (blockEvs.size()));
+    }
+    return out;
+}
+
+static void sectionControllers()
+{
+    heading ("26. expression, the wheel, and what a large chord costs");
+
+    const double fs = 48000.0;
+    auto on = [] (int note, float vel) { NoteEvent n; n.type = NoteEvent::noteOn;
+                                         n.note = note; n.velocity = vel; return n; };
+
+    // 26.0 -- CC11 reaches the strike, on every instrument, in the right
+    // direction and by a real amount. The plugin maps CC11 to
+    // 0.25 + 0.75 * cc/127, and that multiplies the strike velocity, which
+    // then goes through the velocity map and the launch law -- so the span
+    // is not 20 log10(4) and there is no point pretending it is. What is
+    // asserted is that the ends are far apart and the middle sits between
+    // them: a controller sitting at its bottom must be quiet, not silent,
+    // and must not be louder than one at its top.
+    {
+        for (int inst = 0; inst < 5; ++inst)
+        {
+            double lvl[3];
+            int i = 0;
+            for (float x : { 0.25f, 0.625f, 1.0f })   // CC11 0, 64, 127
+            {
+                EngineParams p = measParams (inst);
+                const Stereo s = renderWithControls (fs, p, 1.5, { { 0, on (60, 0.8f) } },
+                                                     { { 0.0, x, 0.0f, true, false } });
+                lvl[i++] = 20.0 * std::log10 (std::max (1.0e-30, peakAbs (s)));
+            }
+            const double span = lvl[2] - lvl[0];
+            const bool ordered = lvl[0] < lvl[1] && lvl[1] < lvl[2];
+            // The floor is per instrument because their dynamic ranges
+            // genuinely differ, and the clav's is genuinely small. Measured
+            // as a single note from velocity 0.1 to 1.0: tine 51 dB,
+            // e-grand 32, reed 37, grand 31 -- and clav 9. That is not a
+            // defect but the mechanism: a tangent pressed against a fret is
+            // closer to a switch than to a hammer, and the clavinet suite's
+            // row E3 pins its tip velocity at 1.0 to 4.0 m/s, four to one,
+            // where the tine's launch spans nearer thirty. Four times the
+            // drive is about twelve decibels before the transduction
+            // compresses it, and nine is what comes out.
+            const double floorDb = (inst == 4) ? 3.5 : 6.0;
+            char id[12], what[80];
+            std::snprintf (id, sizeof id, "26.0%d", inst);
+            std::snprintf (what, sizeof what, "%s: CC11 reaches the strike", kInstName[inst]);
+            row (id, what, fmt ("span >= %.1f dB, ordered", floorDb),
+                 fmt2 ("%.1f dB (mid %+.1f)", span, lvl[1] - lvl[0]),
+                 verdict (span >= floorDb && ordered));
+        }
+    }
+
+    // 26.1 -- and it does NOT reach a note already sounding. Expression is
+    // read when the hammer is released; a swell moved afterwards belongs to
+    // the next note. Measured as the difference between two renders that
+    // are identical except that one sweeps CC11 across its whole range
+    // under the held note.
+    {
+        double worst = -1.0e300;
+        int worstInst = 0;
+        for (int inst = 0; inst < 5; ++inst)
+        {
+            EngineParams p = measParams (inst);
+            std::vector<CtlMove> sweep;
+            for (int k = 1; k <= 12; ++k)
+                sweep.push_back ({ 0.1 + 0.1 * k, 0.25f + 0.75f * (k / 12.0f), 0.0f, true, false });
+            const Stereo moved = renderWithControls (fs, p, 1.6, { { 0, on (60, 0.8f) } }, sweep);
+            const Stereo still = renderWithControls (fs, p, 1.6, { { 0, on (60, 0.8f) } }, {});
+            const double d = changeDb (moved, still, 0.2, 1.5);
+            if (d > worst) { worst = d; worstInst = inst; }
+        }
+        row ("26.1", "CC11 swept under a held note does nothing to it",
+             "difference <= -100 dB",
+             fmt ("%.1f dB", worst) + " (" + kInstName[worstInst] + ")",
+             verdict (worst <= -100.0));
+    }
+
+    // 26.2 -- the wheel, both halves. A note already ringing does not bend,
+    // because a config change only marks the voice and the sweep that acts
+    // on it skips anything sounding; the NEXT strike is at the new pitch.
+    // On a keyboard with no wheel that is the honest behaviour, and it is
+    // measured here rather than assumed. Both halves on all five, because
+    // the wheel enters through five separate Config builders and missing
+    // one would be invisible everywhere else.
+    {
+        double worstHeld = 0.0, worstNew = 0.0;
+        int heldInst = 0, newInst = 0;
+        for (int inst = 0; inst < 5; ++inst)
+        {
+            EngineParams p = measParams (inst);
+            // a note struck at rest, the wheel moved while it rings
+            const Stereo bent = renderWithControls (fs, p, 2.0, { { 0, on (60, 0.8f) } },
+                                                    { { 0.4, 0.0f, 2.0f, false, true } });
+            const Stereo flat = renderWithControls (fs, p, 2.0, { { 0, on (60, 0.8f) } }, {});
+            const double fB = an::refineF0 (monoOf (bent), fs, noteHz (60), 0.9, 1.8);
+            const double fF = an::refineF0 (monoOf (flat), fs, noteHz (60), 0.9, 1.8);
+            const double heldCents = std::fabs (1200.0 * std::log2 (std::max (1.0e-9, fB / fF)));
+            if (heldCents > worstHeld) { worstHeld = heldCents; heldInst = inst; }
+
+            // the wheel set first, then a strike: that one must be bent
+            const Stereo after = renderWithControls (fs, p, 2.0,
+                                                     { { static_cast<int> (0.4 * fs), on (60, 0.8f) } },
+                                                     { { 0.0, 0.0f, 2.0f, false, true } });
+            const double fA = an::refineF0 (monoOf (after), fs, noteHz (60) * 1.122462, 0.9, 1.8);
+            const double got = 1200.0 * std::log2 (std::max (1.0e-9, fA / fF));
+            const double err = std::fabs (got - 200.0);
+            if (err > worstNew) { worstNew = err; newInst = inst; }
+        }
+        row ("26.2", "the wheel does not bend a note already ringing",
+             "within 2 cents on all five",
+             fmt ("%.2f ct", worstHeld) + " (" + kInstName[heldInst] + ")",
+             verdict (worstHeld <= 2.0));
+        row ("26.2b", "the next strike is at the bent pitch",
+             "+200 ct within 5, all five",
+             fmt ("worst error %.1f ct", worstNew) + " (" + kInstName[newInst] + ")",
+             verdict (worstNew <= 5.0));
+    }
+
+    // 26.3 -- and the wheel is the fastest automation the engine ever sees,
+    // so it gets the click fence section 6 applies to every continuous knob
+    // and does not apply to this. Swept across two semitones under a held
+    // chord, against the same chord with the wheel still.
+    {
+        double worst = 0.0;
+        int worstInst = 0;
+        for (int inst = 0; inst < 5; ++inst)
+        {
+            EngineParams p = measParams (inst);
+            std::vector<CtlMove> sweep;
+            for (int k = 1; k <= 40; ++k)
+                sweep.push_back ({ 0.4 + 0.02 * k, 0.0f, -2.0f + 4.0f * (k / 40.0f), false, true });
+            const Stereo s = renderWithControls (fs, p, 1.8, chordOn ({ 60, 64, 67 }, 0.7f), sweep);
+            const double d = maxD2 (s, static_cast<int> (0.4 * fs), static_cast<int> (1.3 * fs));
+            if (d > worst) { worst = d; worstInst = inst; }
+        }
+        row ("26.3", "a wheel sweep under a held chord does not click",
+             "d2 <= 0.05, section 6's bound",
+             fmt ("%.4f", worst) + " (" + kInstName[worstInst] + ")",
+             verdict (worst <= 0.05));
+    }
+
+    // 26.4 -- a large cluster still gets louder, and still has dynamics.
+    //
+    // The rail's knee is at 0.76 and its ceiling a decibel under full scale,
+    // so a forty-note pedalled cluster is well into it. What that costs is
+    // the thing a pianist actually plays for -- a two-handed cluster, a
+    // pedalled glissando -- and the three rows elsewhere that use this many
+    // notes assert only that the output is finite and inside the rail,
+    // which is true of a completely flattened one too.
+    //
+    // Two properties. The level must still rise with the number of notes,
+    // and there must still be a difference between playing it softly and
+    // playing it hard. The bounds are measured-and-fenced: there is no
+    // published figure for what a modelled cluster should do, and these are
+    // what this instrument does, held so a future gain-staging change
+    // cannot flatten them without saying so.
+    {
+        auto cluster = [&] (int inst, int notes, float vel)
+        {
+            EngineParams p = measParams (inst);
+            std::vector<TimedEvent> evs;
+            for (int k = 0; k < notes; ++k)
+                evs.push_back ({ 0, on (36 + (k * 60) / std::max (1, notes - 1), vel) });
+            evs.push_back ({ 0, [] { NoteEvent n; n.type = NoteEvent::sustainOn; return n; } () });
+            return rmsDbMono (renderEngine (fs, p, 1.6, evs), 0.3, 1.5);
+        };
+        for (int inst = 0; inst < 5; ++inst)
+        {
+            double prev = -1.0e9;
+            bool rising = true;
+            double worstDrop = 0.0;
+            for (int n : { 1, 10, 20, 40 })
+            {
+                const double v = cluster (inst, n, 0.7f);
+                if (v < prev) { rising = false; worstDrop = std::max (worstDrop, prev - v); }
+                prev = v;
+            }
+            const double ff = cluster (inst, 40, 1.0f);
+            const double pp = cluster (inst, 40, 0.25f);
+            // Same per-instrument floor and the same reason, compounded: a
+            // forty-note cluster at full velocity is well into the rail, so
+            // what survives is the instrument's own range minus what the
+            // rail takes. Measured: tine 28 dB, reed 26, e-grand and grand
+            // 22 -- and clav 2.7, which is its nine-decibel range with the
+            // rail across most of it. Held where each one measures so a
+            // gain-staging change cannot flatten any of them quietly.
+            const double rangeFloor = (inst == 4) ? 1.5 : 8.0;
+            char id[12], what[80];
+            std::snprintf (id, sizeof id, "26.4%d", inst);
+            std::snprintf (what, sizeof what, "%s cluster: louder, and still dynamic", kInstName[inst]);
+            row (id, what, fmt ("rises, ff-pp >= %.1f dB at 40", rangeFloor),
+                 fmt2 ("worst drop %.2f dB, range %.1f", worstDrop, ff - pp),
+                 verdict (rising && (ff - pp) >= rangeFloor));
+        }
+    }
+}
+
 int main()
 {
     const auto t0 = std::chrono::steady_clock::now();
@@ -5488,6 +5749,7 @@ int main()
     sectionVelMap();
     sectionVibrato();
     sectionEndurance();
+    sectionControllers();
 
     const double wall = std::chrono::duration<double> (std::chrono::steady_clock::now() - t0).count();
     std::printf ("\nsuite wall time %.1f s\n", wall);
