@@ -125,6 +125,7 @@ jobs:
           node tools/check-param-map.mjs    /tmp/params.json /tmp/sweep.json
           node tools/check-midi-decode.mjs  /tmp/params.json
           node tools/check-preset-store.mjs /tmp/params.json /tmp/presets.json
+          node tools/check-smf.mjs
 
       # docs/ControlMap.md is generated from the control map and the live
       # parameter layout. Checking it here is what stops the published

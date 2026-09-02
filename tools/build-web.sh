@@ -47,6 +47,9 @@ node "$root/tools/check-midi-decode.mjs" "$out/parameters.json" | tail -2
 echo "  checking the browser's preset store"
 node "$root/tools/check-preset-store.mjs" "$out/parameters.json" "$out/presets.json" | tail -2
 
+echo "  checking the MIDI file reader"
+node "$root/tools/check-smf.mjs" | tail -2
+
 echo "  assembling the interface"
 cp "$root"/ui/epi/* "$out/"
 cp "$root"/ui/vendor/* "$out/"
@@ -68,6 +71,8 @@ cp "$root/ui/wasm/epi-worklet.js" "$out/"
   # neither of them wants a device picker. They ride in the same substituted
   # file so the page still loads exactly one extra script.
   cat "$root/ui/wasm/epi-midi.js"
+  cat "$root/ui/wasm/epi-smf.js"
+  cat "$root/ui/wasm/epi-player.js"
   cat "$root/ui/wasm/epi-settings.js"
 } > "$out/juce-framework-frontend.js"
 

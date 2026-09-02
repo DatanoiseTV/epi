@@ -76,6 +76,36 @@ All notable changes to Epi are documented here. The format follows
   note played through the interface's own channel reaches -5.76 dBFS with live
   telemetry, and a preset load switches the instrument. No SharedArrayBuffer,
   so no COOP/COEP headers, which Pages cannot set anyway. 360 kB of wasm.
+- **A MIDI file player in the browser build.** Drop a `.mid` on the page, or
+  open one from the settings, and it plays on the instrument with a transport
+  at the bottom of the window. Both layouts: format 0, where a single track
+  carries every channel, and format 1, where the tracks are simultaneous.
+  The unit of selection is a PART -- one channel within one track -- rather
+  than a track, because that is the only reading that handles both layouts and
+  the awkward middle case of two instruments sharing a track on different
+  channels. Parts are scored on program number, name and range; General MIDI
+  channel 10 is never a piano. A track name only counts where it can belong to
+  the part: in format 0 the one name covers every channel and says nothing
+  about which is the piano, so crediting it would let a bass line inherit the
+  word "Piano" from the file's title and report that as a confident choice.
+  The choice is always shown and overridable, and a thin-evidence file opens
+  the part list rather than quietly playing something it did not ask for.
+  The score is handed to the AudioWorklet and played from the audio clock, so
+  every note lands on the sample the file asks for -- firing events from a
+  timer quantises each one to a 128-frame boundary, 2.7 ms at 48 kHz, before
+  setTimeout's own jitter and any collection pause. `epi_event` places an
+  event at a sample inside the block; everything else in the wasm build puts
+  its event at offset zero, which is right for a control somebody is turning
+  and wrong for a score.
+- `tools/check-smf.mjs` (26 rows), in CI. It builds real files -- both
+  layouts, running status, a tempo map, a drum channel, SMPTE division, a
+  truncated file -- and reads them back. It immediately caught a bug in the
+  reader it was written for: a meta event's 0xFF has the high bit set, so
+  storing every high-bit byte as the running status let a track name clobber
+  it, and every running-status event after that point was read as meta. The
+  symptom is not a crash, it is a track that silently stops partway through.
+  Five deliberate breaks caught, one of them only after adding the rows that
+  turned out to be fencing nothing.
 - **MIDI in the browser build**, behind a gear in the corner: input selection,
   channel filter, a live view of what is arriving, the pedal positions, and
   the whole controller map with per-parameter MIDI learn. It answers the same

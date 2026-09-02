@@ -164,6 +164,24 @@
     box.appendChild (el ('p', 'note',
       'The sustain pedal is read as depth, not as a switch, so half-pedalling works.'));
 
+    // ---- a MIDI file -----------------------------------------------------
+    box.appendChild (el ('h3', null, 'Play a MIDI file'));
+    box.appendChild (el ('p', 'sub',
+      'The score is handed to the audio thread and played from its own clock, '
+      + 'so every note lands on the sample the file asks for. Drop a .mid on '
+      + 'the page at any time.'));
+    var frow = el ('div', 'row');
+    frow.appendChild (el ('span', 'grow',
+      (global.__EPI_PLAYER__ && global.__EPI_PLAYER__.hasFile())
+        ? 'A file is loaded; the transport is at the bottom of the window.'
+        : 'Piano parts are picked automatically and can be changed.'));
+    var openMidi = el ('button', null, 'Open a MIDI file');
+    openMidi.onclick = function () {
+      if (global.__EPI_PLAYER__) { global.__EPI_PLAYER__.open(); hide(); }
+    };
+    frow.appendChild (openMidi);
+    box.appendChild (frow);
+
     // ---- presets as files ------------------------------------------------
     box.appendChild (el ('h3', null, 'Presets'));
     box.appendChild (el ('p', 'sub',

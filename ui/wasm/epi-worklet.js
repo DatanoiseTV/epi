@@ -43,6 +43,23 @@ class EpiProcessor extends AudioWorkletProcessor {
     this.every = Math.max (1, Math.round ((sampleRate / 128) / (telemetryHz || 30)));
     this.tick = 0;
 
+    // ---- the file player ------------------------------------------------
+    // The score lives HERE, not on the main thread, and is played from the
+    // worklet's own sample clock. A player that fires events from a timer
+    // quantises every note to a block boundary -- 2.7 ms at 128 frames and
+    // 48 kHz -- and that is before setTimeout's own jitter and any garbage
+    // collection pause. Held here, each event lands on the sample the score
+    // asks for.
+    this.score = null;                 // { times, types, notes, values }
+    this.scoreCount = 0;
+    this.cursor = 0;
+    this.playing = false;
+    this.scoreTime = 0;                // seconds into the piece
+    this.types = {
+      0: E.epi_type_note_off(), 1: E.epi_type_note_on(),
+      2: E.epi_type_sustain(), 3: E.epi_type_sostenuto(), 4: E.epi_type_soft(),
+    };
+
     this.port.onmessage = (e) => this.command (e.data);
     this.port.postMessage ({ t: 'ready', sampleRate,
                              traceLen: E.epi_trace_len(),
@@ -78,7 +95,67 @@ class EpiProcessor extends AudioWorkletProcessor {
         break;
       }
       case 'read': this.port.postMessage ({ t: 'read', id: m.id, v: this.readArray (m.what) }); break;
+
+      case 'score':
+        this.score = m.score;
+        this.scoreCount = m.score ? m.score.times.length : 0;
+        this.scoreTime = 0;
+        this.cursor = 0;
+        this.playing = false;
+        break;
+
+      case 'transport':
+        if (m.seek !== undefined) {
+          this.scoreTime = m.seek;
+          this.seekCursor();
+          // Anything still sounding was struck before the seek and has no
+          // business ringing after it.
+          E.epi_all_notes_off();
+          E.epi_sustain (0);
+        }
+        if (m.playing !== undefined) {
+          this.playing = !!m.playing && this.scoreCount > 0;
+          if (!this.playing) { E.epi_all_notes_off(); E.epi_sustain (0); }
+        }
+        break;
       default: break;
+    }
+  }
+
+  seekCursor () {
+    const t = this.score ? this.score.times : null;
+    if (!t) { this.cursor = 0; return; }
+    let lo = 0, hi = this.scoreCount;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (t[mid] < this.scoreTime) lo = mid + 1; else hi = mid;
+    }
+    this.cursor = lo;
+  }
+
+  // Fire everything the score puts inside this quantum, each at its own
+  // sample. Returns after advancing the playhead by exactly one quantum, so
+  // the piece runs on the audio clock and cannot drift against it.
+  playQuantum (n) {
+    if (!this.playing || !this.score) return;
+
+    const { times, types, notes, values } = this.score;
+    const dt = n / sampleRate;
+    const t0 = this.scoreTime;
+    const t1 = t0 + dt;
+
+    while (this.cursor < this.scoreCount && times[this.cursor] < t1) {
+      const i = this.cursor++;
+      // An event whose time has already passed -- possible after a seek --
+      // plays at the top of the block rather than being skipped.
+      const off = Math.max (0, Math.min (n - 1, Math.round ((times[i] - t0) * sampleRate)));
+      this.E.epi_event (this.types[types[i]] ?? 0, notes[i], values[i], off);
+    }
+
+    this.scoreTime = t1;
+    if (this.cursor >= this.scoreCount) {
+      this.playing = false;
+      this.port.postMessage ({ t: 'ended' });
     }
   }
 
@@ -103,6 +180,7 @@ class EpiProcessor extends AudioWorkletProcessor {
     if (!out || out.length === 0) return true;
 
     const n = out[0].length;
+    this.playQuantum (n);
     this.E.epi_process (n);
 
     out[0].set (this.heap.subarray (this.lp, this.lp + n));
@@ -115,6 +193,11 @@ class EpiProcessor extends AudioWorkletProcessor {
         t: 'telemetry',
         f: this.heap.slice (this.tp, this.tp + this.teleLen),
         k: Array.from (this.heapU32.subarray (this.kp, this.kp + this.keyWords)),
+        // The playhead comes from the audio clock, so the transport shows
+        // where the instrument actually is rather than where a timer thinks
+        // it should be.
+        pos: this.scoreTime,
+        playing: this.playing,
       });
     }
     return true;

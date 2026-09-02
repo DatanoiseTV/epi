@@ -40,6 +40,10 @@
   var params = [], byId = {}, presets = [], presetByName = {};
   var raw = [], norm = {};
   var node = null, ctx = null, ready = false;
+  var transportListeners = [];
+  // A score handed over before the audio existed. The player is usable the
+  // moment a file is dropped; the instrument catches up at the first click.
+  var pendingScore, pendingTransport;
   var pending = [];        // commands raised before the audio existed
 
   function post (m) { if (node) node.port.postMessage (m); else pending.push (m); }
@@ -430,13 +434,28 @@
       });
       node.port.onmessage = function (e) {
         var m = e.data;
-        if (m.t === 'telemetry') onTelemetry (m.f, m.k);
+        if (m.t === 'telemetry') {
+          onTelemetry (m.f, m.k);
+          if (m.pos !== undefined)
+            transportListeners.forEach (function (f) { try { f (m.pos, !!m.playing); } catch (e) {} });
+        }
+        else if (m.t === 'ended')
+          transportListeners.forEach (function (f) { try { f (undefined, false); } catch (e) {} });
         else if (m.t === 'ready') { shape = m; ready = true; }
         else if (m.t === 'read' && readWaiting[m.id]) { readWaiting[m.id] (m.v); delete readWaiting[m.id]; }
       };
       node.connect (ctx.destination);
       pending.forEach (function (m) { node.port.postMessage (m); });
       pending = [];
+      if (pendingScore !== undefined) {
+        node.port.postMessage ({ t: 'score', score: pendingScore });
+        pendingScore = undefined;
+      }
+      if (pendingTransport !== undefined) {
+        node.port.postMessage ({ t: 'transport', playing: pendingTransport.playing,
+                                 seek: pendingTransport.seek });
+        pendingTransport = undefined;
+      }
       if (ctx.state === 'suspended') ctx.resume();
       hideOverlay();
     }).catch (function (err) {
@@ -583,7 +602,24 @@
       currentPreset: function () { return currentPreset; },
       startAudio: function () { startAudio(); },
       audioRunning: function () { return !!node; },
-      onLevels: function (fn) { backend.addEventListener ('levels', fn); }
+      onLevels: function (fn) { backend.addEventListener ('levels', fn); },
+
+      // ---- the file player -------------------------------------------
+      // The score goes to the worklet and is played from the audio clock.
+      // Nothing about a piece is held on this thread, because this thread
+      // cannot promise to run at any particular moment.
+      sendScore: function (score) {
+        startAudio();
+        pendingScore = score;
+        if (node) { node.port.postMessage ({ t: 'score', score: score }); pendingScore = undefined; }
+      },
+      transport: function (m) {
+        startAudio();
+        pendingTransport = m;
+        if (node) { node.port.postMessage ({ t: 'transport', playing: m.playing, seek: m.seek });
+                    pendingTransport = undefined; }
+      },
+      onTransport: function (fn) { transportListeners.push (fn); }
     };
 
     // The preset line is pushed on a timer rather than only when it changes.

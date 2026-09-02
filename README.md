@@ -267,7 +267,21 @@ controller template written against
 are remembered in the browser.
 
 Web MIDI is Chrome, Edge and Firefox; Safari does not implement it, and the
-panel says so rather than looking broken. The on-screen keyboard and your
+panel says so rather than looking broken.
+
+**Drop a `.mid` on the page** and it plays on the instrument, with a transport
+at the bottom of the window. Both file layouts work — format 0, where one
+track holds every channel, and format 1, where the tracks are simultaneous.
+
+The piano parts are picked automatically by scoring each channel of each track
+on its program number, its name and its range; General MIDI channel 10 is never
+one. The choice is always shown and always overridable, and when the evidence
+is thin the part list opens rather than quietly playing something the file did
+not ask for.
+
+The score is handed to the audio thread and played from its own sample clock,
+not fired from a timer — so every note lands on the sample the file asks for,
+rather than on whichever 2.7 ms block boundary a timer happened to catch. The on-screen keyboard and your
 computer keyboard work everywhere.
 
 Presets work the way you would expect. Save from the preset browser and it is

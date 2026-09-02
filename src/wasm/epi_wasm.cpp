@@ -174,6 +174,45 @@ EPI_EXPORT void epi_note (int note, float velocity, int on)
                             note, on ? std::max (0.05f, velocity) : 0.0f });
 }
 
+// ---------------------------------------------------------------------------
+// An event placed at a SAMPLE inside the coming block.
+//
+// Everything above puts its event at offset zero, which is right for a control
+// somebody is turning: it happens when it happens, and a block is under three
+// milliseconds. It is not right for a score. A file played by firing events
+// from a timer quantises every note to a block boundary -- at 128 frames and
+// 48 kHz that is 2.7 ms of grid, which is audible as stiffness on rolled
+// chords and as a flam on anything doubled, and it is exactly the smearing the
+// jitter reduction path elsewhere in this instrument exists to remove. A
+// player that knows the score in advance has no excuse for it.
+//
+// `type` follows NoteEvent::Type. `value` is the velocity, the pedal position,
+// or the key position, depending on the type.
+// ---------------------------------------------------------------------------
+EPI_EXPORT void epi_event (int type, int note, float value, int offset)
+{
+    if (! g) return;
+    if (type < 0 || type > (int) NoteEvent::keyPosition) return;
+
+    NoteEvent e;
+    e.offset = std::clamp (offset, 0, std::max (0, g->block - 1));
+    e.type = (NoteEvent::Type) type;
+    e.note = std::clamp (note, 0, 127);
+    e.velocity = value;
+    if (e.type == NoteEvent::noteOn) e.velocity = std::max (0.0009f, value);
+    g->pending.push_back (e);
+}
+
+// The type numbers, so the JavaScript side does not carry a second copy of an
+// enum that could quietly disagree with this one.
+EPI_EXPORT int epi_type_note_on()     { return (int) NoteEvent::noteOn; }
+EPI_EXPORT int epi_type_note_off()    { return (int) NoteEvent::noteOff; }
+EPI_EXPORT int epi_type_all_off()     { return (int) NoteEvent::allNotesOff; }
+EPI_EXPORT int epi_type_sustain()     { return (int) NoteEvent::sustain; }
+EPI_EXPORT int epi_type_sostenuto()   { return (int) NoteEvent::sostenuto; }
+EPI_EXPORT int epi_type_soft()        { return (int) NoteEvent::soft; }
+EPI_EXPORT int epi_type_key_position(){ return (int) NoteEvent::keyPosition; }
+
 // The damper rail reads pedal DEPTH, not an on/off switch, which is what makes
 // half-pedalling work -- so the full 0..1 is carried through.
 EPI_EXPORT void epi_sustain (float depth)
