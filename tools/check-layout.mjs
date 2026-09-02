@@ -35,6 +35,14 @@ const PORT = Number (process.env.EPI_CDP_PORT || 0) || await freePort();
 
 if (!URL_) { console.error ('usage: check-layout.mjs <url> [chrome]'); process.exit (2); }
 
+// Chrome is driven over the global WebSocket, which Node did not have until
+// 22. Saying so beats "WebSocket is not defined" from somewhere in the middle
+// of a workflow that has already built the whole site.
+if (typeof WebSocket === 'undefined') {
+  console.error (`  check-layout: this Node (${process.version}) has no global WebSocket; needs 22 or newer`);
+  process.exit (2);
+}
+
 const profile = mkdtempSync (join (tmpdir(), 'epi-layout-'));
 const chrome = spawn (CHROME, [
   '--headless=new', `--remote-debugging-port=${PORT}`, '--no-first-run',
