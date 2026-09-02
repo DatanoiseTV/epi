@@ -21,12 +21,32 @@
   var MIDI = null, HOST = null, root = null, open = false;
 
   var CSS = [
-    '#epi-gear{position:fixed;right:14px;bottom:12px;z-index:9996;width:34px;height:34px;',
-      'border-radius:50%;border:1px solid rgba(217,196,138,0.35);background:rgba(14,14,17,0.9);',
-      'color:#d9c48a;cursor:pointer;display:flex;align-items:center;justify-content:center;',
-      'font-size:16px;line-height:1;padding:0;transition:border-color .15s,color .15s}',
-    '#epi-gear:hover{border-color:rgba(217,196,138,0.8);color:#f0dda6}',
-    '#epi-gear.live{border-color:rgba(120,220,150,0.7);color:#8fe0a8}',
+    // A labelled pill rather than a bare glyph. An unlabelled gear in a
+    // corner is a thing people do not find: it has to say what it opens, and
+    // it has to be big enough to hit on a phone -- 44 px is the smallest
+    // comfortable touch target.
+    '#epi-gear{position:fixed;right:18px;bottom:16px;z-index:9996;height:44px;',
+      'display:flex;align-items:center;gap:9px;padding:0 18px 0 15px;',
+      'border-radius:22px;border:1px solid rgba(217,196,138,0.55);',
+      'background:linear-gradient(180deg,rgba(30,28,24,0.97),rgba(17,16,19,0.97));',
+      'color:#e6d3a0;cursor:pointer;font:600 12px/1 ui-sans-serif,system-ui,sans-serif;',
+      'letter-spacing:0.16em;text-transform:uppercase;',
+      'box-shadow:0 6px 22px rgba(0,0,0,0.55);transition:all .16s ease}',
+    '#epi-gear:hover{border-color:rgba(240,221,166,0.95);color:#fdf0c8;',
+      'transform:translateY(-1px);box-shadow:0 9px 26px rgba(0,0,0,0.6)}',
+    '#epi-gear .glyph{font-size:17px;line-height:1}',
+    '#epi-gear .dot{width:6px;height:6px;border-radius:50%;background:rgba(217,196,138,0.45)}',
+    '#epi-gear.live{border-color:rgba(130,225,160,0.75);color:#9fe8b6}',
+    '#epi-gear.live .dot{background:#7fdca0;box-shadow:0 0 7px rgba(127,220,160,0.9)}',
+    // Until it has been opened once, it breathes. It stops for good after
+    // that: an attention cue that keeps pulsing is an irritation, not a cue.
+    '#epi-gear.hint{animation:epiPulse 2.4s ease-in-out infinite}',
+    '@keyframes epiPulse{0%,100%{box-shadow:0 6px 22px rgba(0,0,0,0.55),0 0 0 0 rgba(217,196,138,0.34)}',
+      '55%{box-shadow:0 6px 22px rgba(0,0,0,0.55),0 0 0 11px rgba(217,196,138,0)}}',
+    '@media (prefers-reduced-motion:reduce){#epi-gear.hint{animation:none;',
+      'border-color:rgba(240,221,166,0.9)}}',
+    '@media (max-width:640px){#epi-gear{right:12px;bottom:12px}}',
+
     '#epi-settings{position:fixed;inset:0;z-index:9998;display:flex;align-items:center;',
       'justify-content:center;background:rgba(6,6,8,0.72);backdrop-filter:blur(4px)}',
     '#epi-settings .box{width:min(760px,92vw);max-height:86vh;overflow:auto;background:#0e0e11;',
@@ -230,14 +250,23 @@
 
     var gear = el ('button');
     gear.id = 'epi-gear';
-    gear.title = 'MIDI and settings';
-    gear.textContent = '⚙';
+    gear.title = 'MIDI inputs, controller map and settings';
+    gear.setAttribute ('aria-label', 'MIDI settings');
+    gear.appendChild (el ('span', 'dot'));
+    gear.appendChild (el ('span', 'glyph', '⚙'));
+    gear.appendChild (el ('span', null, 'MIDI'));
+
+    var seen = false;
+    try { seen = localStorage.getItem ('epi.gearSeen') === '1'; } catch (e) {}
+    if (! seen) gear.classList.add ('hint');
     // Opening the settings is also a gesture, and it is the one gesture
     // available while the start overlay is up -- so it starts the audio too,
     // rather than leaving somebody with a panel open and a silent instrument.
     gear.onclick = function (e) {
       e.stopPropagation();
       if (HOST.startAudio) HOST.startAudio();
+      gear.classList.remove ('hint');
+      try { localStorage.setItem ('epi.gearSeen', '1'); } catch (err) {}
       show();
     };
     document.body.appendChild (gear);
