@@ -84,7 +84,11 @@ WebEditor::WebEditor (::EpiAudioProcessor& proc)
         .withResourceProvider (
             [] (const juce::String& url) { return resources().lookup (url); },
             juce::URL (juce::WebBrowserComponent::getResourceProviderRoot()).getOrigin())
-        .withUserScript ("window.EPI_VERSION_STR = 'v" EPI_VERSION " · " EPI_GIT_BRANCH "';")
+        // CharPointer_UTF8, not a bare literal: juce::String decodes a
+        // const char* as Latin-1, so the separator would be re-encoded and
+        // the header would read "v0.9.0 A· main".
+        .withUserScript (juce::String (juce::CharPointer_UTF8 (
+            "window.EPI_VERSION_STR = 'v" EPI_VERSION " · " EPI_GIT_BRANCH "';")))
         .withNativeFunction (juce::Identifier { "reloadUI" },
             [this] (const juce::Array<juce::var>&, juce::WebBrowserComponent::NativeFunctionCompletion complete)
             {
