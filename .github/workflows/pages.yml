@@ -1,0 +1,86 @@
+# Epi in a browser tab, published to GitHub Pages.
+#
+# The site is entirely static and deliberately uses no SharedArrayBuffer: it
+# would need COOP and COEP response headers, which Pages cannot set. The
+# WebAssembly is instantiated inside the AudioWorklet from a module compiled on
+# the main thread, which needs neither.
+name: pages
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'src/**'
+      - 'ui/**'
+      - 'tools/build-web.sh'
+      - 'tools/check-param-map.mjs'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: install linux deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libjack-jackd2-dev \
+            libfreetype6-dev libx11-dev libxcomposite-dev libxcursor-dev \
+            libxext-dev libxinerama-dev libxrandr-dev libxrender-dev \
+            ninja-build
+
+      # Installed directly rather than through a third-party action, and
+      # pinned to the version the build was verified against. A toolchain that
+      # floats is a build that changes without a commit.
+      - name: install emscripten
+        run: |
+          git clone --depth 1 https://github.com/emscripten-core/emsdk.git ~/emsdk
+          cd ~/emsdk
+          ./emsdk install 6.0.9
+          ./emsdk activate 6.0.9
+          echo "source ~/emsdk/emsdk_env.sh" >> ~/.bashrc
+
+
+      # epi-headless is what dumps the parameter layout and the presets out of
+      # the real instrument, so the web build needs it before it can start.
+      - name: build the headless host
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DPLUGIN_INSTALL_LOCAL=OFF
+          cmake --build build --target EpiHeadless -j
+
+      - name: build the site
+        run: |
+          source ~/emsdk/emsdk_env.sh
+          ./tools/build-web.sh
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-22.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4

@@ -58,6 +58,33 @@ All notable changes to Epi are documented here. The format follows
   new rows in the state suite (S12-S14) check the map against the real
   parameter layout, which the framework-free suite cannot see.
 
+- **A WebAssembly build.** The whole instrument in a browser tab: the DSP
+  compiled to wasm and driven from an AudioWorklet, running on the listener's
+  machine and out of their speakers, with nothing installed and no server
+  behind it. `tools/build-web.sh` assembles a static site; a Pages workflow
+  publishes it. The interface is the plugin's own `ui/epi` bundle copied byte
+  for byte, with the one file that talks to the host substituted -- the same
+  arrangement the headless build uses, so there are three hosts and one
+  interface. Every workshop is exposed, because a panel opening onto controls
+  that did nothing would be worse than one that was missing.
+  Measured, not assumed: the wasm and native renders of the same two seconds
+  differ by -110.7 dB relative to the signal (correlation 0.999999999996, and
+  flat across the render rather than growing); cost is about 1.4x native with
+  SIMD, worst case 2.0x realtime at 44.1 kHz for forty notes held with the
+  pedal down against 2.6x native, and 19% of a core for the realistic ten
+  notes and pedal; and in a real browser 39 sliders bind, five panels mount, a
+  note played through the interface's own channel reaches -5.76 dBFS with live
+  telemetry, and a preset load switches the instrument. No SharedArrayBuffer,
+  so no COOP/COEP headers, which Pages cannot set anyway. 360 kB of wasm.
+- `tools/check-param-map.mjs`. The web build has no JUCE, so the conversion
+  between the normalised value the interface speaks and the raw value the
+  engine wants is `juce::RangedAudioParameter` reimplemented in JavaScript.
+  This compares it against the real thing at a hundred points per parameter.
+  It caught three genuine mistakes -- a selector snapping half-up where JUCE
+  snaps half to even, the skew applied in the wrong direction, and Math.round
+  on selectors -- and now agrees everywhere to eight parts in a hundred
+  million of each parameter's span.
+
 ### Fixed
 - The headless host served any asset larger than a socket send buffer
   truncated, under a Content-Length that said otherwise, so the interface

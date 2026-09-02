@@ -238,6 +238,32 @@ controllers Epi deliberately leaves alone. Those numbers are pinned by a
 test, so they can move only as a decision — hardware built against them
 keeps working.
 
+## Playing it in a browser
+
+The whole instrument also compiles to WebAssembly, so it runs in a browser tab
+with nothing installed and no server behind it — the DSP on your machine, out
+of your speakers. Same engine, same interface, same presets.
+
+Build it yourself with [emsdk](https://emscripten.org/) on PATH:
+
+```
+cmake --build build --target EpiHeadless   # dumps the layout and the presets
+./tools/build-web.sh                       # assembles web/
+```
+
+`web/` is a static site: 360 kB of WebAssembly and about 3.7 MB in total, most
+of which is the JSX transformer.
+
+It is the same `ui/epi` bundle the plugin ships, copied byte for byte. Only one
+file differs — the one that talks to the host — which is the same arrangement
+the headless build uses. Three hosts, one interface.
+
+Two limits worth stating plainly. Held chords with the pedal down are the
+expensive case: about 1.4× slower than native, which is 19% of a core for ten
+notes and half a core for forty, so a phone or an older laptop will glitch at
+the extreme end. And there are no user presets — nothing to save them to — so
+the factory bank is what you get.
+
 ## How honest is "physical"?
 
 Measured, not asserted. The models are calibrated against recordings of the
