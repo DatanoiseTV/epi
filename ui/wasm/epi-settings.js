@@ -164,6 +164,53 @@
     box.appendChild (el ('p', 'note',
       'The sustain pedal is read as depth, not as a switch, so half-pedalling works.'));
 
+    // ---- presets as files ------------------------------------------------
+    box.appendChild (el ('h3', null, 'Presets'));
+    box.appendChild (el ('p', 'sub',
+      'Saved presets live in this browser. Export writes a file you can keep, '
+      + 'move to another machine, or send to someone.'));
+
+    var prow = el ('div', 'row');
+    prow.appendChild (el ('span', 'grow',
+      HOST.currentPreset() + (HOST.userPresetNames().length
+        ? '  ·  ' + HOST.userPresetNames().length + ' saved here' : '')));
+
+    var exp = el ('button', null, 'Export current');
+    exp.onclick = function () { download (HOST.captureState(), HOST.currentPreset() || 'epi-preset'); };
+    prow.appendChild (exp);
+
+    var imp = el ('button', null, 'Import file');
+    imp.onclick = function () { pickFile(); };
+    prow.appendChild (imp);
+    box.appendChild (prow);
+
+    var names = HOST.userPresetNames();
+    if (names.length) {
+      var arow = el ('div', 'row');
+      arow.appendChild (el ('span', 'grow', 'All presets saved in this browser'));
+      var expAll = el ('button', null, 'Export all');
+      expAll.onclick = function () {
+        download ({ epi: 1, bank: HOST.userBank() }, 'epi-presets');
+      };
+      arow.appendChild (expAll);
+      box.appendChild (arow);
+
+      names.forEach (function (n) {
+        var r = el ('div', 'row');
+        r.appendChild (el ('span', 'grow', n));
+        var ld = el ('button', null, 'Load');
+        ld.onclick = function () { HOST.loadPreset (n); render(); };
+        r.appendChild (ld);
+        var ex = el ('button', null, 'Export');
+        ex.onclick = function () { download (HOST.userBank()[n], n); };
+        r.appendChild (ex);
+        var dl = el ('button', null, 'Delete');
+        dl.onclick = function () { HOST.deleteUser (n); render(); };
+        r.appendChild (dl);
+        box.appendChild (r);
+      });
+    }
+
     // ---- the map ---------------------------------------------------------
     box.appendChild (el ('h3', null, 'Controllers'));
     var learning = MIDI.learning();
@@ -217,6 +264,91 @@
     clearAll.onclick = function () { MIDI.clearAllOverrides(); };
     footer.appendChild (clearAll);
     box.appendChild (footer);
+
+    box.appendChild (el ('h3', null, 'Stored here'));
+    box.appendChild (el ('p', 'sub',
+      'Saved presets, learned controllers, the chosen inputs and the last session '
+      + 'are kept in this browser only. Nothing is sent anywhere.'));
+    var wipe = el ('div', 'row');
+    wipe.appendChild (el ('span', 'grow', ''));
+    var forget = el ('button', null, 'Forget everything and reload');
+    forget.onclick = function () {
+      if (confirm ('Delete every preset saved in this browser, all learned controllers, '
+                 + 'and the current session?')) HOST.forgetEverything();
+    };
+    wipe.appendChild (forget);
+    box.appendChild (wipe);
+  }
+
+  // ---- files -------------------------------------------------------------
+  function safeName (n) {
+    return (String (n || 'epi-preset').replace (/[^A-Za-z0-9 _.-]+/g, '').trim() || 'epi-preset');
+  }
+
+  function download (obj, name) {
+    var blob = new Blob ([JSON.stringify (obj, null, 2)], { type: 'application/json' });
+    var url = URL.createObjectURL (blob);
+    var a = document.createElement ('a');
+    a.href = url;
+    a.download = safeName (name) + '.epipreset.json';
+    document.body.appendChild (a);
+    a.click();
+    // Revoked on a turn of the loop rather than immediately: some browsers
+    // have not started reading the blob by the time click() returns.
+    setTimeout (function () { URL.revokeObjectURL (url); a.remove(); }, 1000);
+  }
+
+  function pickFile () {
+    var input = document.createElement ('input');
+    input.type = 'file';
+    input.accept = '.json,application/json';
+    input.onchange = function () {
+      var f = input.files && input.files[0];
+      if (!f) return;
+      var r = new FileReader();
+      r.onload = function () {
+        var obj;
+        try { obj = JSON.parse (r.result); }
+        catch (e) { alert ('That file is not a preset: ' + e.message); return; }
+        importObject (obj, f.name);
+      };
+      r.readAsText (f);
+    };
+    input.click();
+  }
+
+  // Accepts a single preset or a whole exported bank, and validates before
+  // touching anything -- a file that is JSON but not an Epi preset would
+  // otherwise half-apply and leave the instrument in a state nobody asked for.
+  function importObject (obj, filename) {
+    if (!obj || typeof obj !== 'object') { alert ('That file is not a preset.'); return; }
+
+    if (obj.bank && typeof obj.bank === 'object') {
+      // Written whole. saveUser captures the LIVE instrument, which is the
+      // right thing when somebody presses Save and exactly the wrong thing
+      // when restoring a file -- it would store the current sound under every
+      // imported name.
+      var bank = HOST.userBank(), added = 0;
+      Object.keys (obj.bank).forEach (function (n) {
+        if (obj.bank[n] && obj.bank[n].values) { bank[n] = obj.bank[n]; added++; }
+      });
+      if (!added) { alert ('That file holds no presets.'); return; }
+      HOST.writeBank (bank);
+      alert (added + ' preset' + (added === 1 ? '' : 's') + ' imported.');
+      render();
+      return;
+    }
+
+    if (!obj.values || typeof obj.values !== 'object') {
+      alert ('That file is not an Epi preset.');
+      return;
+    }
+    var name = obj.name || filename.replace (/\.epipreset\.json$|\.json$/i, '');
+    var bank2 = HOST.userBank();
+    bank2[name] = obj;
+    HOST.writeBank (bank2);
+    HOST.loadPreset (name);
+    render();
   }
 
   function show () {

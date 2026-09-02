@@ -270,11 +270,18 @@ Web MIDI is Chrome, Edge and Firefox; Safari does not implement it, and the
 panel says so rather than looking broken. The on-screen keyboard and your
 computer keyboard work everywhere.
 
-Two limits worth stating plainly. Held chords with the pedal down are the
-expensive case: about 1.4× slower than native, which is 19% of a core for ten
-notes and half a core for forty, so a phone or an older laptop will glitch at
-the extreme end. And there are no user presets — nothing to save them to — so
-the factory bank is what you get.
+Presets work the way you would expect. Save from the preset browser and it is
+kept in your browser; the settings panel exports any preset — or the whole
+bank — as a file you can keep, move to another machine, or send to someone,
+and import one back. Closing the tab is not the same as throwing the
+instrument away: the last session comes back on reload, including edits you
+never saved. Everything is stored locally and nothing is sent anywhere;
+"Forget everything" in the settings clears it.
+
+One limit worth stating plainly: held chords with the pedal down are the
+expensive case, about 1.4× slower than native — 19% of a core for ten notes
+and half a core for forty — so a phone or an older laptop will glitch at the
+extreme end.
 
 ## How honest is "physical"?
 

@@ -88,6 +88,28 @@ All notable changes to Epi are documented here. The format follows
   appliance from ALSA or CoreMIDI, so a device picker belongs to the one host
   that needs it, not to the interface all three share. Web MIDI is Chrome, Edge
   and Firefox; Safari does not implement it, and the panel says so.
+- **Presets in the browser build**, saved, loaded, exported and imported. The
+  interface already had the whole browser for them -- a Save field, a User
+  section, delete buttons -- so the only thing missing was somewhere to put
+  them; they now live in the browser's own storage. The settings panel exports
+  a single preset or the whole bank as a file and imports one back, so a sound
+  can be kept, moved to another machine or sent to someone. A saved preset is a
+  complete snapshot: all forty-nine parameters and every per-part bench, and
+  loading one resets a bench it does not name to stock rather than keeping
+  whatever the last preset left behind. The last session is restored on reload,
+  including edits that were never saved -- closing a tab should not be the same
+  as throwing the instrument away. Everything is local and nothing is sent
+  anywhere; "Forget everything" in the settings clears it.
+- `tools/check-preset-store.mjs` (16 rows). Saving is a data-integrity feature,
+  and the failure mode is somebody discovering a week later that their work is
+  gone. It covers the snapshot being complete, a bench edit surviving a save
+  and load, a preset that omits a bench resetting it, the session surviving a
+  reload with unsaved edits intact, deleting, and an imported bank keeping the
+  file's sound rather than the live one. Verified in both directions: six
+  deliberate breaks, each caught by the rows that claim to fence it -- two of
+  which only started working after the first pass turned out to be checking
+  something it could not fail on, because every factory preset carries a full
+  bench set.
 - `tools/check-midi-decode.mjs` (18 rows). `ui/wasm/epi-midi.js` is a second
   implementation of the surface `src/epi/MidiControlSurface.h` implements, and
   two implementations of one published interface drift unless something

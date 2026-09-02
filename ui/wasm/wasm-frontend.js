@@ -97,6 +97,7 @@
     norm[id] = n;
     raw[p.__index] = fromNormalised (p, n);
     if (!fromHost) post ({ t: 'param', i: p.__index, v: raw[p.__index] });
+    rememberSession();
   }
 
   function makeSlider (id) {
@@ -145,9 +146,97 @@
   // ---- presets -----------------------------------------------------------
   var currentPreset = '', dirty = false;
 
+  var NUM_TINES = 88;
+
+  // A mirror of the per-part benches, kept for the same reason the plugin's
+  // processor keeps one: the engine owns the effect, but something has to be
+  // able to read the current state back to save it. Reading it out of the
+  // worklet instead would make saving asynchronous and impossible before the
+  // audio has started.
+  var benches = {};
+
+  function benchDefaults () {
+    var t = [], sm = [], gm = [], pm = [];
+    for (var i = 0; i < NUM_TINES; ++i) {
+      t.push (1, 1); sm.push (1, 1); gm.push (1, 1); pm.push (0, 0, 1);
+    }
+    return {
+      tineMods: t, stringMods: sm, grandMods: gm, pickupMods: pm,
+      cabMods: [0.74, 0.59, 0.5, 0.25, 0.5],
+      micMods: [1, 0, 0, 1, 1],
+      micStage: [0, 1,-0.5,1.2,0.6,0,-0.7, 1,0.5,1.2,0.6,0,0.7,
+                 0,0,2.5,1,0,0, 0,-1.2,0.4,0.3,-6,-1, 0,1.2,0.4,0.3,-6,1],
+      velMap: [0, 0.25, 0.5, 0.75, 1]
+    };
+  }
+  benches = benchDefaults();
+
+  function sendBenches (b) {
+    for (var i = 0; i < NUM_TINES; ++i) {
+      post ({ t: 'tineMod',   i: i, a: b.tineMods[i * 2],   b: b.tineMods[i * 2 + 1] });
+      post ({ t: 'stringMod', i: i, a: b.stringMods[i * 2], b: b.stringMods[i * 2 + 1] });
+      post ({ t: 'grandMod',  i: i, a: b.grandMods[i * 2],  b: b.grandMods[i * 2 + 1] });
+      post ({ t: 'pickupMod', i: i, a: b.pickupMods[i * 3], b: b.pickupMods[i * 3 + 1],
+                                    c: b.pickupMods[i * 3 + 2] });
+    }
+    post ({ t: 'cabMod',  v: b.cabMods });
+    post ({ t: 'micMod',  v: b.micMods });
+    post ({ t: 'micStage', v: b.micStage });
+    post ({ t: 'velMap',  v: b.velMap });
+  }
+
+  // Everything that makes this instrument sound the way it does right now.
+  function captureState (name) {
+    var values = {};
+    params.forEach (function (p) { values[p.id] = norm[p.id]; });
+    return {
+      epi: 1,                       // format, so a future one can be recognised
+      name: name || currentPreset,
+      values: values,
+      tineMods: benches.tineMods.slice(),
+      stringMods: benches.stringMods.slice(),
+      grandMods: benches.grandMods.slice(),
+      pickupMods: benches.pickupMods.slice(),
+      cabMods: benches.cabMods.slice(),
+      micMods: benches.micMods.slice(),
+      micStage: benches.micStage.slice(),
+      velMap: benches.velMap.slice()
+    };
+  }
+
+  // ---- user presets, in the browser --------------------------------------
+  function userBank () {
+    try { return JSON.parse (localStorage.getItem ('epi.userPresets') || '{}'); }
+    catch (e) { return {}; }
+  }
+  function writeBank (b) {
+    try { localStorage.setItem ('epi.userPresets', JSON.stringify (b)); }
+    catch (e) {
+      // Quota, or a browser with storage disabled. Saying so beats a save
+      // button that silently does nothing.
+      showOverlayBriefly ('Could not save: ' + (e && e.name ? e.name : 'storage refused'));
+    }
+  }
+  function saveUser (name) {
+    var b = userBank();
+    b[name] = captureState (name);
+    writeBank (b);
+    currentPreset = name; dirty = false;
+    emitPresetInfo();
+  }
+  function deleteUser (name) {
+    var b = userBank();
+    delete b[name];
+    writeBank (b);
+  }
+
   function loadPreset (name) {
-    var pr = presetByName[name];
+    var pr = userBank()[name] || presetByName[name];
     if (!pr) return;
+    applyState (pr, name);
+  }
+
+  function applyState (pr, name) {
     // Defaults-first, exactly as the plugin's preset manager does it: a
     // preset is a complete snapshot, so anything it does not name goes back
     // to its default rather than keeping the last value.
@@ -157,22 +246,55 @@
       var r = p.kind === 'choice' ? combos[p.id] : sliders[p.id];
       if (r) r.valueChangedEvent.fire();
     });
-    if (pr.tineMods)   pr.tineMods.forEach   (function (_, i) { if (i % 2 === 0) post ({ t: 'tineMod',   i: i / 2, a: pr.tineMods[i],   b: pr.tineMods[i + 1] }); });
-    if (pr.stringMods) pr.stringMods.forEach (function (_, i) { if (i % 2 === 0) post ({ t: 'stringMod', i: i / 2, a: pr.stringMods[i], b: pr.stringMods[i + 1] }); });
-    if (pr.grandMods)  pr.grandMods.forEach  (function (_, i) { if (i % 2 === 0) post ({ t: 'grandMod',  i: i / 2, a: pr.grandMods[i],  b: pr.grandMods[i + 1] }); });
-    if (pr.pickupMods) pr.pickupMods.forEach (function (_, i) { if (i % 3 === 0) post ({ t: 'pickupMod', i: i / 3, a: pr.pickupMods[i], b: pr.pickupMods[i + 1], c: pr.pickupMods[i + 2] }); });
-    if (pr.cabMods)  post ({ t: 'cabMod',  v: pr.cabMods });
-    if (pr.micMods)  post ({ t: 'micMod',  v: pr.micMods });
-    if (pr.micStage) post ({ t: 'micStage', v: pr.micStage });
-    if (pr.velMap)   post ({ t: 'velMap',  v: pr.velMap });
-    currentPreset = name; dirty = false;
+    // Defaults first for the benches too: a preset is a complete snapshot, so
+    // one that names no tine mods means the stock harp, not whatever the last
+    // preset left in it.
+    var d = benchDefaults();
+    Object.keys (d).forEach (function (k) {
+      benches[k] = (pr[k] && pr[k].length === d[k].length) ? pr[k].slice() : d[k];
+    });
+    sendBenches (benches);
+
+    currentPreset = name || pr.name || '';
+    dirty = false;
     emitPresetInfo();
+    rememberSession();
   }
 
   function emitPresetInfo () { dispatch ('presetInfo', { name: currentPreset, dirty: dirty }); }
 
+  // The tab is the session. Closing it should not be the same as throwing the
+  // instrument away, so the live state is kept and restored -- including edits
+  // that were never saved, which is what a plugin inside a project does.
+  // Debounced, because a knob drag is a hundred changes a second.
+  var sessionTimer = null;
+  function rememberSession () {
+    if (sessionTimer) clearTimeout (sessionTimer);
+    sessionTimer = setTimeout (function () {
+      try {
+        localStorage.setItem ('epi.session',
+          JSON.stringify ({ state: captureState (currentPreset), dirty: dirty }));
+      } catch (e) {}
+    }, 400);
+  }
+
+  function forgetEverything () {
+    try {
+      ['epi.session', 'epi.userPresets', 'epi.ccOverrides', 'epi.midiInputs',
+       'epi.midiChannel', 'epi.gearSeen'].forEach (function (k) { localStorage.removeItem (k); });
+    } catch (e) {}
+  }
+
+  var briefTimer = null;
+  function showOverlayBriefly (text) {
+    showOverlay (text);
+    if (briefTimer) clearTimeout (briefTimer);
+    briefTimer = setTimeout (hideOverlay, 2600);
+  }
+
   function presetIndex () {
-    for (var i = 0; i < presets.length; ++i) if (presets[i].name === currentPreset) return i;
+    var names = allNames();
+    for (var i = 0; i < names.length; ++i) if (names[i] === currentPreset) return i;
     return 0;
   }
 
@@ -184,38 +306,58 @@
         post ({ t: 'note', note: m.note, velocity: m.velocity, on: !!m.on });
         break;
       case 'preset_load':   loadPreset (m.name); break;
-      case 'preset_next':   loadPreset (presets[(presetIndex() + 1) % presets.length].name); break;
-      case 'preset_prev':   loadPreset (presets[(presetIndex() - 1 + presets.length) % presets.length].name); break;
-      // Saving to a server there isn't would be a button that lies. The web
-      // build has no user presets; panels.jsx only shows what it is given.
-      case 'preset_save':
-      case 'preset_delete': break;
+      case 'preset_next':   loadPreset (allNames()[(presetIndex() + 1) % allNames().length]); break;
+      case 'preset_prev':   loadPreset (allNames()[(presetIndex() - 1 + allNames().length) % allNames().length]); break;
 
-      case 'tine_mod':    post ({ t: 'tineMod',   i: m.index, a: m.len, b: m.dia }); break;
-      case 'string_mod':  post ({ t: 'stringMod', i: m.index, a: m.len, b: m.dia }); break;
-      case 'grand_mod':   post ({ t: 'grandMod',  i: m.index, a: m.len, b: m.dia }); break;
-      case 'pickup_mod':  post ({ t: 'pickupMod', i: m.index, a: m.h, b: m.g, c: m.s }); break;
-      case 'tine_mod_reset':   resetPairs ('tineMod',   1, 1); break;
-      case 'string_mod_reset': resetPairs ('stringMod', 1, 1); break;
-      case 'grand_mod_reset':  resetPairs ('grandMod',  1, 1); break;
+      // Real, and kept in the browser. The interface already has the whole
+      // browser for these -- a Save field, a User section, delete buttons --
+      // so the only thing missing was somewhere to put them.
+      case 'preset_save':   if (m.name) saveUser (String (m.name).trim()); break;
+      case 'preset_delete': if (m.name) deleteUser (m.name); break;
+
+      case 'tine_mod':    pair ('tineMods',   'tineMod',   m.index, m.len, m.dia); break;
+      case 'string_mod':  pair ('stringMods', 'stringMod', m.index, m.len, m.dia); break;
+      case 'grand_mod':   pair ('grandMods',  'grandMod',  m.index, m.len, m.dia); break;
+      case 'pickup_mod':  triple (m.index, m.h, m.g, m.s); break;
+      case 'tine_mod_reset':   resetPairs ('tineMods',   'tineMod',   1, 1); break;
+      case 'string_mod_reset': resetPairs ('stringMods', 'stringMod', 1, 1); break;
+      case 'grand_mod_reset':  resetPairs ('grandMods',  'grandMod',  1, 1); break;
       case 'pickup_mod_reset': resetTriples(); break;
-      case 'cab_mod':     post ({ t: 'cabMod', v: [m.box, m.cone, m.dist, m.angle, m.susp] }); break;
-      case 'cab_mod_reset': post ({ t: 'cabMod', v: [0.74, 0.59, 0.5, 0.25, 0.5] }); break;
-      case 'mic_mod':     post ({ t: 'micMod', v: [m.spread, m.bias, m.dist, m.lvlL, m.lvlR] }); break;
-      case 'mic_mod_reset': post ({ t: 'micMod', v: [1, 0, 0, 1, 1] }); break;
-      case 'mic_stage':   if (m.v && m.v.length === 31) post ({ t: 'micStage', v: m.v }); break;
-      case 'vel_map':     post ({ t: 'velMap', v: [m.y0, m.y1, m.y2, m.y3, m.y4] }); break;
-      case 'vel_map_reset': post ({ t: 'velMap', v: [0, 0.25, 0.5, 0.75, 1] }); break;
+      case 'cab_mod':     flat ('cabMods', 'cabMod', [m.box, m.cone, m.dist, m.angle, m.susp]); break;
+      case 'cab_mod_reset': flat ('cabMods', 'cabMod', benchDefaults().cabMods); break;
+      case 'mic_mod':     flat ('micMods', 'micMod', [m.spread, m.bias, m.dist, m.lvlL, m.lvlR]); break;
+      case 'mic_mod_reset': flat ('micMods', 'micMod', benchDefaults().micMods); break;
+      case 'mic_stage':   if (m.v && m.v.length === 31) flat ('micStage', 'micStage', m.v.slice()); break;
+      case 'vel_map':     flat ('velMap', 'velMap', [m.y0, m.y1, m.y2, m.y3, m.y4]); break;
+      case 'vel_map_reset': flat ('velMap', 'velMap', benchDefaults().velMap); break;
       default: break;
     }
-    if (name !== 'ui_note') { dirty = true; emitPresetInfo(); }
+    if (name !== 'ui_note') { dirty = true; emitPresetInfo(); rememberSession(); }
   }
 
-  function resetPairs (kind, a, b) {
-    for (var i = 0; i < 88; ++i) post ({ t: kind, i: i, a: a, b: b });
+  // Every bench edit goes through the mirror as well as the engine, so what
+  // gets saved is what is being heard.
+  function pair (key, msg, i, a, b) {
+    if (i < 0 || i >= NUM_TINES) return;
+    benches[key][i * 2] = a; benches[key][i * 2 + 1] = b;
+    post ({ t: msg, i: i, a: a, b: b });
+  }
+  function triple (i, a, b, c) {
+    if (i < 0 || i >= NUM_TINES) return;
+    benches.pickupMods[i * 3] = a; benches.pickupMods[i * 3 + 1] = b; benches.pickupMods[i * 3 + 2] = c;
+    post ({ t: 'pickupMod', i: i, a: a, b: b, c: c });
+  }
+  function flat (key, msg, v) { benches[key] = v.slice(); post ({ t: msg, v: v }); }
+
+  function resetPairs (key, msg, a, b) {
+    for (var i = 0; i < NUM_TINES; ++i) pair (key, msg, i, a, b);
   }
   function resetTriples () {
-    for (var i = 0; i < 88; ++i) post ({ t: 'pickupMod', i: i, a: 0, b: 0, c: 1 });
+    for (var i = 0; i < NUM_TINES; ++i) triple (i, 0, 0, 1);
+  }
+
+  function allNames () {
+    return presets.map (function (p) { return p.name; }).concat (Object.keys (userBank()));
   }
 
   // ---- native functions --------------------------------------------------
@@ -237,7 +379,7 @@
     return function () {
       switch (name) {
         case 'listFactoryPresets': return Promise.resolve (presets.map (function (p) { return p.name; }));
-        case 'listUserPresets':    return Promise.resolve ([]);
+        case 'listUserPresets':    return Promise.resolve (Object.keys (userBank()));
         case 'reloadUI':           location.reload(); return Promise.resolve (null);
         case 'getTineMods':   return readBack ('tineMods');
         case 'getStringMods': return readBack ('stringMods');
@@ -373,7 +515,26 @@
     };
     global.juce = global.Juce;
 
-    if (presets.length) { currentPreset = presets[0].name; loadPreset (currentPreset); }
+    // A restored session takes precedence over the default preset: closing a
+    // tab should not be the same as throwing the instrument away. A visitor
+    // with no stored session gets the first factory preset, as before.
+    var restored = null;
+    try {
+      var raw0 = localStorage.getItem ('epi.session');
+      if (raw0) {
+        var sess = JSON.parse (raw0);
+        if (sess && sess.state && sess.state.values) restored = sess;
+      }
+    } catch (e) { restored = null; }
+
+    if (restored) {
+      applyState (restored.state, restored.state.name);
+      dirty = !!restored.dirty;
+      emitPresetInfo();
+    } else if (presets.length) {
+      currentPreset = presets[0].name;
+      loadPreset (currentPreset);
+    }
 
     // What the host can do, for the parts of the web build that are not the
     // instrument: Web MIDI and the settings panel. They are separate files
@@ -394,6 +555,7 @@
         var relay = p.kind === 'choice' ? combos[id] : sliders[id];
         if (relay) relay.valueChangedEvent.fire();
         dirty = true;
+        rememberSession();
       },
       getNormalised: function (id) { return norm[id]; },
 
@@ -406,6 +568,17 @@
       pitchBend: function (semis) { post ({ t: 'bend', v: semis }); },
 
       loadPreset: loadPreset,
+      applyState: applyState,
+      captureState: captureState,
+      userPresetNames: function () { return Object.keys (userBank()); },
+      userBank: userBank,
+      writeBank: writeBank,
+      deleteUser: deleteUser,
+      saveUser: saveUser,
+      forgetEverything: function () {
+        forgetEverything();
+        location.reload();
+      },
       presetNames: function () { return presets.map (function (p) { return p.name; }); },
       currentPreset: function () { return currentPreset; },
       startAudio: function () { startAudio(); },

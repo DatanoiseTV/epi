@@ -44,6 +44,9 @@ rm -f "$out/.sweep.json"
 echo "  checking the browser's MIDI decoding against the published map"
 node "$root/tools/check-midi-decode.mjs" "$out/parameters.json" | tail -2
 
+echo "  checking the browser's preset store"
+node "$root/tools/check-preset-store.mjs" "$out/parameters.json" "$out/presets.json" | tail -2
+
 echo "  assembling the interface"
 cp "$root"/ui/epi/* "$out/"
 cp "$root"/ui/vendor/* "$out/"
