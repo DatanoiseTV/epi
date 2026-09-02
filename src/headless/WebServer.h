@@ -16,6 +16,8 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cerrno>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>
@@ -116,8 +118,16 @@ public:
 
             const juce::String frame = "data: " + jsonLine + "\n\n";
             const auto utf8 = frame.toRawUTF8();
-            const int len = (int) std::strlen (utf8);
-            if (s.socket->write (utf8, len) < 0) { s.alive = false; it = streams.erase (it); }
+            const int len = (int) frame.getNumBytesAsUTF8();
+            const int n = s.socket->write (utf8, len);
+
+            // A PARTIAL write cannot be left as it is: half a frame
+            // desynchronises the stream and every frame after it arrives as
+            // broken JSON. Drop the connection instead -- the page reconnects
+            // by itself within a second and is resynchronised on the way in,
+            // which is a shorter gap than a corrupt stream would ever recover
+            // from. This is why the message thread does not loop here.
+            if (n != len) { s.alive = false; it = streams.erase (it); }
             else ++it;
         }
     }
@@ -249,8 +259,8 @@ private:
             juce::String mime;
             if (handlers.asset && handlers.asset (path, data, mime))
             {
-                writeAll (*sock, header (200, mime, (int) data.getSize()));
-                sock->write (data.getData(), (int) data.getSize());
+                if (writeAll (*sock, header (200, mime, (int) data.getSize())))
+                    writeFully (*sock, data.getData(), data.getSize());
                 return;
             }
         }
@@ -287,10 +297,52 @@ private:
         raw->alive = false;
     }
 
+    // juce::StreamingSocket::write is ONE ::send(). It does not loop, and a
+    // send() of two megabytes returns as soon as the socket's send buffer is
+    // full -- about 146 kB here. So anything larger than that buffer arrives
+    // truncated underneath a Content-Length that says otherwise, which is
+    // exactly how a browser reports "loading failed" for a file the server
+    // believes it sent. Everything written to a socket goes through here.
+    //
+    // The deadline is on LACK OF PROGRESS, not on total time: a big asset over
+    // a slow link is fine, a peer that has stopped reading is not.
+    static bool writeFully (juce::StreamingSocket& s, const void* data, size_t total)
+    {
+        constexpr int kChunk = 1 << 16;
+        constexpr uint32_t kStallMs = 15000;
+
+        const auto* p = static_cast<const char*> (data);
+        size_t done = 0;
+        auto lastProgress = juce::Time::getMillisecondCounter();
+
+        while (done < total)
+        {
+            if (! s.isConnected()) return false;
+            if (s.waitUntilReady (false, 200) < 0) return false;
+
+            const int chunk = (int) std::min (static_cast<size_t> (kChunk), total - done);
+            const int n = s.write (p + done, chunk);
+
+            if (n > 0)
+            {
+                done += static_cast<size_t> (n);
+                lastProgress = juce::Time::getMillisecondCounter();
+                continue;
+            }
+
+            // A socket with no room says so rather than failing; anything else
+            // is the connection going away.
+            if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)
+                return false;
+            if (juce::Time::getMillisecondCounter() - lastProgress > kStallMs)
+                return false;
+        }
+        return true;
+    }
+
     static bool writeAll (juce::StreamingSocket& s, const juce::String& text)
     {
-        const auto* utf8 = text.toRawUTF8();
-        return s.write (utf8, (int) std::strlen (utf8)) >= 0;
+        return writeFully (s, text.toRawUTF8(), text.getNumBytesAsUTF8());
     }
 
     Handlers handlers;

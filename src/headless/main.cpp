@@ -438,6 +438,8 @@ int usage()
         "  --midi-in <name>    MIDI input; repeatable. Default: every input.\n"
         "  --midi-out <name>   MIDI output for parameter feedback (default: none)\n"
         "  --no-cc-feedback    send only NRPN back, not CC\n"
+        "  --no-audio          serve the interface without opening an audio\n"
+        "                      device; silent, for checking a build or a port\n"
         "  --preset <name>     load a preset at startup\n"
         "  --list-devices      print audio and MIDI devices, then exit\n"
         "  --dump-control-map  print docs/ControlMap.md's table, then exit\n"
@@ -496,6 +498,17 @@ int main (int argc, char** argv)
     }
 
     // ---- audio ------------------------------------------------------------
+    // Without a device the instrument still has to be prepared, or the
+    // telemetry the interface draws from would be read out of an engine that
+    // was never given a sample rate.
+    const bool noAudio = flag ("--no-audio");
+    if (noAudio)
+    {
+        host->processor().setPlayConfigDetails (0, 2, 48000.0, 512);
+        host->processor().prepareToPlay (48000.0, 512);
+        std::printf ("Epi: no audio device (--no-audio); the interface is served but silent\n");
+    }
+
     juce::AudioDeviceManager::AudioDeviceSetup setup;
     setup.outputDeviceName = value ("--device", {});
     setup.sampleRate       = value ("--rate", "0").getDoubleValue();
@@ -504,12 +517,13 @@ int main (int argc, char** argv)
     setup.useDefaultInputChannels = false;
     setup.useDefaultOutputChannels = true;
 
-    if (const auto err = devices.initialise (0, 2, nullptr, true, setup.outputDeviceName, &setup);
-        err.isNotEmpty())
-    {
-        std::fprintf (stderr, "Epi: no audio device — %s\n", err.toRawUTF8());
-        return 1;
-    }
+    if (! noAudio)
+        if (const auto err = devices.initialise (0, 2, nullptr, true, setup.outputDeviceName, &setup);
+            err.isNotEmpty())
+        {
+            std::fprintf (stderr, "Epi: no audio device — %s\n", err.toRawUTF8());
+            return 1;
+        }
 
     // ---- MIDI -------------------------------------------------------------
     const auto wantedIn = values ("--midi-in");
@@ -631,7 +645,8 @@ int main (int argc, char** argv)
     }
 
     host->attach (&server, midiOut.get(), ! flag ("--no-cc-feedback"));
-    devices.addAudioCallback (host.get());
+    if (! noAudio)
+        devices.addAudioCallback (host.get());
 
     if (auto* dev = devices.getCurrentAudioDevice())
         std::printf ("Epi: audio %s, %.0f Hz, %d samples\n",
@@ -653,7 +668,8 @@ int main (int argc, char** argv)
 
     std::printf ("\nEpi: stopping.\n");
 
-    devices.removeAudioCallback (host.get());
+    if (! noAudio)
+        devices.removeAudioCallback (host.get());
     for (auto& in : inputs) in->stop();
     server.stop();
     return 0;

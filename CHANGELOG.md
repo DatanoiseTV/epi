@@ -23,7 +23,7 @@ All notable changes to Epi are documented here. The format follows
   the binary needs only libasound2 and libfreetype6 at runtime -- no X11, no
   GTK, no WebKit -- and runs with DISPLAY unset.
   `--list-devices`, `--device`, `--rate`, `--buffer`, `--midi-in`,
-  `--midi-out`, `--port`, `--bind`, `--preset`.
+  `--midi-out`, `--port`, `--bind`, `--preset`, `--no-audio`.
 - **Every parameter over MIDI, as CC and as NRPN, in both directions.** All
   forty-nine, so a box of encoders, buttons and displays can be an Epi front
   panel. CC is one message and seven bits, for a generic controller or a
@@ -59,6 +59,23 @@ All notable changes to Epi are documented here. The format follows
   parameter layout, which the framework-free suite cannot see.
 
 ### Fixed
+- The headless host served any asset larger than a socket send buffer
+  truncated, under a Content-Length that said otherwise, so the interface
+  failed to load. `juce::StreamingSocket::write` is a single `::send()` and
+  does not loop: it returns as soon as the send buffer is full, about 146 kB
+  here, and the return value was being ignored. The interface's largest file
+  is 2.8 MB. Every other asset fitted -- the next largest is 131 kB -- which
+  is why nothing caught it: index.html, the stylesheet, every panel, both
+  React bundles, the fonts and all the end-to-end MIDI and telemetry work
+  went through fine. Everything written to a socket now goes through one
+  loop that keeps sending until the buffer is gone, with a deadline on lack
+  of progress rather than on total time, so a large file over a slow link is
+  fine while a peer that has stopped reading is dropped. A partial write on
+  an event stream now drops that connection rather than leaving half a frame
+  behind, which would desynchronise every frame after it; the page
+  reconnects by itself within a second and is resynchronised on the way in.
+  `tools/smoke-headless.sh` fetches every file the interface is made of and
+  compares it byte for byte with the source, and CI runs it.
 - The interface header showed `v0.9.0 A. main` instead of `v0.9.0 . main`.
   `juce::String` decodes a `const char*` as Latin-1, so the UTF-8 separator
   in the version string was re-encoded on its way to the browser. Visible in

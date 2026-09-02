@@ -97,6 +97,15 @@ jobs:
         shell: bash
         run: ctest --test-dir build --output-on-failure
 
+      # Serves every file the interface is made of and checks it arrives
+      # whole. Added after the server truncated the one asset larger than a
+      # socket send buffer while every other test passed, because every other
+      # asset fitted.
+      - name: headless serves the interface whole
+        if: "!startsWith(matrix.os, 'windows')"
+        shell: bash
+        run: ./tools/smoke-headless.sh
+
       # docs/ControlMap.md is generated from the control map and the live
       # parameter layout. Checking it here is what stops the published
       # numbers and the document that publishes them from drifting apart.
