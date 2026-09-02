@@ -159,3 +159,17 @@ target_include_directories(epi_radiation_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_features(epi_radiation_tests PRIVATE cxx_std_20)
 add_test(NAME epi_radiation COMMAND epi_radiation_tests)
 set_tests_properties(epi_radiation PROPERTIES TIMEOUT 600)
+
+# ---------------------------------------------------------------------------
+# External control surface. src/epi/ControlMap.h is a published interface --
+# hardware and controller templates are keyed to its numbers -- so this suite
+# is mostly a pin, carrying its own independent copy of every assignment. It
+# also measures the NRPN reader, including the arbitration with the RPN the
+# MPE tuner reads, and the feedback poll that drives a physical panel.
+# Framework-free: headers only, no JUCE.
+# ---------------------------------------------------------------------------
+add_executable(epi_control_tests test_epi_control.cpp)
+target_include_directories(epi_control_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_features(epi_control_tests PRIVATE cxx_std_20)
+add_test(NAME epi_control COMMAND epi_control_tests)
+set_tests_properties(epi_control PROPERTIES TIMEOUT 120)

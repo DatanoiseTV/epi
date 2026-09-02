@@ -16,6 +16,7 @@
 #include "EpiAnalysis.h"
 #include "epi/PluginProcessor.h"
 #include "epi/ui/BoundParameterIds.h"
+#include "epi/ControlMap.h"
 
 #include <EpiUIData.h>
 
@@ -543,6 +544,66 @@ int main()
         std::snprintf (detail, sizeof detail, "(asked %+.1f ct, measured %+.2f ct)", asked, got);
         row ("S11", "MPE stream through the artifact retunes the note",
              std::abs (got - asked) < 1.0, detail);
+    }
+
+    // S12 -- the control map is checked against the real parameter layout.
+    //
+    // tests/test_epi_control.cpp pins the numbers and proves the map is
+    // self-consistent, but it is framework-free and so cannot see the
+    // instrument. This is the row that knows what the parameters actually
+    // are: every id in the map must exist, and every parameter the interface
+    // binds must be reachable from a controller. A parameter added to a panel
+    // and forgotten in the map would otherwise be a knob on screen with no
+    // number behind it -- invisible until somebody tried to build a panel.
+    {
+        auto aOwned = std::make_unique<EpiAudioProcessor>();
+        auto& apvts = aOwned->getValueTreeState();
+
+        juce::StringArray mapped;
+        int missing = 0;
+        juce::String firstMissing;
+        for (int i = 0; i < epi::kNumControls; ++i)
+        {
+            const juce::String id { epi::kControlMap[i].paramId };
+            mapped.add (id);
+            if (apvts.getParameter (id) == nullptr)
+            {
+                ++missing;
+                if (firstMissing.isEmpty()) firstMissing = id;
+            }
+        }
+        char d1[128];
+        std::snprintf (d1, sizeof d1, "(%d named, %d not in the layout%s%s)",
+                       epi::kNumControls, missing,
+                       firstMissing.isEmpty() ? "" : ": ",
+                       firstMissing.toRawUTF8());
+        row ("S12", "every control-map entry names a real parameter", missing == 0, d1);
+
+        juce::StringArray unreachable;
+        for (const auto& id : epi::ui::boundParameterIds())
+            if (! mapped.contains (id))
+                unreachable.add (id);
+        char d2[192];
+        std::snprintf (d2, sizeof d2, "(%d bound, %d with no CC or NRPN%s%s)",
+                       epi::ui::boundParameterIds().size(), unreachable.size(),
+                       unreachable.isEmpty() ? "" : ": ",
+                       unreachable.joinIntoString (", ").toRawUTF8());
+        row ("S13", "every parameter the interface binds is reachable over MIDI",
+             unreachable.isEmpty(), d2);
+
+        // A selector addressed as index/(n-1) over seven bits needs n <= 128
+        // to round-trip; this is the row that would notice a selector growing
+        // past what a CC can carry.
+        int widest = 0;
+        juce::String widestId;
+        for (int i = 0; i < epi::kNumControls; ++i)
+            if (auto* c = dynamic_cast<juce::AudioParameterChoice*> (
+                              apvts.getParameter (epi::kControlMap[i].paramId)))
+                if (c->choices.size() > widest)
+                { widest = c->choices.size(); widestId = epi::kControlMap[i].paramId; }
+        char d3[128];
+        std::snprintf (d3, sizeof d3, "(widest is %s with %d)", widestId.toRawUTF8(), widest);
+        row ("S14", "no selector is wider than a CC can address", widest <= 128, d3);
     }
 
     char tail[64];
