@@ -25,7 +25,7 @@
     // corner is a thing people do not find: it has to say what it opens, and
     // it has to be big enough to hit on a phone -- 44 px is the smallest
     // comfortable touch target.
-    '#epi-gear{position:fixed;right:18px;bottom:16px;z-index:9996;height:44px;',
+    '#epi-gear{height:44px;',
       'display:flex;align-items:center;gap:9px;padding:0 18px 0 15px;',
       'border-radius:22px;border:1px solid rgba(217,196,138,0.55);',
       'background:linear-gradient(180deg,rgba(30,28,24,0.97),rgba(17,16,19,0.97));',
@@ -45,7 +45,7 @@
       '55%{box-shadow:0 6px 22px rgba(0,0,0,0.55),0 0 0 11px rgba(217,196,138,0)}}',
     '@media (prefers-reduced-motion:reduce){#epi-gear.hint{animation:none;',
       'border-color:rgba(240,221,166,0.9)}}',
-    '@media (max-width:640px){#epi-gear{right:12px;bottom:12px}}',
+    '@media (max-width:640px){#epi-gear{padding:0 13px 0 11px;letter-spacing:0.1em}}',
 
     '#epi-settings{position:fixed;inset:0;z-index:9998;display:flex;align-items:center;',
       'justify-content:center;background:rgba(6,6,8,0.72);backdrop-filter:blur(4px)}',
@@ -170,17 +170,11 @@
       'The score is handed to the audio thread and played from its own clock, '
       + 'so every note lands on the sample the file asks for. Drop a .mid on '
       + 'the page at any time.'));
-    var frow = el ('div', 'row');
-    frow.appendChild (el ('span', 'grow',
+    box.appendChild (el ('p', 'note',
       (global.__EPI_PLAYER__ && global.__EPI_PLAYER__.hasFile())
         ? 'A file is loaded; the transport is at the bottom of the window.'
-        : 'Piano parts are picked automatically and can be changed.'));
-    var openMidi = el ('button', null, 'Open a MIDI file');
-    openMidi.onclick = function () {
-      if (global.__EPI_PLAYER__) { global.__EPI_PLAYER__.open(); hide(); }
-    };
-    frow.appendChild (openMidi);
-    box.appendChild (frow);
+        : 'Use the MIDI File button, or drop a .mid anywhere on the page. '
+          + 'Piano parts are picked automatically and can be changed.'));
 
     // ---- presets as files ------------------------------------------------
     box.appendChild (el ('h3', null, 'Presets'));
@@ -400,11 +394,11 @@
 
     var gear = el ('button');
     gear.id = 'epi-gear';
-    gear.title = 'MIDI inputs, controller map and settings';
-    gear.setAttribute ('aria-label', 'MIDI settings');
+    gear.title = 'MIDI inputs, the controller map, presets and what is stored here';
+    gear.setAttribute ('aria-label', 'Setup');
     gear.appendChild (el ('span', 'dot'));
     gear.appendChild (el ('span', 'glyph', '⚙'));
-    gear.appendChild (el ('span', null, 'MIDI'));
+    gear.appendChild (el ('span', null, 'Setup'));
 
     var seen = false;
     try { seen = localStorage.getItem ('epi.gearSeen') === '1'; } catch (e) {}
@@ -419,7 +413,8 @@
       try { localStorage.setItem ('epi.gearSeen', '1'); } catch (err) {}
       show();
     };
-    document.body.appendChild (gear);
+    // Alongside the MIDI file button rather than on top of it.
+    (global.__EPI_BUTTONS__ ? global.__EPI_BUTTONS__() : document.body).appendChild (gear);
 
     MIDI.onChange (function (s) {
       gear.classList.toggle ('live', s.available && s.inputs.some (function (i) { return i.on; }));

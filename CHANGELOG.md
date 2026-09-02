@@ -77,8 +77,11 @@ All notable changes to Epi are documented here. The format follows
   telemetry, and a preset load switches the instrument. No SharedArrayBuffer,
   so no COOP/COEP headers, which Pages cannot set anyway. 360 kB of wasm.
 - **A MIDI file player in the browser build.** Drop a `.mid` on the page, or
-  open one from the settings, and it plays on the instrument with a transport
-  at the bottom of the window. Both layouts: format 0, where a single track
+  press the MIDI File button, and it plays on the instrument with a transport
+  at the bottom of the window. Playing a file is a thing you do, not a setting,
+  so it has its own button next to the setup one rather than living inside it
+  -- and the setup panel, which by now holds devices, the controller map,
+  presets and stored state, is labelled Setup rather than MIDI. Both layouts: format 0, where a single track
   carries every channel, and format 1, where the tracks are simultaneous.
   The unit of selection is a PART -- one channel within one track -- rather
   than a track, because that is the only reading that handles both layouts and

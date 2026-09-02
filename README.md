@@ -269,8 +269,8 @@ are remembered in the browser.
 Web MIDI is Chrome, Edge and Firefox; Safari does not implement it, and the
 panel says so rather than looking broken.
 
-**Drop a `.mid` on the page** and it plays on the instrument, with a transport
-at the bottom of the window. Both file layouts work — format 0, where one
+**Drop a `.mid` on the page**, or press **MIDI File**, and it plays on the
+instrument with a transport at the bottom of the window. Both file layouts work — format 0, where one
 track holds every channel, and format 1, where the tracks are simultaneous.
 
 The piano parts are picked automatically by scoring each channel of each track

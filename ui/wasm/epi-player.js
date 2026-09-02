@@ -21,7 +21,7 @@
   var HOST = null, SMF = null;
   var parsed = null, selected = [], scoreLen = 0;
   var playing = false, position = 0, duration = 0, fileName = '';
-  var bar = null, partsOpen = false;
+  var bar = null, partsOpen = false, filePill = null;
 
   var CSS = [
     '#epi-player{position:fixed;left:50%;transform:translateX(-50%);bottom:16px;z-index:9995;',
@@ -58,8 +58,37 @@
       'justify-content:center;background:rgba(8,8,10,0.82);color:#e6d3a0;pointer-events:none;',
       'font:600 14px/1.6 ui-sans-serif,system-ui,sans-serif;letter-spacing:0.16em;',
       'text-transform:uppercase;border:2px dashed rgba(217,196,138,0.5)}',
-    '@media (max-width:640px){#epi-player .name{max-width:90px}}'
+    '#epi-buttons{position:fixed;right:18px;bottom:16px;z-index:9996;',
+      'display:flex;align-items:center;gap:9px}',
+    '.epi-pill{height:44px;display:flex;align-items:center;gap:9px;padding:0 18px 0 15px;',
+      'border-radius:22px;border:1px solid rgba(217,196,138,0.55);',
+      'background:linear-gradient(180deg,rgba(30,28,24,0.97),rgba(17,16,19,0.97));',
+      'color:#e6d3a0;cursor:pointer;font:600 12px/1 ui-sans-serif,system-ui,sans-serif;',
+      'letter-spacing:0.16em;text-transform:uppercase;',
+      'box-shadow:0 6px 22px rgba(0,0,0,0.55);transition:all .16s ease}',
+    '.epi-pill:hover{border-color:rgba(240,221,166,0.95);color:#fdf0c8;',
+      'transform:translateY(-1px);box-shadow:0 9px 26px rgba(0,0,0,0.6)}',
+    '.epi-pill .glyph{font-size:16px;line-height:1}',
+    '#epi-file.loaded{border-color:rgba(130,225,160,0.75);color:#9fe8b6}',
+    // The transport is centred and the pills are on the right; on a narrow
+    // window they would sit on top of each other, so the transport moves up.
+    '@media (max-width:900px){#epi-player{bottom:70px}}',
+    '@media (max-width:640px){#epi-player .name{max-width:90px}',
+      '.epi-pill{padding:0 13px 0 11px;letter-spacing:0.1em}}'
   ].join ('');
+
+  // Both pills live in one bar so they cannot drift apart or overlap, and
+  // either file may install first, so it is get-or-create rather than owned.
+  function buttonBar () {
+    var b = document.getElementById ('epi-buttons');
+    if (!b) {
+      b = document.createElement ('div');
+      b.id = 'epi-buttons';
+      document.body.appendChild (b);
+    }
+    return b;
+  }
+  global.__EPI_BUTTONS__ = buttonBar;
 
   function el (tag, cls, text) {
     var e = document.createElement (tag);
@@ -84,6 +113,11 @@
 
     parsed = p;
     fileName = name;
+    if (filePill) {
+      filePill.classList.add ('loaded');
+      filePill.lastChild.textContent = 'MIDI File';
+      filePill.title = name;
+    }
     duration = p.duration;
     var chosen = SMF.choosePiano (p);
     selected = chosen.selected;
@@ -173,6 +207,7 @@
       HOST.sendScore (null);
       parsed = null;
       hideParts();
+      if (filePill) { filePill.classList.remove ('loaded'); filePill.title = 'Play a MIDI file on the instrument'; }
       if (bar) { bar.remove(); bar = null; }
     };
     bar.appendChild (close);
@@ -298,6 +333,16 @@
     document.head.appendChild (style);
 
     installDropTarget();
+
+    var pill = el ('button', 'epi-pill');
+    pill.id = 'epi-file';
+    pill.title = 'Play a MIDI file on the instrument';
+    pill.setAttribute ('aria-label', 'Open a MIDI file');
+    pill.appendChild (el ('span', 'glyph', '\u266A'));
+    pill.appendChild (el ('span', null, 'MIDI File'));
+    pill.onclick = function (e) { e.stopPropagation(); HOST.startAudio(); pick(); };
+    buttonBar().appendChild (pill);
+    filePill = pill;
 
     HOST.onTransport (function (pos, isPlaying) {
       if (pos !== undefined) position = pos;
