@@ -133,8 +133,16 @@ struct NoteEvent
     // sostenuto latches the keys held at press (grand only -- the electrics
     // never had the middle pedal); soft is the una corda shift, also the
     // grand's. Both carry on/off in `velocity` (>0.5 = down).
+    // keyPosition carries a continuous key travel in `velocity`, 0 at rest and
+    // 1 fully depressed, for the key named in `note`. It is what a keybed that
+    // senses the whole throw can say and two contacts cannot, and it goes to
+    // the one place in this instrument where it means something physical: the
+    // key lifts its own damper on the way down and lets it back on the way up,
+    // which is why half-releasing a key on a grand half-damps the note.
+    // A stream that never sends one renders exactly as it did before the
+    // event existed.
     enum Type { noteOn, noteOff, allNotesOff, sustainOn, sustainOff, sustain,
-                sostenuto, soft };
+                sostenuto, soft, keyPosition };
     int   offset   = 0;
     Type  type     = noteOn;
     int   note     = 60;
@@ -673,6 +681,38 @@ private:
     static constexpr double kThunkPress = 0.60;  // calibrated by engine row 12.2
     static constexpr double kThunkLift  = 2.2;
     double pedalAmount = 0.0;     // continuous CC64, 0 = up, 1 = fully down
+
+    // Per-key damper lift, from a keybed that senses the whole key travel.
+    // Zero unless a keyPosition event has been sent for that key, so an
+    // instrument driven by ordinary MIDI behaves exactly as it always did:
+    // the damper is then the pedal alone.
+    //
+    // The travel-to-lift mapping below is the one number here that is NOT
+    // measured, and is recorded as a gap rather than dressed up. On a grand
+    // the damper starts to rise partway down the key's ten millimetres of dip
+    // and is clear before let-off; the values are a defensible reading of
+    // that, not a measurement of a particular action. What IS certain is the
+    // shape of the consequence -- a key held halfway leaves its damper
+    // halfway, and that is what the continuous input buys.
+    static constexpr double kKeyDamperStart = 0.35;   // travel where the damper begins to rise
+    static constexpr double kKeyDamperClear = 0.85;   // travel where it is fully clear
+    std::array<double, kNumTines> keyLift {};
+
+    // A damper is off its string if the PEDAL has lifted it or if the KEY has,
+    // so the two combine as a maximum rather than adding: a pedalled note whose
+    // key is also down is not damped twice as little. With no key-position
+    // stream keyLift stays zero and this is pedalAmount exactly, which is why
+    // an ordinary MIDI performance renders as it always did.
+    void applyDamper (int i)
+    {
+        if (i < 0 || i >= kNumTines) return;
+        const double lift = std::max (pedalAmount, keyLift[static_cast<std::size_t> (i)]);
+        tines[i].setPedal (lift);
+        cp70[i].setPedal (lift);
+        wurli[static_cast<std::size_t> (i)].setPedal (lift);
+        grand[static_cast<std::size_t> (i)].setPedal (lift);
+        clav[static_cast<std::size_t> (i)].setPedal (lift);
+    }
 
     void setPedalAmount (double a)
     {

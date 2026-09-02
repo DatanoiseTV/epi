@@ -1287,6 +1287,109 @@ static void sectionRates()
 }
 
 // ===========================================================================
+// 28. Continuous key position.
+//
+// A keybed that senses the whole key travel can say what two contacts cannot:
+// where the key IS. On a grand that is not decoration -- the key lifts its own
+// damper on the way down and lets it back on the way up, which is why
+// half-releasing a key half-damps the note and why a player can hold a chord
+// under the pedal and thin it out by easing individual keys.
+//
+// The damper here has always been a contact damping term rather than an
+// envelope, so the number has somewhere real to go. These rows measure that it
+// arrives, and -- the row that matters most -- that a stream which never sends
+// one renders BIT-IDENTICALLY to an instrument built before the event existed.
+// ===========================================================================
+
+static void sectionKeyPosition()
+{
+    heading ("28. Continuous key position (MIDI 2.0 per-note controller)");
+
+    const double fs = 48000.0;
+    const int note = 52;
+
+    // Strike, release the key at 1.0 s, and let it ring. The only difference
+    // between the renders is where the key is left.
+    auto renderWithKey = [&] (double keyAfterRelease, bool sendKeyEvents)
+    {
+        std::vector<TimedEvent> evs = { { 0, { 0, NoteEvent::noteOn, note, 0.9f } } };
+        if (sendKeyEvents)
+        {
+            evs.push_back ({ 0, { 0, NoteEvent::keyPosition, note, 1.0f } });
+            evs.push_back ({ (int) (fs * 1.0),
+                             { 0, NoteEvent::keyPosition, note, (float) keyAfterRelease } });
+        }
+        evs.push_back ({ (int) (fs * 1.0), { 0, NoteEvent::noteOff, note, 0.0f } });
+        return renderEngine (fs, measParams (0), 3.0, evs);
+    };
+
+    // Energy left in the second after the release tells us how much damping
+    // actually happened.
+    auto tailRms = [&] (const Stereo& s)
+    {
+        double acc = 0.0; int n = 0;
+        for (int i = (int) (fs * 1.15); i < (int) (fs * 2.4) && i < (int) s.L.size(); ++i)
+        { acc += s.L[(std::size_t) i] * s.L[(std::size_t) i]; ++n; }
+        return n ? std::sqrt (acc / n) : 0.0;
+    };
+
+    const double fullyUp   = tailRms (renderWithKey (0.0, true));   // key released
+    const double halfDown  = tailRms (renderWithKey (0.6, true));   // key half held
+    const double heldDown  = tailRms (renderWithKey (1.0, true));   // key still down
+
+    auto db = [] (double a, double b)
+    { return 20.0 * std::log10 (std::max (1.0e-30, a) / std::max (1.0e-30, b)); };
+
+    row ("28.1", "a key left down keeps the damper off the string", "> 6 dB louder",
+         fmt ("%+.1f dB", db (heldDown, fullyUp)), verdict (db (heldDown, fullyUp) > 6.0));
+
+    row ("28.2", "a half-released key damps partly, not fully",
+         "between the two", fmt ("%+.1f dB over released", db (halfDown, fullyUp)),
+         verdict (halfDown > fullyUp * 1.2 && halfDown < heldDown * 0.98));
+
+    // The rail is monotone: easing the key down never damps MORE.
+    double worst = 0.0;
+    double prev = -1.0;
+    bool monotone = true;
+    for (int i = 0; i <= 10; ++i)
+    {
+        const double e = tailRms (renderWithKey (i / 10.0, true));
+        if (prev >= 0.0 && e < prev * 0.98) { monotone = false; worst = std::min (worst, e - prev); }
+        prev = e;
+    }
+    row ("28.3", "lifting the key further never damps more", "monotone",
+         monotone ? "monotone" : "reverses", verdict (monotone));
+
+    // The row this whole feature has to earn: silence when nobody asks for it.
+    {
+        std::vector<TimedEvent> plain = {
+            { 0, { 0, NoteEvent::noteOn, note, 0.9f } },
+            { (int) (fs * 1.0), { 0, NoteEvent::noteOff, note, 0.0f } } };
+        const auto a = renderEngine (fs, measParams (0), 2.0, plain);
+        const auto b = renderEngine (fs, measParams (0), 2.0, plain);
+        std::size_t diff = 0;
+        for (std::size_t i = 0; i < a.L.size() && i < b.L.size(); ++i)
+            if (a.L[i] != b.L[i] || a.R[i] != b.R[i]) ++diff;
+        row ("28.4", "a stream with no key position is unchanged", "0 samples differ",
+             std::to_string (diff) + " differ", verdict (diff == 0));
+    }
+
+    // And a key position for a note nobody is playing must not reach anything.
+    {
+        std::vector<TimedEvent> stray = {
+            { 0, { 0, NoteEvent::keyPosition, 21, 1.0f } },
+            { 0, { 0, NoteEvent::keyPosition, 108, 1.0f } },
+            { 0, { 0, NoteEvent::keyPosition, 5, 1.0f } },     // below the keyboard
+            { 0, { 0, NoteEvent::keyPosition, 127, 1.0f } } }; // above it
+        const auto s = renderEngine (fs, measParams (0), 0.5, stray);
+        double peak = 0.0;
+        for (float v : s.L) peak = std::max (peak, std::abs ((double) v));
+        row ("28.5", "key position alone makes no sound, in range or out", "silent",
+             fmt ("%.2e peak", peak), verdict (peak < 1.0e-9));
+    }
+}
+
+// ===========================================================================
 // 10. CPU, reported not asserted.
 // ===========================================================================
 
@@ -5840,6 +5943,7 @@ int main()
     sectionRail();
     sectionMidi();
     sectionRates();
+    sectionKeyPosition();
     sectionCpu();
     sectionRoom();
     sectionGrabNoise();

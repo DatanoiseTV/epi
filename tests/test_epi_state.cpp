@@ -17,6 +17,7 @@
 #include "epi/PluginProcessor.h"
 #include "epi/ui/BoundParameterIds.h"
 #include "epi/ControlMap.h"
+#include "epi/ump/UmpDecoder.h"
 
 #include <EpiUIData.h>
 
@@ -604,6 +605,82 @@ int main()
         char d3[128];
         std::snprintf (d3, sizeof d3, "(widest is %s with %d)", widestId.toRawUTF8(), widest);
         row ("S14", "no selector is wider than a CC can address", widest <= 128, d3);
+    }
+
+    // S15 -- the UMP decoder read against JUCE's own packet builder.
+    //
+    // tests/test_epi_ump.cpp pins the bit layout against the specification as
+    // I read it, which is worth exactly as much as my reading. This builds the
+    // same messages with juce::universal_midi_packets::Factory -- an
+    // independent implementation of the same document -- and decodes them.
+    // A field in the wrong place now has to be in the wrong place twice, in
+    // two codebases, in the same way.
+    {
+        namespace ump = juce::universal_midi_packets;
+        epi::ump::Decoder dec;
+        epi::ump::Event ev;
+
+        auto feed = [&dec, &ev] (const auto& packet)
+        {
+            bool got = false;
+            for (const auto word : packet) got = dec.push (word, ev);
+            return got;
+        };
+
+        // A note on: sixteen-bit velocity, no pitch attribute.
+        bool ok = feed (ump::Factory::makeNoteOnV2 (0, 3, 64, ump::Factory::NoteAttributeKind{}, 0x8000, 0));
+        char d1[128];
+        std::snprintf (d1, sizeof d1, "(note %d ch %d vel %.4f)", ev.note, ev.channel, ev.value);
+        row ("S15", "JUCE's note-on decodes as note, channel and velocity",
+             ok && ev.kind == epi::ump::Kind::noteOn && ev.note == 64 && ev.channel == 3
+                && std::abs (ev.value - 32768.0 / 65535.0) < 1.0e-9, d1);
+
+        // A note on carrying the note's exact pitch, fifty cents sharp.
+        const uint16_t pitch79 = (uint16_t) ((60u << 9) | 256u);
+        ok = feed (ump::Factory::makeNoteOnV2 (0, 0, 60,
+                       ump::Factory::NoteAttributeKind (3), 0x8000, pitch79));
+        char d2[128];
+        std::snprintf (d2, sizeof d2, "(%+.2f cents)", ev.hasPitch ? ev.pitchCents : 0.0);
+        row ("S16", "...and its pitch attribute as cents",
+             ok && ev.hasPitch && std::abs (ev.pitchCents - 50.0) < 1.0e-6, d2);
+
+        // An assignable per-note controller, which is where a continuous key
+        // position arrives.
+        ok = feed (ump::Factory::makeAssignablePerNoteControllerV2 (0, 0, 60, 1, 0xC0000000u));
+        char d3[128];
+        std::snprintf (d3, sizeof d3, "(idx %d, %.4f, %s)", ev.index, ev.value,
+                       ev.registered ? "registered" : "assignable");
+        row ("S17", "JUCE's assignable per-note controller round-trips",
+             ok && ev.kind == epi::ump::Kind::perNoteController && ! ev.registered
+                && ev.index == 1 && std::abs (ev.value - 0.75) < 1.0e-6, d3);
+
+        ok = feed (ump::Factory::makeRegisteredPerNoteControllerV2 (0, 0, 60, 3, 0x40000000u));
+        row ("S18", "...and a registered one is told apart from it",
+             ok && ev.kind == epi::ump::Kind::perNoteController && ev.registered && ev.index == 3,
+             ev.registered ? "(registered)" : "(read as assignable)");
+
+        // The 32-bit successor to NRPN.
+        ok = feed (ump::Factory::makeAssignableControllerV2 (0, 0, 0, 85, 0x40000000u));
+        char d4[128];
+        std::snprintf (d4, sizeof d4, "(bank %d idx %d %.4f)", ev.bank, ev.index, ev.value);
+        row ("S19", "JUCE's 32-bit assignable controller decodes whole",
+             ok && ev.kind == epi::ump::Kind::assignableController
+                && ev.bank == 0 && ev.index == 85 && std::abs (ev.value - 0.25) < 1.0e-6, d4);
+
+        // Jitter reduction, the reason any of the timing survives the wire.
+        ok = feed (ump::Factory::makeJRTimestamp (0, 31250));
+        row ("S20", "JUCE's JR Timestamp decodes as one second of ticks",
+             ok && ev.kind == epi::ump::Kind::jrTimestamp && ev.jrTicks == 31250,
+             ok ? "(31250 ticks)" : "(not decoded)");
+
+        // A MIDI 1.0 message inside a UMP, which is what a MIDI 1.0 device on
+        // a UMP transport produces.
+        ok = feed (ump::Factory::makeControlChangeV1 (0, 0, 64, 100));
+        char d5[128];
+        std::snprintf (d5, sizeof d5, "(CC %d = %.4f)", ev.index, ev.value);
+        row ("S21", "a MIDI 1.0 control change inside a UMP still arrives",
+             ok && ev.kind == epi::ump::Kind::controlChange && ev.index == 64
+                && std::abs (ev.value - 100.0 / 127.0) < 1.0e-9, d5);
     }
 
     char tail[64];

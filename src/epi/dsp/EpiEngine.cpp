@@ -288,6 +288,7 @@ void EpiEngine::reset()
     lastSpaceSize = -1.0f;
     pedalDown = false;
     pedalAmount = 0.0;
+    keyLift.fill (0.0);
     softAmount = 0.0;
     sostenutoDown = false;
     // The two continuous controllers, which this left where the last
@@ -533,11 +534,7 @@ void EpiEngine::handleEvent (const NoteEvent& e, const EngineParams& p)
                 rebuildTine (i, rhodesConfig (p));
                 tineCfgVersion[i] = cfgVersion;
             }
-            tines[i].setPedal (pedalAmount);
-            cp70[i].setPedal (pedalAmount);
-            wurli[static_cast<std::size_t> (i)].setPedal (pedalAmount);
-            grand[static_cast<std::size_t> (i)].setPedal (pedalAmount);
-            clav[static_cast<std::size_t> (i)].setPedal (pedalAmount);
+            applyDamper (i);
             if (p.instrument == 4)
             {
                 if (clavCfgVersion[static_cast<std::size_t> (i)] != cfgVersion)
@@ -624,6 +621,28 @@ void EpiEngine::handleEvent (const NoteEvent& e, const EngineParams& p)
             for (auto& v : grand) v.noteOff();
             for (auto& v : clav)  v.noteOff();
             break;
+
+        case NoteEvent::keyPosition:
+        {
+            const int k = e.note - kLoNote;
+            if (k < 0 || k >= kNumTines) break;
+            const double before = keyLift[static_cast<std::size_t> (k)];
+            // Travel to damper lift. Below the start the damper is still
+            // seated; above the clearing point it is fully off the string and
+            // more key travel does nothing to it, which is why the hammer can
+            // arrive after the damper has already gone.
+            const double t = std::clamp ((double) e.velocity, 0.0, 1.0);
+            const double x = (t - kKeyDamperStart) / (kKeyDamperClear - kKeyDamperStart);
+            keyLift[static_cast<std::size_t> (k)] = std::clamp (x, 0.0, 1.0);
+
+            // Push it at once. The damper strength is precomputed when it is
+            // set, and the only other place that sets it is the strike -- so
+            // without this a key moving under a note that is already ringing
+            // would change nothing, which is precisely the gesture the
+            // continuous input exists for.
+            if (keyLift[static_cast<std::size_t> (k)] != before) applyDamper (k);
+            break;
+        }
 
         case NoteEvent::sustainOn:  setPedalAmount (1.0); break;
         case NoteEvent::sustainOff: setPedalAmount (0.0); break;

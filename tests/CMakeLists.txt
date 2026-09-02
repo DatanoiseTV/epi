@@ -173,3 +173,16 @@ target_include_directories(epi_control_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_features(epi_control_tests PRIVATE cxx_std_20)
 add_test(NAME epi_control COMMAND epi_control_tests)
 set_tests_properties(epi_control PROPERTIES TIMEOUT 120)
+
+# ---------------------------------------------------------------------------
+# Universal MIDI Packets. MIDI 2.0 is a wire format, and a wire format is a set
+# of bit positions that are either right or wrong -- this pins them against the
+# specification. The state suite additionally decodes packets built by JUCE's
+# own factory, so a field in the wrong place has to be wrong in two independent
+# codebases in the same way. Framework-free: headers only, no JUCE.
+# ---------------------------------------------------------------------------
+add_executable(epi_ump_tests test_epi_ump.cpp)
+target_include_directories(epi_ump_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_features(epi_ump_tests PRIVATE cxx_std_20)
+add_test(NAME epi_ump COMMAND epi_ump_tests)
+set_tests_properties(epi_ump PROPERTIES TIMEOUT 120)
