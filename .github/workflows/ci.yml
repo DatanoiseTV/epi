@@ -84,8 +84,23 @@ jobs:
           cmake --build build --target Epi_All Epi_CLAP \
             epi_dsp_tests epi_reference_tests epi_grand_tests epi_wurli_tests \
             epi_clavinet_tests epi_preset_tests epi_engine_tests epi_tuning_tests \
-            epi_radiation_tests epi_state_tests -j
+            epi_radiation_tests epi_state_tests epi_control_tests -j
+
+      # The headless host is a Linux and macOS target; there is no Windows
+      # build of it, so it is built only where it exists.
+      - name: build headless host
+        if: "!startsWith(matrix.os, 'windows')"
+        shell: bash
+        run: cmake --build build --target EpiHeadless -j
 
       - name: tests
         shell: bash
         run: ctest --test-dir build --output-on-failure
+
+      # docs/ControlMap.md is generated from the control map and the live
+      # parameter layout. Checking it here is what stops the published
+      # numbers and the document that publishes them from drifting apart.
+      - name: control map document is current
+        if: "!startsWith(matrix.os, 'windows')"
+        shell: bash
+        run: ./tools/update-control-map.sh --check

@@ -6,6 +6,69 @@ All notable changes to Epi are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- **A headless build with a web interface, for Linux and macOS.**
+  `epi-headless` runs the instrument with no plugin host and no window: it
+  opens an audio device and MIDI ports itself and serves the interface over
+  HTTP, so a phone or a laptop on the same network is the front panel. Meant
+  for a small computer inside an instrument, a rack box, or a Pi on a stage.
+  It hosts the same `EpiAudioProcessor` the plugin does, so presets, benches
+  and saved state are the plugin's rather than a second implementation, and
+  anything saved on the appliance loads in the plugin. The interface is the
+  plugin's own bundle served byte for byte; only the one file that talks to
+  the host is substituted, so there is no second interface to keep in step.
+  Built as a console app on purpose -- no browser module, so no GTK or WebKit
+  headers on Linux, which is what lets it build on a headless image at all.
+  `--list-devices`, `--device`, `--rate`, `--buffer`, `--midi-in`,
+  `--midi-out`, `--port`, `--bind`, `--preset`.
+- **Every parameter over MIDI, as CC and as NRPN, in both directions.** All
+  forty-nine, so a box of encoders, buttons and displays can be an Epi front
+  panel. CC is one message and seven bits, for a generic controller or a
+  sequencer lane; NRPN is fourteen bits, finer than the interface's own knobs
+  resolve, so an encoder can sweep a parameter without stepping audibly. Both
+  carry the normalised value, so a selector and a continuous parameter travel
+  the same path and round-trip exactly. Where a controller number has a real
+  meaning in the specification and it matches the parameter, the standard
+  number is used -- CC 7 for output level, CC 74 for treble, CC 92 for
+  tremolo depth, CC 91 for space. Where it does not, a number from the
+  undefined ranges is used rather than forcing a wrong standard meaning onto
+  it. Feedback is what makes a panel with displays possible: every change is
+  reported back, whatever caused it, so a preset load moves the hardware
+  instead of leaving it lying. A connecting controller is told everything
+  once; after that only changes go out, paced at eight parameters a tick so a
+  preset load cannot occupy the port; and a value that arrived is never
+  echoed back at the encoder that sent it.
+- **`docs/ControlMap.md`**, the published map: both channels, the message
+  formats worked through, the normalisation convention, what is reported back
+  and when, the controllers Epi deliberately leaves alone and why, and a
+  table per panel giving each parameter's CC, NRPN, range and default. The
+  table is generated from the control map and the live parameter layout by
+  `tools/update-control-map.sh`, and CI fails if the committed document has
+  drifted from what the instrument actually answers.
+- `tests/test_epi_control.cpp` (28 rows). The control numbers are a published
+  interface -- somebody's hardware is keyed to them -- so the suite carries
+  its own independent copy of all forty-nine assignments and compares: a
+  number can move only as a deliberate edit in two places, never as a side
+  effect of adding a parameter. It also measures the reader, including the
+  arbitration with the RPN traffic the MPE tuner reads, where getting it
+  wrong would walk an ordinary NRPN sweep into the pitch bend range. Three
+  new rows in the state suite (S12-S14) check the map against the real
+  parameter layout, which the framework-free suite cannot see.
+
+### Fixed
+- The interface header showed `v0.9.0 A. main` instead of `v0.9.0 . main`.
+  `juce::String` decodes a `const char*` as Latin-1, so the UTF-8 separator
+  in the version string was re-encoded on its way to the browser. Visible in
+  the shipping plugin, in the top-left of every window.
+
+### Changed
+- The native functions and event listeners the interface calls, and the
+  telemetry frame it draws from, moved out of the WebView editor into
+  `src/epi/ui/UiBridge.{h,cpp}`. The plugin and the headless host now answer
+  the interface with one implementation instead of two that would drift the
+  first time one of them gained a field. `WebEditor.cpp` went from 438 lines
+  to 199.
+
 ### Fixed
 - A host LFO on Body Size destroyed the instrument, and nothing caught it.
   The body benches re-pitch a ringing frame through a retune that preserved

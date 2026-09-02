@@ -183,6 +183,51 @@ Formats by platform, exactly as CI ships them:
 Building from source needs CMake ≥ 3.22 and a C++20 compiler; JUCE is a
 submodule. `cmake -S . -B build && cmake --build build --target Epi_All`.
 
+## Running it without a computer screen
+
+`epi-headless` is the same instrument with no plugin host and no window. It
+opens an audio device and MIDI ports itself and serves the interface over
+HTTP, so a phone or a laptop on the same network is the front panel. It is
+meant for a small computer inside an instrument, a rack box, or a Pi on a
+stage. Linux and macOS; it ships in the Linux and macOS zips.
+
+```
+epi-headless --list-devices
+epi-headless --device "USB Audio" --port 8080 --preset "Suitcase"
+```
+
+Then open `http://<the machine>:8080/` — that is the plugin's own interface,
+served byte for byte. `--bind 127.0.0.1` refuses everything but the machine
+itself; `--midi-in` and `--midi-out` pick ports; `--help` lists the rest.
+
+It hosts the same processor the plugin does, so presets, the workshops and
+saved state are the plugin's — a preset saved on the appliance loads in the
+plugin.
+
+### Building a physical panel
+
+Every one of the 49 parameters is reachable over MIDI as a CC and as an
+NRPN, and — this is the part that makes hardware practical — Epi reports
+every change back. Load a preset from the web interface and the encoders'
+displays follow, instead of showing whatever they were left at.
+
+CC is one message and 128 steps, for a generic controller or a sequencer
+lane. NRPN is 16384 steps, finer than the interface's own knobs resolve, so
+an encoder can sweep `pickupPos` or `coilFreq` without stepping audibly.
+Where a controller number has a real meaning in the MIDI specification and
+it matches the parameter, the standard number is used: CC 7 is the output
+level, CC 74 the treble, CC 92 the tremolo depth, CC 91 the space.
+
+```
+epi-headless --midi-in "My Panel" --midi-out "My Panel"
+```
+
+[docs/ControlMap.md](docs/ControlMap.md) is the map: every number, the
+message formats worked through, what gets reported back and when, and the
+controllers Epi deliberately leaves alone. Those numbers are pinned by a
+test, so they can move only as a decision — hardware built against them
+keeps working.
+
 ## How honest is "physical"?
 
 Measured, not asserted. The models are calibrated against recordings of the

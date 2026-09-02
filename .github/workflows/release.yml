@@ -101,7 +101,13 @@ jobs:
           cmake --build build --target Epi_All Epi_CLAP \
             epi_dsp_tests epi_reference_tests epi_grand_tests epi_wurli_tests \
             epi_clavinet_tests epi_preset_tests epi_engine_tests epi_tuning_tests \
-            epi_radiation_tests epi_state_tests -j
+            epi_radiation_tests epi_state_tests epi_control_tests -j
+
+      # The headless host ships on Linux and macOS only.
+      - name: build headless host
+        if: runner.os != 'Windows'
+        shell: bash
+        run: cmake --build build --target EpiHeadless -j
 
       # A release that does not play in tune is not a release.
       - name: tests
@@ -136,6 +142,13 @@ jobs:
               cp -R "$ART/Standalone/$PLUGIN.exe"   "$STAGE/"
             else
               cp -R "$ART/Standalone/$PLUGIN"       "$STAGE/"
+            fi
+
+            # The headless host and the map a hardware panel is built
+            # against travel with the release they belong to.
+            if [[ "${{ runner.os }}" != "Windows" ]]; then
+              cp "build/EpiHeadless_artefacts/Release/epi-headless" "$STAGE/"
+              cp docs/ControlMap.md "$STAGE/"
             fi
 
             cp README.md CHANGELOG.md LICENSE "$STAGE/"
