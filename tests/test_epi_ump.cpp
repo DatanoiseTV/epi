@@ -26,14 +26,18 @@
     c++ -std=c++20 -O2 -DNDEBUG -Isrc tests/test_epi_ump.cpp -o epi_ump_tests
 */
 
+#include "epi/ump/UmpBridge.h"
 #include "epi/ump/UmpDecoder.h"
 
 #include <cmath>
 #include <cstdio>
+#include <algorithm>
+#include <random>
 #include <set>
 #include <string>
 #include <vector>
 
+using namespace epi;
 using namespace epi::ump;
 
 static int failures = 0;
@@ -351,6 +355,340 @@ static void sectionStreamRobustness()
 }
 
 // ===========================================================================
+// 7. Placing an event in time
+//
+// This is what jitter reduction is for. A sender that measures a key to tens
+// of microseconds hands the result to a bus that delivers in millisecond
+// lumps: the arrival time of a message says more about USB frame scheduling
+// than about when the key was pressed. With a timestamp the original spacing
+// can be recovered; without one it cannot.
+// ===========================================================================
+
+static void sectionTiming()
+{
+    heading ("7. Where an event lands");
+
+    const double fs = 48000.0;
+    const int block = 512;
+
+    // A JR Timestamp applies to the messages after it, so the pair is one
+    // "this happened at t" statement.
+    auto jrStamp = [] (uint16_t ticks) { return 0x00200000u | ticks; };
+    const uint32_t noteOnUmp = 0x20913C64u;      // MIDI 1.0 note on, note 60
+
+    {
+        // No timestamp: the event lands where it arrived.
+        Bridge b;
+        b.prepare (fs, block);
+        b.beginBlock (10.0, block);
+        b.push (noteOnUmp, 10.0 + 0.002);        // 2 ms into the block
+        const auto& out = b.current();
+        row ("7.1", "an untimestamped note lands at its arrival",
+             std::to_string ((int) std::lround (0.002 * fs)),
+             out.notes.size() == 1 ? std::to_string (out.notes[0].offset) : "none",
+             verdict (out.notes.size() == 1
+                      && std::abs (out.notes[0].offset - (int) std::lround (0.002 * fs)) <= 1));
+    }
+
+    {
+        // Timestamped, and delayed on the way. The event belongs where the
+        // sender says it happened, not where the bus dropped it.
+        Bridge b;
+        b.prepare (fs, block);
+        b.beginBlock (10.0, block);
+        // Lock the clocks with a direct message first.
+        b.push (0x00100000u | 0u, 10.0);
+        // The sender says 3.2 ms after its zero; it arrives 4 ms late.
+        const uint16_t ticks = (uint16_t) std::lround (0.0032 * 31250.0);
+        b.push (jrStamp (ticks), 10.0 + 0.0032 + 0.004);
+        b.push (noteOnUmp,       10.0 + 0.0032 + 0.004);
+        const auto& out = b.current();
+        const int want = (int) std::lround (0.0032 * fs);
+        row ("7.2", "a timestamped note lands where it was played",
+             std::to_string (want),
+             out.notes.size() == 1 ? std::to_string (out.notes[0].offset) : "none",
+             verdict (out.notes.size() == 1 && std::abs (out.notes[0].offset - want) <= 2));
+    }
+
+    {
+        // An event from before this block is late, not lost.
+        Bridge b;
+        b.prepare (fs, block);
+        b.beginBlock (10.0, block);
+        b.push (noteOnUmp, 9.99);
+        const auto& out = b.current();
+        row ("7.3", "an event that is already late plays at the block start", "0",
+             out.notes.size() == 1 ? std::to_string (out.notes[0].offset) : "none",
+             verdict (out.notes.size() == 1 && out.notes[0].offset == 0));
+    }
+
+    {
+        // ...and one from beyond it is held at the end rather than reaching
+        // into a block that has not been asked for yet.
+        Bridge b;
+        b.prepare (fs, block);
+        b.beginBlock (10.0, block);
+        b.push (noteOnUmp, 10.5);
+        const auto& out = b.current();
+        row ("7.4", "an event beyond the block is held at its end",
+             std::to_string (block - 1),
+             out.notes.size() == 1 ? std::to_string (out.notes[0].offset) : "none",
+             verdict (out.notes.size() == 1 && out.notes[0].offset == block - 1));
+    }
+
+    {
+        // The estimator has to IMPROVE. Give it a badly delayed message first
+        // and then direct ones: the offset must come down to the direct path,
+        // or every later event is placed by however unlucky the first one was.
+        JrAligner a;
+        a.toHostTime (1.000, 1.000 + 0.020);        // 20 ms late
+        const double afterBad = a.currentOffset();
+        for (int i = 1; i <= 10; ++i)
+            a.toHostTime (1.000 + i * 0.010, 1.000 + i * 0.010 + 0.0002);   // 0.2 ms late
+        const double afterGood = a.currentOffset();
+        row ("7.4b", "the clock estimate converges on the most direct path",
+             "20 ms down to 0.2", fmt ("%.1f ms down to ", afterBad * 1000.0)
+             + fmt ("%.2f", afterGood * 1000.0),
+             verdict (afterBad > 0.019 && afterGood < 0.0005));
+
+        // ...and it must not be pinned there forever: the two clocks drift, so
+        // a single unusually direct message cannot own the estimate for the
+        // rest of the session.
+        JrAligner d;
+        d.toHostTime (0.0, 0.0);                    // an impossibly direct one
+        d.toHostTime (100.0, 100.0 + 0.001);        // a hundred seconds later
+        row ("7.4c", "...and creeps up so clock drift cannot strand it",
+             "> 0", fmt ("%.2f ms", d.currentOffset() * 1000.0),
+             verdict (d.currentOffset() > 0.0));
+    }
+
+    // ---- the measurement this whole path exists for ---------------------
+    //
+    // A sender emits notes exactly ten milliseconds apart and timestamps them.
+    // The transport adds up to four milliseconds of random lateness to each.
+    // Reconstructed, the spacing should come back.
+    //
+    // The estimator that maps the sender's clock onto ours tracks the SMALLEST
+    // arrival-minus-timestamp it has seen, because every message is late by
+    // some amount and none is early. That is the right estimate and it is also
+    // causal, so it has a transient: until a reasonably direct message turns
+    // up, the offset is too large, and each correction shifts the events after
+    // it. This is why the specification has senders emit a JR Clock several
+    // times a second whether or not anything is being played -- the estimator
+    // is locked long before a note arrives. The test does what a real sender
+    // does, and then measures the steady state and the transient separately
+    // rather than averaging one into the other.
+    {
+        std::mt19937 rng (12345);
+        std::uniform_real_distribution<double> lateness (0.0, 0.004);
+
+        Bridge b;
+        b.prepare (fs, 1 << 20);
+        b.beginBlock (0.0, 1 << 20);
+
+        const int n = 40;
+        const double spacing = 0.010;
+        const double firstNote = 0.30;
+
+        // A quarter-second of clock before anybody plays, as a sender emits.
+        for (double t = 0.0; t < firstNote; t += 0.010)
+        {
+            const uint16_t ticks = (uint16_t) std::lround (t * 31250.0);
+            b.push (0x00100000u | ticks, t + lateness (rng));
+        }
+        const double lockedOffset = b.jrOffsetSeconds();
+
+        std::vector<double> arrivals;
+        for (int i = 0; i < n; ++i)
+        {
+            const double sent = firstNote + i * spacing;
+            const double arrived = sent + lateness (rng);
+            arrivals.push_back (arrived);
+            const uint16_t ticks = (uint16_t) std::lround (sent * 31250.0);
+            b.push (jrStamp (ticks), arrived);
+            b.push (noteOnUmp, arrived);
+        }
+
+        const auto& out = b.current();
+        auto gapErrors = [&] (const std::vector<double>& t, std::size_t from)
+        {
+            std::vector<double> e;
+            for (std::size_t i = from + 1; i < t.size(); ++i)
+                e.push_back (std::abs ((t[i] - t[i - 1]) - spacing));
+            std::sort (e.begin(), e.end());
+            return e;
+        };
+        auto worstGapError = [&] (const std::vector<double>& t, std::size_t from)
+        {
+            const auto e = gapErrors (t, from);
+            return e.empty() ? 0.0 : e.back();
+        };
+        auto medianGapError = [&] (const std::vector<double>& t, std::size_t from)
+        {
+            const auto e = gapErrors (t, from);
+            return e.empty() ? 0.0 : e[e.size() / 2];
+        };
+
+        std::vector<double> reconstructed;
+        for (const auto& e : out.notes) reconstructed.push_back (e.offset / fs);
+
+        const double rawJitter = worstGapError (arrivals, 0) * 1000.0;
+        const double fixedJitter = worstGapError (reconstructed, 0) * 1000.0;
+
+        row ("7.5", "the notes all arrive", std::to_string (n),
+             std::to_string (out.notes.size()), verdict ((int) out.notes.size() == n));
+        row ("7.6", "as delivered, the spacing is smeared", "> 2 ms",
+             fmt ("%.2f ms", rawJitter), verdict (rawJitter > 2.0));
+        // The median is the steady state. The worst is one correction step:
+        // the estimator is still improving, and every time it finds a more
+        // direct message it shifts everything after it -- which is right, and
+        // shows up as a single wrong gap rather than as ongoing smear.
+        //
+        // Counted in SAMPLES, not seconds. The offsets are integers and the
+        // spacing is a whole number of samples, so the residual is an exact
+        // integer; measuring it in milliseconds and comparing against one
+        // sample's worth puts the threshold precisely on a rounding boundary,
+        // where it decides by the last bit of a subtraction.
+        std::vector<int> gapSamples;
+        for (std::size_t i = 1; i < out.notes.size(); ++i)
+            gapSamples.push_back (std::abs (out.notes[i].offset - out.notes[i - 1].offset
+                                            - (int) std::lround (spacing * fs)));
+        std::sort (gapSamples.begin(), gapSamples.end());
+        const int medianSamples = gapSamples.empty() ? 0 : gapSamples[gapSamples.size() / 2];
+        const double medianJitter = medianSamples * 1000.0 / fs;
+
+        row ("7.7", "reconstructed, the player's spacing comes back", "<= 1 sample",
+             std::to_string (medianSamples) + " samples median", verdict (medianSamples <= 1));
+        row ("7.8", "...an improvement over what was delivered", "> 20x",
+             fmt ("%.0fx", rawJitter / std::max (1.0e-9, medianJitter)),
+             verdict (rawJitter / std::max (1.0e-9, medianJitter) > 20.0));
+        row ("7.8b", "...which in time is one sample at this rate", "-",
+             fmt ("%.4f ms", medianJitter), Verdict::info);
+        row ("7.9", "the worst gap is one convergence step, not smear",
+             "< 0.25 ms", fmt ("%.3f ms", fixedJitter), verdict (fixedJitter < 0.25));
+        row ("7.10", "the clock had locked before the first note", "-",
+             fmt ("%.3f ms of slack left", lockedOffset * 1000.0), Verdict::info);
+
+        // Without the clock in front of it, the estimator has to converge on
+        // the notes themselves -- and it does, just not in time for the first
+        // few. Measured so the cost is a number rather than a surprise.
+        {
+            std::mt19937 r2 (12345);
+            std::uniform_real_distribution<double> late2 (0.0, 0.004);
+            Bridge c;
+            c.prepare (fs, 1 << 20);
+            c.beginBlock (0.0, 1 << 20);
+            std::vector<double> t2;
+            for (int i = 0; i < n; ++i)
+            {
+                const double sent = firstNote + i * spacing;
+                const double arrived = sent + late2 (r2);
+                const uint16_t ticks = (uint16_t) std::lround (sent * 31250.0);
+                c.push (jrStamp (ticks), arrived);
+                c.push (noteOnUmp, arrived);
+            }
+            for (const auto& e : c.current().notes) t2.push_back (e.offset / fs);
+            const double cold = worstGapError (t2, 0) * 1000.0;
+            const double settled = worstGapError (t2, 8) * 1000.0;
+            row ("7.11", "with no clock ahead of it, the first notes pay for the lock",
+                 "-", fmt ("%.2f ms worst", cold), Verdict::info);
+            row ("7.12", "...and once locked the rest are exact", "< 0.1 ms",
+                 fmt ("%.3f ms", settled), verdict (settled < 0.1));
+        }
+    }
+}
+
+// ===========================================================================
+// 8. What the bridge hands the instrument
+// ===========================================================================
+
+static void sectionBridge()
+{
+    heading ("8. From the wire to the instrument");
+
+    const double fs = 48000.0;
+
+    auto oneBlock = [&] (std::initializer_list<uint32_t> words)
+    {
+        static Bridge b;
+        b.prepare (fs, 512);
+        b.beginBlock (0.0, 512);
+        for (uint32_t w : words) b.push (w, 0.0);
+        return b.current();
+    };
+
+    // A continuous key position, on the published assignable controller.
+    {
+        const auto& out = oneBlock ({ 0x40103C01u, 0xC0000000u });
+        row ("8.1", "an assignable per-note controller 1 is key position",
+             "keyPosition, note 60, 0.75",
+             out.notes.size() == 1 ? "keyPosition, note " + std::to_string (out.notes[0].note)
+                                   + ", " + fmt ("%.2f", out.notes[0].velocity) : "nothing",
+             verdict (out.notes.size() == 1 && out.notes[0].type == NoteEvent::keyPosition
+                      && out.notes[0].note == 60
+                      && std::abs (out.notes[0].velocity - 0.75f) < 1.0e-4f));
+    }
+
+    // The registered controller with the SAME index is a different thing --
+    // registered 1 is Modulation in the specification. Conflating the two
+    // would have a mod wheel drive the dampers.
+    {
+        const auto& out = oneBlock ({ 0x40003C01u, 0xC0000000u });
+        row ("8.1b", "a registered per-note controller 1 is not key position",
+             "no events", std::to_string (out.notes.size()) + " events",
+             verdict (out.notes.empty()));
+    }
+
+    // ...and a controller Epi does not read reaches nothing.
+    {
+        const auto& out = oneBlock ({ 0x40103C09u, 0xC0000000u });
+        row ("8.2", "an unread per-note controller is ignored", "no events",
+             std::to_string (out.notes.size()) + " events", verdict (out.notes.empty()));
+    }
+
+    // The sustain pedal as a position, which is what half-pedalling needs.
+    {
+        const auto& out = oneBlock ({ 0x20B04040u });      // CC 64 = 64
+        row ("8.3", "CC 64 becomes a damper position, not a switch", "sustain, 0.504",
+             out.notes.size() == 1 ? "sustain, " + fmt ("%.3f", out.notes[0].velocity) : "nothing",
+             verdict (out.notes.size() == 1 && out.notes[0].type == NoteEvent::sustain
+                      && std::abs (out.notes[0].velocity - 64.0f / 127.0f) < 1.0e-4f));
+    }
+
+    // A note-on carrying its own pitch.
+    {
+        const uint16_t attr = (uint16_t) ((60u << 9) | 256u);
+        const auto& out = oneBlock ({ 0x40913C03u, (uint32_t) (0xC0000000u | attr) });
+        row ("8.4", "a note's pitch attribute becomes its tuning", "+50.0 cents",
+             out.notes.size() == 1 ? fmt ("%+.1f cents", out.notes[0].tuneCents) : "nothing",
+             verdict (out.notes.size() == 1 && out.notes[0].type == NoteEvent::noteOn
+                      && std::abs (out.notes[0].tuneCents - 50.0f) < 1.0e-3f));
+    }
+
+    // A 32-bit assignable controller reaching a published parameter.
+    {
+        const int want = controlIndexForNrpn (kNrpnBank, 85);
+        const auto& out = oneBlock ({ 0x40300055u, 0x40000000u });
+        row ("8.5", "a 32-bit NRPN reaches its mapped parameter",
+             std::string ("control ") + std::to_string (want) + ", 0.25",
+             out.params.size() == 1 ? "control " + std::to_string (out.params[0].control)
+                                    + ", " + fmt ("%.2f", out.params[0].value) : "nothing",
+             verdict (out.params.size() == 1 && out.params[0].control == want
+                      && std::abs (out.params[0].value - 0.25) < 1.0e-6));
+    }
+
+    // A MIDI 2.0 note-on at velocity zero must still sound.
+    {
+        const auto& out = oneBlock ({ 0x40903C00u, 0x00000000u });
+        row ("8.6", "the quietest MIDI 2.0 note still strikes", "noteOn, above zero",
+             out.notes.size() == 1 && out.notes[0].type == NoteEvent::noteOn
+               ? fmt ("noteOn, %.4f", out.notes[0].velocity) : "no strike",
+             verdict (out.notes.size() == 1 && out.notes[0].type == NoteEvent::noteOn
+                      && out.notes[0].velocity > 0.0f));
+    }
+}
+
+// ===========================================================================
 int main()
 {
     std::printf ("Epi Universal MIDI Packet suite\n");
@@ -362,6 +700,8 @@ int main()
     sectionPerNote();
     sectionJitterReduction();
     sectionStreamRobustness();
+    sectionTiming();
+    sectionBridge();
 
     std::printf ("\n%d failure(s)\n", failures);
     return failures == 0 ? 0 : 1;

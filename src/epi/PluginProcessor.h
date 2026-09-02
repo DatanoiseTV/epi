@@ -224,6 +224,28 @@ public:
         uiNoteWrite.store (w + 1, std::memory_order_release);
     }
 
+    // A fully-formed engine event, from a source that knows more than a MIDI
+    // 1.0 byte stream can say -- a MIDI 2.0 endpoint with sixteen-bit
+    // velocities, a note's exact pitch, and a continuous key position. It
+    // arrives already placed at a sample inside the coming block, because the
+    // decoder that produced it had the timestamp and this side does not.
+    //
+    // Same discipline as pushUiNote: single producer, single consumer, and a
+    // full queue drops rather than blocks. Unlike UI notes these are NOT
+    // advisory, so the queue is sized for a burst -- a preset load on a
+    // sequencer can put a hundred events in one block -- and a drop is
+    // counted so it can be reported rather than merely survived.
+    void pushEngineEvent (const epi::NoteEvent& e)
+    {
+        const auto w = extWrite.load (std::memory_order_relaxed);
+        const auto r = extRead.load (std::memory_order_acquire);
+        if (w - r >= kExtCap) { extDropped.fetch_add (1, std::memory_order_relaxed); return; }
+        extEvents[w % kExtCap] = e;
+        extWrite.store (w + 1, std::memory_order_release);
+    }
+
+    unsigned engineEventsDropped() const { return extDropped.load (std::memory_order_relaxed); }
+
     // True when any parameter differs from the last preset load or user save.
     // Computed on demand rather than tracked from a ValueTree callback: the
     // APVTS only pushes parameter changes into its tree on the message thread,
@@ -275,6 +297,11 @@ private:
     int appliedMpeMode = kMpeModeDefault;
 
     struct UiNote { int note; float velocity; bool on; };
+    static constexpr unsigned kExtCap = 512;
+    std::array<epi::NoteEvent, kExtCap> extEvents {};
+    std::atomic<unsigned> extWrite { 0 }, extRead { 0 };
+    std::atomic<unsigned> extDropped { 0 };
+
     static constexpr unsigned kUiNoteCap = 64;
     std::array<UiNote, kUiNoteCap> uiNotes {};
     std::atomic<unsigned> uiNoteWrite { 0 }, uiNoteRead { 0 };

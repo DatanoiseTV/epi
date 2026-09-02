@@ -117,6 +117,14 @@ void EpiAudioProcessor::collectEvents (juce::MidiBuffer& midi)
                                 u.note, u.on ? std::max (0.05f, u.velocity) : 0.0f });
     }
 
+    // Events from a MIDI 2.0 endpoint, already decoded and already placed.
+    // Drained before the bytestream so that a block carrying both keeps them
+    // in the order the engine sorts by offset anyway.
+    for (auto r = extRead.load (std::memory_order_relaxed);
+         r != extWrite.load (std::memory_order_acquire);
+         extRead.store (++r, std::memory_order_release))
+        events.push_back (extEvents[r % kExtCap]);
+
     for (const auto meta : midi)
     {
         const auto m = meta.getMessage();

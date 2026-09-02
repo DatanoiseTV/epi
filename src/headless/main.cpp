@@ -41,6 +41,7 @@
 #include "epi/MidiControlSurface.h"
 #include "epi/ui/BoundParameterIds.h"
 #include "epi/ui/UiBridge.h"
+#include "epi/ump/UmpBridge.h"
 #include "headless/WebServer.h"
 
 #include <juce_audio_devices/juce_audio_devices.h>
@@ -146,6 +147,65 @@ private:
 };
 
 // ---------------------------------------------------------------------------
+// A MIDI 2.0 endpoint, received.
+//
+// The words arrive on a high-priority MIDI thread and the decoding happens on
+// the AUDIO thread, with only a lock-free ring between them. That division is
+// deliberate: the decoder has to place each event at a sample inside the block
+// being rendered, and only the audio thread knows which block that is. Doing
+// it on the MIDI thread would mean reading the block's start time while
+// another thread was writing it, for no benefit -- decoding a few dozen words
+// costs nothing next to eighty-eight modal resonators.
+// ---------------------------------------------------------------------------
+class UmpReceiver final : public juce::universal_midi_packets::Consumer
+{
+public:
+    struct Word { uint32_t w = 0; double time = 0.0; };
+
+    void consume (juce::universal_midi_packets::Iterator b,
+                  juce::universal_midi_packets::Iterator e,
+                  double time) override
+    {
+        for (; b != e; ++b)
+        {
+            const auto view = *b;
+            for (uint32_t i = 0; i < view.size(); ++i)
+                push ({ view[i], time });
+        }
+    }
+
+    // Drained by the audio thread at the top of each block.
+    bool pop (Word& out)
+    {
+        const auto r = readIdx.load (std::memory_order_relaxed);
+        if (r == writeIdx.load (std::memory_order_acquire)) return false;
+        out = ring[r % kCap];
+        readIdx.store (r + 1, std::memory_order_release);
+        return true;
+    }
+
+    unsigned dropped() const { return lost.load (std::memory_order_relaxed); }
+
+private:
+    void push (Word x)
+    {
+        const auto w = writeIdx.load (std::memory_order_relaxed);
+        if (w - readIdx.load (std::memory_order_acquire) >= kCap)
+        {
+            lost.fetch_add (1, std::memory_order_relaxed);
+            return;
+        }
+        ring[w % kCap] = x;
+        writeIdx.store (w + 1, std::memory_order_release);
+    }
+
+    static constexpr unsigned kCap = 4096;
+    std::array<Word, kCap> ring {};
+    std::atomic<unsigned> writeIdx { 0 }, readIdx { 0 };
+    std::atomic<unsigned> lost { 0 };
+};
+
+// ---------------------------------------------------------------------------
 // The host.
 // ---------------------------------------------------------------------------
 class HeadlessHost final : public juce::AudioIODeviceCallback,
@@ -168,7 +228,13 @@ public:
         proc.setPlayConfigDetails (0, 2, fs, block);
         proc.prepareToPlay (fs, block);
         scratch.setSize (2, block);
+        bridge.prepare (fs, block);
+        sampleRate = fs;
     }
+
+    UmpReceiver& umpReceiver() { return ump; }
+    bool umpJrRunning() const { return bridge.jrRunning(); }
+    double umpJrOffsetMs() const { return bridge.jrOffsetSeconds() * 1000.0; }
 
     void audioDeviceStopped() override { proc.releaseResources(); }
 
@@ -184,6 +250,13 @@ public:
 
         midi.clear();
         collector.removeNextBlockOfMessages (midi, numSamples);
+
+        // The MIDI 2.0 side. The block's start is taken as "now": the device
+        // callback runs immediately before the samples it fills are handed to
+        // the driver, which is the same clock the endpoint timestamps its
+        // packets on.
+        drainUmp (numSamples);
+
         proc.processBlock (buffer, midi);
 
         for (int ch = 0; ch < numOut; ++ch)
@@ -191,6 +264,28 @@ public:
                 juce::FloatVectorOperations::copy (out[ch],
                                                    buffer.getReadPointer (juce::jmin (ch, 1)),
                                                    numSamples);
+    }
+
+    void drainUmp (int numSamples)
+    {
+        const double now = juce::Time::getMillisecondCounterHiRes() * 0.001;
+        bridge.beginBlock (now, numSamples);
+
+        UmpReceiver::Word w;
+        bool any = false;
+        while (ump.pop (w)) { bridge.push (w.w, w.time); any = true; }
+        if (! any) return;
+
+        const auto& out = bridge.current();
+        for (const auto& e : out.notes) proc.pushEngineEvent (e);
+
+        // A parameter change from a controller goes through the parameter
+        // itself, exactly as one from the interface does, so the knob moves
+        // and the value is saved with the preset.
+        for (const auto& p : out.params)
+            if (p.control >= 0 && p.control < epi::kNumControls)
+                if (auto* param = controlParams[(size_t) p.control])
+                    param->setValueNotifyingHost ((float) p.value);
     }
 
     // ---- MIDI in --------------------------------------------------------
@@ -361,6 +456,9 @@ private:
     }
 
     EpiAudioProcessor proc;
+    UmpReceiver ump;
+    epi::ump::Bridge bridge;
+    double sampleRate = 48000.0;
     juce::MidiMessageCollector collector;
     juce::MidiBuffer midi;
     juce::AudioBuffer<float> scratch;
@@ -570,6 +668,8 @@ int usage()
         "  --buffer <n>        buffer size in samples (default: the device's)\n"
         "  --midi-in <name>    MIDI input; repeatable. Default: every input.\n"
         "  --midi-out <name>   MIDI output for parameter feedback (default: none)\n"
+        "  --ump-in <name>     MIDI 2.0 endpoint; repeatable. Sixteen-bit velocity,\n"
+        "                      per-note key position, and JR timestamps.\n"
         "  --no-cc-feedback    send only NRPN back, not CC\n"
         "  --no-audio          serve the interface without opening an audio\n"
         "                      device; silent, for checking a build or a port\n"
@@ -629,6 +729,35 @@ int main (int argc, char** argv)
         std::printf ("MIDI inputs:\n");
         for (const auto& d : juce::MidiInput::getAvailableDevices())
             std::printf ("  %s\n", d.name.toRawUTF8());
+
+        // MIDI 2.0 endpoints, with what each one can actually do. An endpoint
+        // that reports MIDI 2.0 and jitter reduction is the one worth opening:
+        // sixteen-bit velocities, per-note controllers, and timestamps that
+        // survive the transport.
+        std::printf ("MIDI 2.0 endpoints:\n");
+        if (auto* eps = juce::universal_midi_packets::Endpoints::getInstance())
+        {
+            const auto ids = eps->getEndpoints();
+            if (ids.empty()) std::printf ("  (none)\n");
+            for (const auto& id : ids)
+            {
+                const auto ep = eps->getEndpoint (id);
+                const auto info = eps->getStaticDeviceInfo (id);
+                const juce::String name = ep ? ep->getName()
+                                             : (info ? info->getName() : juce::String ("?"));
+                juce::StringArray tags;
+                if (ep)
+                {
+                    if (ep->hasMidi2Support()) tags.add ("MIDI 2.0");
+                    if (ep->hasMidi1Support()) tags.add ("MIDI 1.0");
+                    if (ep->hasTransmitJRSupport()) tags.add ("sends JR timestamps");
+                }
+                std::printf ("  %s%s%s\n", name.toRawUTF8(),
+                             tags.isEmpty() ? "" : "  -  ",
+                             tags.joinIntoString (", ").toRawUTF8());
+            }
+        }
+        else std::printf ("  (this platform has no UMP backend)\n");
         std::printf ("MIDI outputs:\n");
         for (const auto& d : juce::MidiOutput::getAvailableDevices())
             std::printf ("  %s\n", d.name.toRawUTF8());
@@ -665,15 +794,74 @@ int main (int argc, char** argv)
 
     // ---- MIDI -------------------------------------------------------------
     const auto wantedIn = values ("--midi-in");
+    // An endpoint asked for by --ump-in must NOT also be opened as a
+    // bytestream input. Both paths reach the engine, so it would play every
+    // note twice -- and the two copies would not even agree, because the UMP
+    // one carries the velocity at full width and a timestamp.
+    const auto umpNames = values ("--ump-in");
     std::vector<std::unique_ptr<juce::MidiInput>> inputs;
     for (const auto& d : juce::MidiInput::getAvailableDevices())
     {
+        if (umpNames.contains (d.name)) continue;
         if (wantedIn.size() > 0 && ! wantedIn.contains (d.name)) continue;
         if (auto in = juce::MidiInput::openDevice (d.identifier, host.get()))
         {
             in->start();
             std::printf ("Epi: MIDI in  %s\n", d.name.toRawUTF8());
             inputs.push_back (std::move (in));
+        }
+    }
+
+    // ---- MIDI 2.0 ---------------------------------------------------------
+    // Opened by name, in MIDI 2.0 protocol. What this buys over the bytestream
+    // path above: sixteen-bit velocity, a note's exact pitch in its note-on,
+    // continuous key position as a per-note controller, and JR timestamps --
+    // which is the only way a sender's timing survives the transport.
+    const auto& wantedUmp = umpNames;
+    std::vector<juce::universal_midi_packets::Input> umpInputs;
+    auto umpSession = juce::universal_midi_packets::Endpoints::getInstance() != nullptr
+        ? std::optional<juce::universal_midi_packets::Session>
+              (juce::universal_midi_packets::Endpoints::getInstance()->makeSession ("Epi"))
+        : std::nullopt;
+
+    if (wantedUmp.size() > 0)
+    {
+        if (! umpSession || ! umpSession->isAlive())
+            std::fprintf (stderr, "Epi: no MIDI 2.0 backend on this system\n");
+        else if (auto* eps = juce::universal_midi_packets::Endpoints::getInstance())
+        {
+            for (const auto& id : eps->getEndpoints())
+            {
+                const auto ep = eps->getEndpoint (id);
+                const auto info = eps->getStaticDeviceInfo (id);
+                const juce::String name = ep ? ep->getName()
+                                             : (info ? info->getName() : juce::String());
+                if (! wantedUmp.contains (name)) continue;
+
+                // Ask for what the endpoint can actually do. Demanding MIDI
+                // 2.0 from a device that only speaks 1.0 refuses a connection
+                // that would have worked -- and a MIDI 1.0 endpoint on a UMP
+                // transport still arrives as UMP, so the same decoder reads
+                // it and the same timestamps apply. What is lost is only what
+                // MIDI 1.0 never had.
+                const bool two = ep && ep->hasMidi2Support();
+                auto in = umpSession->connectInput (
+                    id, two ? juce::universal_midi_packets::PacketProtocol::MIDI_2_0
+                            : juce::universal_midi_packets::PacketProtocol::MIDI_1_0);
+                if (! in.isAlive())
+                {
+                    std::fprintf (stderr, "Epi: could not open \"%s\" as MIDI 2.0\n",
+                                  name.toRawUTF8());
+                    continue;
+                }
+                in.addConsumer (host->umpReceiver());
+                std::printf ("Epi: UMP in %s  (%s)%s\n", name.toRawUTF8(),
+                             two ? "MIDI 2.0" : "MIDI 1.0",
+                             (ep && ep->hasTransmitJRSupport()) ? ", sends JR timestamps" : "");
+                umpInputs.push_back (std::move (in));
+            }
+            if (umpInputs.empty())
+                std::fprintf (stderr, "Epi: no MIDI 2.0 endpoint matched\n");
         }
     }
 

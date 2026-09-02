@@ -126,7 +126,48 @@ All notable changes to Epi are documented here. The format follows
   on selectors -- and now agrees everywhere to eight parts in a hundred
   million of each parameter's span.
 
+- **MIDI 2.0.** `epi-headless --ump-in <name>` opens a Universal MIDI Packet
+  endpoint -- CoreMIDI on macOS 11+, ALSA UMP on Linux 6.5+ -- and reads what
+  MIDI 1.0 throws away. Sixteen-bit velocity, because 128 steps is about a
+  third of a decibel each across the useful range and a keybed that fits a
+  velocity to a measured trajectory resolves far finer. A note's exact pitch
+  from its note-on attribute, which becomes the per-note tuning Epi already
+  latches at the strike. Thirty-two-bit control change and assignable
+  controllers, on the same published numbers as the CC and NRPN columns.
+  `--list-devices` reports each endpoint's protocol and whether it sends JR
+  timestamps; an endpoint that only speaks MIDI 1.0 is opened as MIDI 1.0 and
+  still works, because a MIDI 1.0 message on a UMP transport is still a UMP.
+- **Continuous key position drives the damper.** A key on a grand lifts its own
+  damper as it descends and lets it back on the way up, which is why
+  half-releasing a key half-damps the note; two contacts cannot say that and a
+  per-note controller can. Assignable per-note controller 1, published in
+  docs/ControlMap.md. Measured: a key left down keeps its damper off the string
+  by 52.6 dB against a released one, a key held halfway lands 35.1 dB between
+  the two, the response is monotone across the travel, key position alone makes
+  no sound in range or out -- and a stream that never sends one renders
+  bit-identically, zero samples different.
+- **Jitter reduction timestamps, which almost nothing implements.** The arrival
+  time of a MIDI message says more about transport scheduling than about when
+  a key was pressed; a JR Timestamp says when it actually happened. Measured
+  with notes sent exactly 10 ms apart and up to 4 ms of random lateness added:
+  3.55 ms of smear as delivered, one sample -- 0.021 ms at 48 kHz -- once
+  reconstructed, a 171x improvement. The clock estimator tracks the smallest
+  arrival-minus-timestamp seen, because every message is late and none is
+  early; it is causal, so it has a transient, and the cost of not having a JR
+  Clock already running is measured rather than hidden (3.04 ms worst, exact
+  from about the eighth note).
+- `tests/test_epi_ump.cpp` (47 rows) and state-suite rows S15-S21. MIDI 2.0 is
+  a wire format and a wire format is a set of bit positions that are either
+  right or wrong, so the layout is pinned against the specification -- and the
+  state suite decodes packets built by `juce::universal_midi_packets::Factory`,
+  so a field in the wrong place has to be wrong in two independent codebases in
+  the same way. Seven deliberate breaks, all caught, two of them only after
+  adding the rows that turned out to be fencing nothing.
+
 ### Fixed
+- An endpoint named to `--ump-in` was also opened as a bytestream input, so
+  every note it sent played twice -- and the two copies did not agree, because
+  the UMP one carried the velocity at full width and a timestamp.
 - Two controls overflowed the panel they live in, in the interface all three
   hosts share -- so both were wrong in the plugin, the headless build and the
   browser build at once. The FELT and KEY BED selectors sat side by side in a

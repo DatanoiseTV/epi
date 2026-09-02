@@ -153,6 +153,109 @@ tables.
 
 ---
 
+## MIDI 2.0
+
+Everything above is MIDI 1.0 and stays true. This is what a MIDI 2.0 endpoint
+adds, and where each part goes.
+
+`epi-headless --list-devices` reports the endpoints it can see and what each
+one can do; `--ump-in <name>` opens one. An endpoint that only speaks MIDI 1.0
+is opened as MIDI 1.0 and still works — the same decoder reads it, because a
+MIDI 1.0 message on a UMP transport is still a UMP.
+
+### Velocity, at sixteen bits
+
+A MIDI 2.0 note-on carries velocity in sixteen bits: 65536 steps instead of
+128. Across the useful playing range 7-bit velocity is about a third of a
+decibel per step, which is coarse for a hammer and much coarser than a keybed
+that fits a velocity to a measured trajectory can resolve.
+
+**A MIDI 2.0 note-on with velocity zero is a note ON**, at the quietest
+playable level — not a release. The running-status trick that made velocity
+zero a note-off does not exist in a format with an explicit note-off.
+
+### A note's exact pitch, in the note-on
+
+Attribute type 3 carries the note's pitch as 7.9 fixed point: a note number
+and nine bits of fraction. Epi reads it as the per-note tuning offset it
+already latches at the strike and never revisits — a tuner's instruction for
+that string, not a bend.
+
+| Attribute | Meaning |
+| --: | --- |
+| 3 | Pitch 7.9. Becomes the note's tuning in cents. |
+| anything else | Ignored; the note plays at its nominal pitch. |
+
+### Continuous key position
+
+The one that changes what the instrument can do. A key on a grand lifts its
+own damper as it descends and lets it back on the way up, which is why
+half-releasing a key half-damps the note. Two contacts cannot say that.
+
+| Per-note controller | Index | Meaning |
+| --- | --: | --- |
+| **Assignable** | **1** | Key position. 0 at rest, 1 fully depressed. |
+
+Assignable, not registered — the registered controllers have assigned meanings
+and none of them is "where the key is". Registered controller 1 is Modulation
+and is deliberately not read as key position.
+
+The damper here is a contact damping term rather than an envelope, so the
+number has somewhere real to go. Measured: a key left down keeps its damper off
+the string by 52.6 dB against a released one, a key held halfway lands 35.1 dB
+between the two, and the response is monotone across the travel. The travel is
+mapped to lift between 0.35 and 0.85 of full dip — the damper starts to rise
+partway down and is clear before let-off. That mapping is the one number here
+that is **not measured**, and is recorded as a gap rather than dressed up.
+
+### Controllers, at thirty-two bits
+
+A MIDI 2.0 Assignable Controller is the 32-bit successor to NRPN and uses the
+same numbers as the NRPN column in the tables above — bank 0, the published
+index — with 4294967296 steps instead of 16384. Control Change is likewise
+32-bit and uses the same CC numbers.
+
+### Jitter reduction
+
+Almost nothing implements JR timestamps. Epi reads them.
+
+The arrival time of a MIDI message says more about transport scheduling than
+about when the key was pressed. A JR Timestamp carries when the event actually
+happened, so the quantisation the transport imposed can be undone.
+
+Measured, with notes sent exactly 10 ms apart and up to 4 ms of random lateness
+added by the transport:
+
+| | |
+| --- | --- |
+| as delivered | 3.55 ms of smear between gaps |
+| reconstructed | **1 sample** — 0.021 ms at 48 kHz |
+| improvement | **171×** |
+
+Two details that matter for a sender:
+
+**Emit JR Clock continuously**, several times a second, whether or not
+anything is being played. Mapping your clock onto ours means finding the
+offset between them, and the estimator tracks the smallest arrival-minus-
+timestamp it has seen — every message is late by some amount and none is
+early. That estimate is causal, so it has a transient: with a clock already
+running it is locked before the first note, and without one the first few notes
+pay for the lock (measured at 3.04 ms worst, exact from about the eighth note).
+
+**A JR Timestamp may be earlier than the last JR Clock.** That is normal — it
+says when a past event happened. Epi does not read a small step backwards as
+the 16-bit counter wrapping.
+
+### Where this works
+
+| Host | MIDI 2.0 |
+| --- | --- |
+| `epi-headless` | Yes — CoreMIDI on macOS 11+, ALSA UMP on Linux 6.5+ |
+| Plugin | Whatever the host provides; VST3 and CLAP have no UMP path today |
+| Browser build | No. Web MIDI is MIDI 1.0 only |
+
+---
+
 ## These numbers will not move
 
 `src/epi/ControlMap.h` is a published interface. The numbers are written out
