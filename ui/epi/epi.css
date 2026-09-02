@@ -202,18 +202,26 @@ html, body {
 .panel.f-amp    { flex: 1.35; }
 .panel.f-fx     { flex: 1.0; }
 
+/* Panel header: title, a rule that takes up the slack, a workshop button and
+   a readout. The narrowest panel gives it 176 px, and the title, button and
+   readout together used to need 173 of that BEFORE the three 10 px gaps -- so
+   the rule collapsed to nothing and the readout was still clipped off the
+   edge ("-0.70 mm" lost its unit). Measured across all five instruments, the
+   spacing and tracking below leave 11 px spare in the tightest header instead
+   of overflowing the widest by 26. The readout sits at 8 px, which is the
+   same tier as the workshop button and the control labels. */
 .phead {
-  display: flex; align-items: center; gap: 10px;
+  display: flex; align-items: center; gap: 6px;
   margin-bottom: 10px;
 }
 .phead h2 {
   margin: 0; font-size: 10px; font-weight: 500;
-  letter-spacing: .26em; color: var(--gold);
+  letter-spacing: .16em; color: var(--gold);
   text-transform: uppercase;
 }
-.phead .hrule { flex: 1; height: 1px; background: var(--line); }
+.phead .hrule { flex: 1 1 0; min-width: 0; height: 1px; background: var(--line); }
 .phead .hmeta {
-  font-size: 9px; color: var(--faint); letter-spacing: .1em;
+  font-size: 8px; color: var(--faint); letter-spacing: .04em;
   white-space: nowrap; font-variant-numeric: tabular-nums;
 }
 
@@ -390,7 +398,8 @@ html, body {
 .wsopen {
   background: none; border: 1px solid #3a3120; border-radius: 999px;
   color: var(--gold); font-family: inherit; font-size: 8px;
-  letter-spacing: .16em; padding: 3px 10px; cursor: pointer;
+  letter-spacing: .08em; padding: 3px 7px; cursor: pointer;
+  flex: 0 0 auto; white-space: nowrap;
 }
 .wsopen:hover { background: #17150f; }
 
@@ -439,8 +448,16 @@ html, body {
   border-radius: 4px; cursor: pointer; }
 .wsrocker.on { color: #caa45e; border-color: #caa45e; background: #221c11; }
 
-/* Body bench row: material cycler beside a small size knob. */
-.bodyrow { display: flex; align-items: center; justify-content: center; gap: 8px; }
+/* Body bench row: material cycler beside a small size knob.
+   Wraps, because two cyclers do not fit side by side in a panel and must not
+   try. The panel's inner width is 190 px; a cycler is 104 px, so a pair needs
+   217. Squeezing them in would cap the value box at about 58 px and the
+   longest option -- KEY BED's "FRESH FELT" -- renders at 59.5, so it would be
+   clipped on the one setting somebody most needs to read. Wrapping costs a
+   line of height, which the panel has, and stays correct if an option is ever
+   renamed to something longer. */
+.bodyrow { display: flex; align-items: center; justify-content: center;
+           gap: 8px; flex-wrap: wrap; }
 .bodyrow .knob { width: 46px; }
 .bodyrow .kval { display: none; }
 .bodysize .knob { width: 52px; }

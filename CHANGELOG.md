@@ -127,6 +127,28 @@ All notable changes to Epi are documented here. The format follows
   million of each parameter's span.
 
 ### Fixed
+- Two controls overflowed the panel they live in, in the interface all three
+  hosts share -- so both were wrong in the plugin, the headless build and the
+  browser build at once. The FELT and KEY BED selectors sat side by side in a
+  190 px panel needing 217, and the second was clipped at the edge. They now
+  wrap: measured, a pair cannot fit without capping the value box at 58 px,
+  and the longest option ("Fresh Felt") renders at 59.5, so squeezing them in
+  would have clipped the one setting somebody most needs to read. And every
+  panel header was over budget -- the narrowest gives 176 px and the title,
+  workshop button and readout needed 173 before any spacing, which collapsed
+  the divider rule to nothing and still cut the unit off the Pickup panel's
+  "-0.70 mm". Retuned to leave 11 px spare in the tightest header instead of
+  overflowing the worst by 26.
+- `tools/check-layout.mjs`. The reason both of those shipped is that nothing
+  was measuring. It drives headless Chrome, walks every control in every panel
+  for all five instruments at the design width, and fails if anything overflows
+  its container. Overflow is measured in layout pixels rather than from
+  getBoundingClientRect, because the interface scales itself to the window with
+  a CSS transform and rects come back scaled -- the first version of the check
+  reported a 0.9 px overflow on a control that fits exactly. It also picks its
+  own debugging port: a fixed one is shared with every other browser on the
+  machine, and connecting to somebody else's Chrome does not fail, it hangs.
+  Runs in the Pages workflow, which already builds the site it needs.
 - The headless host served any asset larger than a socket send buffer
   truncated, under a Content-Length that said otherwise, so the interface
   failed to load. `juce::StreamingSocket::write` is a single `::send()` and

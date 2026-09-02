@@ -70,6 +70,21 @@ jobs:
           source ~/emsdk/emsdk_env.sh
           ./tools/build-web.sh
 
+      # Nothing in the interface may overflow the panel it lives in. The
+      # interface is shared byte for byte by the plugin, the headless host and
+      # this build, so one CSS mistake is wrong in three places at once -- and
+      # two of them shipped before anything was looking.
+      - name: nothing overflows its panel
+        run: |
+          CHROME_BIN="$(command -v google-chrome || command -v google-chrome-stable \
+                     || command -v chromium-browser || command -v chromium)"
+          if [ -z "$CHROME_BIN" ]; then echo "no chrome on this runner"; exit 1; fi
+          python3 -m http.server 8731 --bind 127.0.0.1 --directory web &
+          SERVER=$!
+          trap 'kill $SERVER' EXIT
+          for i in $(seq 1 40); do curl -sf -o /dev/null http://127.0.0.1:8731/ && break; sleep 0.25; done
+          CHROME_BIN="$CHROME_BIN" node tools/check-layout.mjs http://127.0.0.1:8731/
+
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
