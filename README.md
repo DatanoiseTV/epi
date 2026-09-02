@@ -258,6 +258,18 @@ It is the same `ui/epi` bundle the plugin ships, copied byte for byte. Only one
 file differs — the one that talks to the host — which is the same arrangement
 the headless build uses. Three hosts, one interface.
 
+A gear in the corner opens MIDI settings: which inputs are listening, which
+channel, what is arriving right now, where the pedals are, and the whole
+controller map with per-parameter MIDI learn. It answers the same CC and NRPN
+numbers as the hardware build — one published map, three hosts — so a
+controller template written against
+[docs/ControlMap.md](docs/ControlMap.md) drives all of them. Learned bindings
+are remembered in the browser.
+
+Web MIDI is Chrome, Edge and Firefox; Safari does not implement it, and the
+panel says so rather than looking broken. The on-screen keyboard and your
+computer keyboard work everywhere.
+
 Two limits worth stating plainly. Held chords with the pedal down are the
 expensive case: about 1.4× slower than native, which is 19% of a core for ten
 notes and half a core for forty, so a phone or an older laptop will glitch at

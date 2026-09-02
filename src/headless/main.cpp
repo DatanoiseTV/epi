@@ -450,9 +450,14 @@ void dumpParameters (EpiAudioProcessor& proc)
         if (p == nullptr) continue;
 
         const auto r = p->getNormalisableRange();
-        std::printf ("    { \"id\": \"%s\", \"name\": \"%s\", \"default\": %.9g",
+        // The published controller numbers travel with the layout, so a build
+        // with no JUCE in it answers the same CCs and NRPNs as this one.
+        std::printf ("    { \"id\": \"%s\", \"name\": \"%s\", \"default\": %.9g,"
+                     " \"cc\": %d, \"nrpn\": %d, \"panel\": \"%s\"",
                      id.toRawUTF8(), p->getName (64).toRawUTF8(),
-                     (double) p->getDefaultValue());
+                     (double) p->getDefaultValue(),
+                     epi::kControlMap[i].cc, epi::kControlMap[i].nrpn,
+                     epi::kControlMap[i].panel);
 
         if (auto* c = dynamic_cast<juce::AudioParameterChoice*> (p))
         {

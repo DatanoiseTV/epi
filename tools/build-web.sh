@@ -41,6 +41,9 @@ echo "  checking the JavaScript range conversion against juce::NormalisableRange
 node "$root/tools/check-param-map.mjs" "$out/parameters.json" "$out/.sweep.json"
 rm -f "$out/.sweep.json"
 
+echo "  checking the browser's MIDI decoding against the published map"
+node "$root/tools/check-midi-decode.mjs" "$out/parameters.json" | tail -2
+
 echo "  assembling the interface"
 cp "$root"/ui/epi/* "$out/"
 cp "$root"/ui/vendor/* "$out/"
@@ -57,6 +60,12 @@ cp "$root/ui/wasm/epi-worklet.js" "$out/"
   cat "$out/presets.json"
   printf ';\n'
   cat "$root/ui/wasm/wasm-frontend.js"
+  # Web MIDI and the settings gear. Host chrome, not interface: the plugin
+  # gets its MIDI from the host and the appliance from ALSA or CoreMIDI, so
+  # neither of them wants a device picker. They ride in the same substituted
+  # file so the page still loads exactly one extra script.
+  cat "$root/ui/wasm/epi-midi.js"
+  cat "$root/ui/wasm/epi-settings.js"
 } > "$out/juce-framework-frontend.js"
 
 # parameters.json and presets.json are inlined above; they are not fetched.

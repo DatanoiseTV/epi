@@ -76,6 +76,25 @@ All notable changes to Epi are documented here. The format follows
   note played through the interface's own channel reaches -5.76 dBFS with live
   telemetry, and a preset load switches the instrument. No SharedArrayBuffer,
   so no COOP/COEP headers, which Pages cannot set anyway. 360 kB of wasm.
+- **MIDI in the browser build**, behind a gear in the corner: input selection,
+  channel filter, a live view of what is arriving, the pedal positions, and
+  the whole controller map with per-parameter MIDI learn. It answers the same
+  CC and NRPN numbers as the hardware build, because they come from the same
+  `src/epi/ControlMap.h` carried through the parameter dump -- one published
+  map, three hosts. A learned CC displaces the published one it collides with
+  and the displaced parameter reports itself unbound rather than advertising a
+  number that now answers something else. The panel is injected by the host
+  rather than added to `ui/epi`: the plugin gets its MIDI from the host and the
+  appliance from ALSA or CoreMIDI, so a device picker belongs to the one host
+  that needs it, not to the interface all three share. Web MIDI is Chrome, Edge
+  and Firefox; Safari does not implement it, and the panel says so.
+- `tools/check-midi-decode.mjs` (18 rows). `ui/wasm/epi-midi.js` is a second
+  implementation of the surface `src/epi/MidiControlSurface.h` implements, and
+  two implementations of one published interface drift unless something
+  compares them -- the C++ suite cannot see the JavaScript one. It covers the
+  RPN/NRPN arbitration, the MSB-only case, sustain as a position rather than a
+  switch, channel filtering, and what learning a CC does to the binding it
+  displaces.
 - `tools/check-param-map.mjs`. The web build has no JUCE, so the conversion
   between the normalised value the interface speaks and the raw value the
   engine wants is `juce::RangedAudioParameter` reimplemented in JavaScript.

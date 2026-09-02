@@ -310,7 +310,7 @@
     if (!o) {
       o = document.createElement ('div');
       o.id = 'epi-start-overlay';
-      o.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;' +
+      o.style.cssText = 'position:fixed;inset:0;z-index:9990;display:flex;' +
         'align-items:center;justify-content:center;background:rgba(8,8,10,0.86);' +
         'color:#d9c48a;font:500 15px/1.6 system-ui,sans-serif;letter-spacing:0.14em;' +
         'text-transform:uppercase;cursor:pointer;backdrop-filter:blur(3px)';
@@ -374,6 +374,44 @@
     global.juce = global.Juce;
 
     if (presets.length) { currentPreset = presets[0].name; loadPreset (currentPreset); }
+
+    // What the host can do, for the parts of the web build that are not the
+    // instrument: Web MIDI and the settings panel. They are separate files
+    // because they are separate concerns, and they are host chrome rather
+    // than interface -- ui/epi does not know they exist, which is what keeps
+    // it byte-identical across all three hosts.
+    global.__EPI_HOST__ = {
+      params: params,
+      byId: byId,
+      isWasmBuild: true,
+
+      // Moves the parameter AND the knob. Anything arriving from outside the
+      // interface has to do both, or the display lies about the instrument.
+      setNormalised: function (id, n) {
+        var p = byId[id];
+        if (!p) return;
+        applyParam (id, n, false);
+        var relay = p.kind === 'choice' ? combos[id] : sliders[id];
+        if (relay) relay.valueChangedEvent.fire();
+        dirty = true;
+      },
+      getNormalised: function (id) { return norm[id]; },
+
+      note: function (n, v, on) { startAudio(); post ({ t: 'note', note: n, velocity: v, on: !!on }); },
+      sustain: function (v) { post ({ t: 'sustain', v: v }); },
+      sostenuto: function (b) { post ({ t: 'sostenuto', v: b }); },
+      soft: function (b) { post ({ t: 'soft', v: b }); },
+      allNotesOff: function () { post ({ t: 'allOff' }); },
+      expression: function (v) { post ({ t: 'expression', v: v }); },
+      pitchBend: function (semis) { post ({ t: 'bend', v: semis }); },
+
+      loadPreset: loadPreset,
+      presetNames: function () { return presets.map (function (p) { return p.name; }); },
+      currentPreset: function () { return currentPreset; },
+      startAudio: function () { startAudio(); },
+      audioRunning: function () { return !!node; },
+      onLevels: function (fn) { backend.addEventListener ('levels', fn); }
+    };
 
     // The preset line is pushed on a timer rather than only when it changes.
     // The plugin and the headless host both send it at their telemetry rate,
