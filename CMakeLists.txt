@@ -108,6 +108,7 @@ target_sources(Epi PRIVATE
     src/epi/PluginProcessor.cpp
     src/epi/dsp/EpiEngine.cpp
     src/epi/presets/FactoryPresets.cpp
+    src/epi/ui/UiBridge.cpp
     src/epi/ui/WebEditor.cpp
     ${EPI_COMMON_SOURCES})
 
