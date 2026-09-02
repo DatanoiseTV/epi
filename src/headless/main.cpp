@@ -424,6 +424,134 @@ void dumpControlMap (EpiAudioProcessor& proc)
     std::printf ("\n");
 }
 
+// ---------------------------------------------------------------------------
+// The data a build with no JUCE in it needs.
+//
+// The WebAssembly build compiles the DSP and nothing else -- no parameter
+// layout, no preset manager, because both are JUCE. Rather than transcribe
+// them and let the copy rot, they are DUMPED from the running instrument here
+// and consumed as data. Same discipline as docs/ControlMap.md: one source,
+// generated, checked by CI.
+// ---------------------------------------------------------------------------
+void dumpParameters (EpiAudioProcessor& proc)
+{
+    auto& apvts = proc.getValueTreeState();
+    std::printf ("{\n  \"parameters\": [\n");
+
+    // Ordered by the CONTROL MAP, not by the parameter layout. The web build
+    // indexes parameters by position, and the control map's order is already
+    // pinned by tests/test_epi_control.cpp -- so the two sides share one
+    // ordering that cannot move without failing a test, instead of two that
+    // happen to agree today.
+    for (int i = 0; i < epi::kNumControls; ++i)
+    {
+        const juce::String id { epi::kControlMap[i].paramId };
+        auto* p = apvts.getParameter (id);
+        if (p == nullptr) continue;
+
+        const auto r = p->getNormalisableRange();
+        std::printf ("    { \"id\": \"%s\", \"name\": \"%s\", \"default\": %.9g",
+                     id.toRawUTF8(), p->getName (64).toRawUTF8(),
+                     (double) p->getDefaultValue());
+
+        if (auto* c = dynamic_cast<juce::AudioParameterChoice*> (p))
+        {
+            std::printf (", \"kind\": \"choice\", \"choices\": [");
+            for (int k = 0; k < c->choices.size(); ++k)
+                std::printf ("%s\"%s\"", k ? ", " : "", c->choices[k].toRawUTF8());
+            std::printf ("]");
+        }
+        else
+        {
+            // Everything juce::NormalisableRange needs to reproduce the
+            // conversion exactly, because the web build has to do it itself.
+            std::printf (", \"kind\": \"float\", \"start\": %.9g, \"end\": %.9g,"
+                         " \"interval\": %.9g, \"skew\": %.9g, \"symmetricSkew\": %s",
+                         (double) r.start, (double) r.end, (double) r.interval,
+                         (double) r.skew, r.symmetricSkew ? "true" : "false");
+        }
+        std::printf (" }%s\n", i + 1 < epi::kNumControls ? "," : "");
+    }
+    std::printf ("  ]\n}\n");
+}
+
+// Every parameter's RAW value at a sweep of normalised points, straight out
+// of juce::NormalisableRange. The web build has to do this conversion itself,
+// in JavaScript, and "I reimplemented it correctly" is not a claim worth
+// making without the reference to check against. tools/check-param-map.mjs
+// compares the two.
+void dumpParamSweep (EpiAudioProcessor& proc)
+{
+    auto& apvts = proc.getValueTreeState();
+    std::printf ("{\n  \"sweep\": [\n");
+    for (int i = 0; i < epi::kNumControls; ++i)
+    {
+        auto* p = apvts.getParameter (epi::kControlMap[i].paramId);
+        if (p == nullptr) continue;
+        std::printf ("    { \"id\": \"%s\", \"raw\": [", epi::kControlMap[i].paramId);
+        for (int k = 0; k <= 100; ++k)
+        {
+            const float norm = (float) k / 100.0f;
+            std::printf ("%s%.9g", k ? "," : "", (double) p->convertFrom0to1 (norm));
+        }
+        std::printf ("] }%s\n", i + 1 < epi::kNumControls ? "," : "");
+    }
+    std::printf ("  ]\n}\n");
+}
+
+void dumpPresets (EpiAudioProcessor& proc)
+{
+    auto& presets = proc.getPresetManager();
+    auto& apvts = proc.getValueTreeState();
+    const auto names = presets.getFactoryNames();
+
+    auto floats = [] (const char* key, const float* v, int n, bool last)
+    {
+        std::printf ("      \"%s\": [", key);
+        for (int i = 0; i < n; ++i) std::printf ("%s%.9g", i ? "," : "", (double) v[i]);
+        std::printf ("]%s\n", last ? "" : ",");
+    };
+
+    std::printf ("{\n  \"presets\": [\n");
+    for (int n = 0; n < names.size(); ++n)
+    {
+        // Loaded through the real preset manager rather than read out of the
+        // table, so the defaults-first semantics a preset relies on are
+        // already applied and what is dumped is what the plugin would sound
+        // like.
+        presets.loadByName (names[n]);
+
+        std::printf ("    {\n      \"name\": \"%s\",\n      \"values\": {",
+                     names[n].toRawUTF8());
+        for (int i = 0; i < epi::kNumControls; ++i)
+            if (auto* p = apvts.getParameter (epi::kControlMap[i].paramId))
+                std::printf ("%s\"%s\": %.9g", i ? ", " : "", epi::kControlMap[i].paramId,
+                             (double) p->getValue());
+        std::printf ("},\n");
+
+        // The per-part benches travel with the preset; without them the
+        // reference voicings are not the reference voicings.
+        std::vector<float> flat;
+        for (const auto& m : proc.getTineMods())   { flat.push_back (m[0]); flat.push_back (m[1]); }
+        floats ("tineMods", flat.data(), (int) flat.size(), false);
+        flat.clear();
+        for (const auto& m : proc.getPickupMods()) { flat.push_back (m[0]); flat.push_back (m[1]); flat.push_back (m[2]); }
+        floats ("pickupMods", flat.data(), (int) flat.size(), false);
+        flat.clear();
+        for (const auto& m : proc.getStringMods()) { flat.push_back (m[0]); flat.push_back (m[1]); }
+        floats ("stringMods", flat.data(), (int) flat.size(), false);
+        flat.clear();
+        for (const auto& m : proc.getGrandMods())  { flat.push_back (m[0]); flat.push_back (m[1]); }
+        floats ("grandMods", flat.data(), (int) flat.size(), false);
+        floats ("cabMods",  proc.getCabMods().data(),  5,  false);
+        floats ("micMods",  proc.getMicMods().data(),  5,  false);
+        floats ("micStage", proc.getMicStage().data(), 31, false);
+        floats ("velMap",   proc.getVelMap().data(),   5,  true);
+        std::printf ("    }%s\n", n + 1 < names.size() ? "," : "");
+    }
+    std::printf ("  ]\n}\n");
+}
+
 int usage()
 {
     std::printf (
@@ -443,6 +571,8 @@ int usage()
         "  --preset <name>     load a preset at startup\n"
         "  --list-devices      print audio and MIDI devices, then exit\n"
         "  --dump-control-map  print docs/ControlMap.md's table, then exit\n"
+        "  --dump-parameters   print the parameter layout as JSON, then exit\n"
+        "  --dump-presets      print the factory presets as JSON, then exit\n"
         "  --help              this\n");
     return 0;
 }
@@ -475,6 +605,9 @@ int main (int argc, char** argv)
     auto host = std::make_unique<HeadlessHost>();
 
     if (flag ("--dump-control-map")) { dumpControlMap (host->processor()); return 0; }
+    if (flag ("--dump-parameters"))  { dumpParameters (host->processor());  return 0; }
+    if (flag ("--dump-presets"))     { dumpPresets (host->processor());     return 0; }
+    if (flag ("--dump-param-sweep")) { dumpParamSweep (host->processor()); return 0; }
 
     juce::AudioDeviceManager devices;
 
