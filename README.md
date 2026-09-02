@@ -204,6 +204,16 @@ It hosts the same processor the plugin does, so presets, the workshops and
 saved state are the plugin's — a preset saved on the appliance loads in the
 plugin.
 
+It is a console program, not a windowed one, and that is the point: it
+pulls in no browser engine, so on Linux it needs no GTK or WebKit headers
+to build. Measured on the built binary, x64 and arm64 alike, the only
+libraries it needs at runtime are **libasound2** and **libfreetype6** — no
+X11, no GTK, no WebKit — and it runs with `DISPLAY` unset. That is what
+makes a minimal Raspberry Pi OS Lite image enough.
+
+Whether a given board keeps up is a separate question and depends on the
+board: start it, play, and watch for dropouts before trusting it on stage.
+
 ### Building a physical panel
 
 Every one of the 49 parameters is reachable over MIDI as a CC and as an

@@ -19,6 +19,9 @@ All notable changes to Epi are documented here. The format follows
   the host is substituted, so there is no second interface to keep in step.
   Built as a console app on purpose -- no browser module, so no GTK or WebKit
   headers on Linux, which is what lets it build on a headless image at all.
+  Verified rather than claimed: built and run on Linux x64 and on arm64, where
+  the binary needs only libasound2 and libfreetype6 at runtime -- no X11, no
+  GTK, no WebKit -- and runs with DISPLAY unset.
   `--list-devices`, `--device`, `--rate`, `--buffer`, `--midi-in`,
   `--midi-out`, `--port`, `--bind`, `--preset`.
 - **Every parameter over MIDI, as CC and as NRPN, in both directions.** All
